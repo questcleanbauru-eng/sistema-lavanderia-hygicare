@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teste - Cadastro de Cliente</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      background: rgba(255,255,255,0.1);
+      padding: 30px;
+      border-radius: 10px;
+      backdrop-filter: blur(10px);
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover { background: #45a049; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 5px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .success { color: #4CAF50; font-weight: bold; }
+    .error { color: #ff6b6b; font-weight: bold; }
+    .info { color: #6bcf7f; }
+    .form-group {
+      margin: 15px 0;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 5px;
+      border: none;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Teste de Cadastro de Cliente</h1>
+    <p class="info">Este teste vai cadastrar um cliente diretamente no IndexedDB.</p>
+    
+    <div class="form-group">
+      <label>Nome do Cliente:</label>
+      <input type="text" id="clientName" value="Empresa Teste LTDA" placeholder="Nome do cliente">
+    </div>
+    
+    <div class="form-group">
+      <label>Cidade:</label>
+      <input type="text" id="clientCity" value="São Paulo" placeholder="Cidade">
+    </div>
+    
+    <div class="form-group">
+      <label>Nome do Vendedor:</label>
+      <input type="text" id="sellerName" value="João Silva" placeholder="Vendedor">
+    </div>
+    
+    <div class="form-group">
+      <label>Email do Cliente (opcional):</label>
+      <input type="email" id="clientEmail" value="contato@empresateste.com" placeholder="email@cliente.com">
+    </div>
+    
+    <div class="form-group">
+      <label>Email do Vendedor (opcional):</label>
+      <input type="email" id="sellerEmail" value="joao@hygicare.com" placeholder="email@vendedor.com">
+    </div>
+    
+    <button onclick="testCadastro()">✅ Cadastrar Cliente</button>
+    <button onclick="listarClientes()">📋 Listar Todos os Clientes</button>
+    <button onclick="limparClientes()">🗑️ Limpar Todos os Clientes</button>
+    <button onclick="goToApp()">🚀 Ir para o Sistema</button>
+    
+    <div id="result"></div>
+  </div>
+
+  <script src="db.js"></script>
+  <script>
+    const resultDiv = document.getElementById('result');
+
+    async function testCadastro() {
+      resultDiv.innerHTML = '<span class="info">🔄 Cadastrando cliente...</span>\n\n';
+      
+      try {
+        // Abrir banco de dados
+        await openDB();
+        resultDiv.innerHTML += '<span class="success">✅ Banco de dados aberto</span>\n\n';
+        
+        // Coletar dados do formulário
+        const clientData = {
+          name: document.getElementById('clientName').value.trim(),
+          city: document.getElementById('clientCity').value.trim(),
+          seller: document.getElementById('sellerName').value.trim(),
+          email_client: document.getElementById('clientEmail').value.trim(),
+          send_client: document.getElementById('clientEmail').value.trim() !== '',
+          email_seller: document.getElementById('sellerEmail').value.trim(),
+          send_seller: document.getElementById('sellerEmail').value.trim() !== '',
+          created_at: new Date().toISOString()
+        };
+        
+        // Validar dados
+        if (!clientData.name || !clientData.city) {
+          throw new Error('Nome e Cidade são obrigatórios!');
+        }
+        
+        resultDiv.innerHTML += '<span class="info">📝 Dados do cliente:</span>\n';
+        resultDiv.innerHTML += JSON.stringify(clientData, null, 2) + '\n\n';
+        
+        // Salvar no IndexedDB
+        const id = await dbAdd('clients', clientData);
+        
+        resultDiv.innerHTML += '<span class="success">✅ Cliente cadastrado com sucesso!</span>\n';
+        resultDiv.innerHTML += `<span class="info">🔑 ID gerado: ${id}</span>\n\n`;
+        
+        // Listar todos os clientes
+        await listarClientes();
+        
+      } catch (error) {
+        resultDiv.innerHTML += `<span class="error">❌ ERRO: ${error.message}</span>\n`;
+        console.error(error);
+      }
+    }
+
+    async function listarClientes() {
+      resultDiv.innerHTML = '<span class="info">📋 Listando clientes...</span>\n\n';
+      
+      try {
+        await openDB();
+        const clients = await getAll('clients');
+        
+        if (clients.length === 0) {
+          resultDiv.innerHTML += '<span class="info">ℹ️ Nenhum cliente cadastrado ainda.</span>\n';
+          return;
+        }
+        
+        resultDiv.innerHTML += `<span class="success">✅ Total de clientes: ${clients.length}</span>\n\n`;
+        
+        clients.forEach((client, index) => {
+          resultDiv.innerHTML += `<span class="info">━━━ Cliente ${index + 1} ━━━</span>\n`;
+          resultDiv.innerHTML += `ID: ${client.id}\n`;
+          resultDiv.innerHTML += `Nome: ${client.name}\n`;
+          resultDiv.innerHTML += `Cidade: ${client.city}\n`;
+          resultDiv.innerHTML += `Vendedor: ${client.seller}\n`;
+          if (client.email_client) resultDiv.innerHTML += `Email Cliente: ${client.email_client}\n`;
+          if (client.email_seller) resultDiv.innerHTML += `Email Vendedor: ${client.email_seller}\n`;
+          resultDiv.innerHTML += `Cadastrado em: ${new Date(client.created_at).toLocaleString('pt-BR')}\n\n`;
+        });
+        
+      } catch (error) {
+        resultDiv.innerHTML += `<span class="error">❌ ERRO: ${error.message}</span>\n`;
+        console.error(error);
+      }
+    }
+
+    async function limparClientes() {
+      if (!confirm('⚠️ Tem certeza que deseja apagar TODOS os clientes?')) {
+        return;
+      }
+      
+      resultDiv.innerHTML = '<span class="info">🗑️ Limpando clientes...</span>\n\n';
+      
+      try {
+        await openDB();
+        await clearStore('clients');
+        resultDiv.innerHTML += '<span class="success">✅ Todos os clientes foram removidos!</span>\n';
+      } catch (error) {
+        resultDiv.innerHTML += `<span class="error">❌ ERRO: ${error.message}</span>\n`;
+        console.error(error);
+      }
+    }
+
+    function goToApp() {
+      window.location.href = '/index.html';
+    }
+
+    // Listar clientes ao carregar
+    window.addEventListener('load', listarClientes);
+  </script>
+</body>
+</html>

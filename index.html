@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Sistema Lavanderia Hygicare</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <div id="toast-container"></div>
+
+    <!-- Modal Editar Registro -->
+    <div id="modal-edit-record" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:720px">
+        <div class="modal-hdr">
+          <h3>✏️ Editar Registro</h3>
+          <button class="btn-close" id="modal-edit-record-close">✕</button>
+        </div>
+        <form id="form-edit-record">
+          <input type="hidden" id="edit-record-key" />
+          <div class="form-row">
+            <div class="form-field">
+              <label>📅 Data Início</label>
+              <input type="date" id="edit-record-date-start" required />
+            </div>
+            <div class="form-field">
+              <label>📅 Data Fim</label>
+              <input type="date" id="edit-record-date-end" required />
+            </div>
+          </div>
+          <div style="font-size:0.82rem;color:#64748b;margin:0.6rem 0 0.4rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Linhas do Registro</div>
+          <div id="edit-record-rows"></div>
+          <div class="form-footer" style="margin-top:1rem">
+            <button type="button" class="btn-secondary" id="modal-edit-record-cancel">Cancelar</button>
+            <button type="submit" class="btn-primary">💾 Salvar Alterações</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Novo Usuário -->
+    <div id="modal-user" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:480px">
+        <div class="modal-hdr">
+          <h3 id="modal-user-title">👤 Novo Usuário</h3>
+          <button class="btn-close" id="modal-user-close">✕</button>
+        </div>
+        <form id="form-user">
+          <input type="hidden" id="edit-user-id" />
+          <div class="form-row">
+            <div class="form-field">
+              <label>Nome Completo *</label>
+              <input id="user-name" name="name" placeholder="Ex: Bruno Silva" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Usuário (login) *</label>
+              <input id="user-username" name="username" placeholder="Ex: bruno" required autocomplete="off" />
+            </div>
+            <div class="form-field">
+              <label>Perfil *</label>
+              <select id="user-role" name="role">
+                <option value="vendedor">Vendedor</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Senha *</label>
+              <input id="user-password" name="password" type="password" placeholder="Mínimo 4 caracteres" autocomplete="new-password" />
+            </div>
+            <div class="form-field">
+              <label>E-mail</label>
+              <input id="user-email" name="email" type="email" placeholder="usuario@hygicare.com.br" />
+            </div>
+          </div>
+          <div class="form-footer" style="margin-top:1rem">
+            <button type="button" class="btn-secondary" id="modal-user-cancel">Cancelar</button>
+            <button type="submit" class="btn-primary">💾 Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div id="offline-banner" class="offline-banner hidden">⚠️ Sem conexão com a internet</div>
+    <div id="login-screen" class="login-container">
+      <div class="login-card">
+        <div class="login-logo">🧺</div>
+        <h1>Hygicare</h1>
+        <p class="login-subtitle">Sistema de Gestao de Lavanderia</p>
+        <form id="form-login">
+          <div class="input-group"><span class="input-icon">👤</span><input type="text" name="username" placeholder="Usuario" required autofocus /></div>
+          <div class="input-group"><span class="input-icon">🔒</span><input type="password" name="password" id="login-password" placeholder="Senha" required /><button type="button" id="btn-toggle-pw" style="background:none;border:none;cursor:pointer;padding:0 0.8rem;font-size:1.1rem;color:#94a3b8" title="Mostrar/ocultar senha">👁️</button></div>
+          <button type="submit" id="btn-login">Entrar</button>
+        </form>
+        <div id="login-error" class="error-msg hidden"></div>
+      </div>
+    </div>
+    <div id="app-main" class="hidden">
+      <header>
+        <div class="header-top">
+          <div class="header-brand">
+            <span class="brand-icon">🧺</span>
+            <div><h1>Hygicare Lavanderia</h1><small id="header-subtitle">Sistema de Gestao</small></div>
+          </div>
+          <div class="header-actions">
+            <div class="api-badge" id="api-badge">� GAS não configurado</div>
+            <div class="refresh-split">
+              <button id="btn-refresh-data" class="hdr-btn hdr-btn-green">🔄 Atualizar</button>
+              <div class="refresh-dropdown-wrap">
+                <button id="btn-refresh-arrow" class="hdr-btn hdr-btn-green refresh-arrow" title="Escolher aba">▾</button>
+                <div id="refresh-dropdown" class="refresh-dropdown hidden">
+                  <div class="refresh-dropdown-title">Atualizar apenas:</div>
+                  <button class="refresh-opt" data-sheet="all">🔄 Tudo (5 abas)</button>
+                  <button class="refresh-opt" data-sheet="clients">👥 Clientes</button>
+                  <button class="refresh-opt" data-sheet="machines">⚙️ Maquinas</button>
+                  <button class="refresh-opt" data-sheet="processes">📋 Processos</button>
+                  <button class="refresh-opt" data-sheet="records">📝 Registros</button>
+                  <button class="refresh-opt" data-sheet="users">👤 Usuarios</button>
+                </div>
+              </div>
+            </div>
+            <span id="user-name" class="user-chip"></span>
+            <button id="btn-logout" class="hdr-btn hdr-btn-ghost">Sair 👋</button>
+          </div>
+        </div>
+        <nav>
+          <button class="nav-btn" id="nav-clients">👥 Clientes</button>
+          <button class="nav-btn" id="nav-machines">⚙️ Maquinas</button>
+          <button class="nav-btn" id="nav-processes">📋 Processos</button>
+          <button class="nav-btn" id="nav-charts">📊 Graficos</button>
+          <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio</button>
+          <button class="nav-btn" id="nav-form">📝 Gerar Relatorio</button>
+          <button class="nav-btn admin-only hidden" id="nav-users">👤 Usuarios</button>
+          <button class="nav-btn admin-only hidden" id="nav-admin">🛠️ Admin</button>
+        </nav>
+      </header>
+      <main>
+        <section id="screen-clients" class="screen">
+          <div class="screen-header">
+            <div class="screen-title"><h2>👥 Clientes</h2><span class="count-badge" id="clients-count">0</span></div>
+            <button id="btn-new-client" class="btn-primary">+ Novo Cliente</button>
+          </div>
+          <div id="form-client-card" class="form-panel hidden">
+            <div class="form-panel-hdr"><h3 id="form-client-title">Novo Cliente</h3><button class="btn-close" id="btn-close-client">✕</button></div>
+            <form id="form-client">
+              <input type="hidden" id="edit-client-id" />
+              <div class="form-row">
+                <div class="form-field"><label>Nome *</label><input name="name" placeholder="Ex: Hospital Sao Lucas" required /></div>
+                <div class="form-field"><label>Cidade *</label><input name="city" placeholder="Ex: Sao Paulo" required /></div>
+              </div>
+              <div class="form-row">
+                <div class="form-field"><label>Vendedor Responsavel</label><select id="client-seller-select" name="seller"><option value="">-- Selecione --</option></select></div>
+                <div class="form-field"><label>E-mail do Cliente</label><input name="email_client" placeholder="cliente@email.com" type="email" /></div>
+              </div>
+              <div class="form-row">
+                <div class="form-field"><label>E-mail do Vendedor</label><input name="email_seller" placeholder="vendedor@email.com" type="email" /></div>
+                <div class="form-field"><label>💰 Preço por kg (R$)</label><input name="price_kg" type="number" step="0.01" min="0" placeholder="Ex: 4.50" /></div>
+              </div>
+              <div class="form-row">
+                <div class="form-field form-checks">
+                  <label class="check-label"><input type="checkbox" name="send_client" /> Enviar relatorio ao cliente</label>
+                  <label class="check-label"><input type="checkbox" name="send_seller" /> Enviar relatorio ao vendedor</label>
+                </div>
+              </div>
+              <div class="form-footer">
+                <button type="button" class="btn-secondary btn-cancel-client">Cancelar</button>
+                <button type="submit" class="btn-primary">Salvar</button>
+              </div>
+            </form>
+          </div>
+          <div class="search-bar"><span>🔍</span><input type="text" id="search-clients" placeholder="Buscar por nome, cidade ou vendedor..." /></div>
+          <div id="clients-list" class="items-list"></div>
+        </section>
+        <section id="screen-machines" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>⚙️ Maquinas</h2><span class="count-badge" id="machines-count">0</span></div>
+            <button id="btn-new-machine" class="btn-primary">+ Nova Maquina</button>
+          </div>
+          <div id="form-machine-card" class="form-panel hidden">
+            <div class="form-panel-hdr"><h3 id="form-machine-title">Nova Maquina</h3><button class="btn-close" id="btn-close-machine">X</button></div>
+            <form id="form-machine">
+              <input type="hidden" id="edit-machine-id" />
+              <div class="form-row">
+                <div class="form-field"><label>Cliente *</label><select id="machine-client-select" required><option value="">-- Selecione --</option></select></div>
+                <div class="form-field"><label>Nome da Maquina *</label><input name="name" placeholder="Ex: Lavadora Industrial 1" required /></div>
+                <div class="form-field"><label>Capacidade (kg) *</label><input name="capacity" placeholder="Ex: 50" type="number" step="0.01" required /></div>
+              </div>
+              <div class="form-footer">
+                <button type="button" class="btn-secondary btn-cancel-machine">Cancelar</button>
+                <button type="submit" class="btn-primary">Salvar</button>
+              </div>
+            </form>
+          </div>
+          <div class="filter-bar">
+            <div class="search-bar"><span>🔍</span><input type="text" id="search-machines" placeholder="Buscar por nome ou cliente..." /></div>
+            <select id="filter-machine-client" class="filter-select"><option value="">Todos os clientes</option></select>
+          </div>
+          <div id="machines-list-cad" class="items-list"></div>
+        </section>
+        <section id="screen-processes" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>📋 Processos</h2><span class="count-badge" id="processes-count">0</span></div>
+            <button id="btn-new-process" class="btn-primary">+ Novo Processo</button>
+          </div>
+          <div id="form-process-card" class="form-panel hidden">
+            <div class="form-panel-hdr"><h3 id="form-process-title">Novo Processo</h3><button class="btn-close" id="btn-close-process">X</button></div>
+            <form id="form-process">
+              <input type="hidden" id="edit-process-id" />
+              <div class="form-row">
+                <div class="form-field"><label>Maquina *</label><select id="process-machine-select" required><option value="">-- Selecione --</option></select></div>
+                <div class="form-field"><label>Nome do Processo *</label><input name="name" placeholder="Ex: Lavagem Pesada" required /></div>
+                <div class="form-field"><label>Capacidade especifica (kg)</label><input name="capacity" placeholder="Deixe vazio = usa da maquina" type="number" step="0.01" /></div>
+              </div>
+              <div class="form-footer">
+                <button type="button" class="btn-secondary btn-cancel-process">Cancelar</button>
+                <button type="submit" class="btn-primary">Salvar</button>
+              </div>
+            </form>
+          </div>
+          <div class="filter-bar">
+            <div class="search-bar"><span>🔍</span><input type="text" id="search-processes" placeholder="Buscar por nome ou maquina..." /></div>
+            <select id="filter-process-machine" class="filter-select"><option value="">Todas as máquinas</option></select>
+          </div>
+          <div id="processes-list-cad" class="items-list"></div>
+        </section>
+        <section id="screen-form" class="screen hidden">
+          <div class="screen-header"><div class="screen-title"><h2>📝 Gerar Relatorio</h2></div></div>
+          <div class="card prod-setup">
+            <div class="form-row">
+              <div class="form-field"><label>Cliente *</label><select id="prod-client-select"><option value="">-- Selecione --</option></select></div>
+              <div class="form-field"><label>Data Inicio</label><input type="date" id="prod-date-start" /></div>
+              <div class="form-field"><label>Data Fim</label><input type="date" id="prod-date-end" /></div>
+            </div>
+          </div>
+          <div id="machines-list"></div>
+          <div class="card prod-footer">
+            <div class="prod-btn-row">
+              <button id="save-production" class="btn-primary btn-lg">💾 Salvar</button>
+            </div>
+            <p id="last-sync-time" class="sync-time-info">Ultima sincronizacao: Nunca</p>
+          </div>
+        </section>
+
+        <!-- GRAFICOS -->
+        <section id="screen-charts" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>📊 Gráficos</h2></div>
+            <button id="btn-apply-charts" class="btn-primary">🔍 Aplicar Filtros</button>
+          </div>
+          <!-- Filtros -->
+          <div class="charts-filters">
+            <div class="form-field">
+              <label>📅 Período — Início</label>
+              <input type="month" id="chart-filter-start" />
+            </div>
+            <div class="form-field">
+              <label>📅 Período — Fim</label>
+              <input type="month" id="chart-filter-end" />
+            </div>
+            <div class="form-field" style="min-width:200px">
+              <label>👥 Cliente</label>
+              <select id="chart-filter-client">
+                <option value="">Todos os clientes</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>👤 Vendedor</label>
+              <select id="chart-filter-seller">
+                <option value="">Todos os vendedores</option>
+              </select>
+            </div>
+            <button type="button" class="btn-secondary" id="btn-clear-charts" style="align-self:flex-end">🗑️ Limpar</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.2rem;margin-bottom:1.2rem">
+            <div class="card">
+              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">📦 Total kg por Cliente</h3>
+              <canvas id="chart-kg-cliente" height="220"></canvas>
+            </div>
+            <div class="card">
+              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">📅 Registros por Mes</h3>
+              <canvas id="chart-por-mes" height="220"></canvas>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.2rem">
+            <div class="card">
+              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">⚙️ kg por Maquina (Top 8)</h3>
+              <canvas id="chart-kg-maquina" height="220"></canvas>
+            </div>
+            <div class="card">
+              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">👤 Registros por Vendedor</h3>
+              <canvas id="chart-por-vendedor" height="220"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- USUARIOS (somente admin) -->
+        <section id="screen-users" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>👤 Usuários</h2><span class="count-badge" id="users-count">0</span></div>
+            <button id="btn-new-user" class="btn-primary">+ Novo Usuário</button>
+          </div>
+          <div class="search-bar"><span>🔍</span><input type="text" id="search-users" placeholder="Buscar por nome, usuário ou perfil..." /></div>
+          <div id="users-list" class="items-list"></div>
+        </section>
+
+        <section id="screen-admin" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>🛠️ Painel Administrativo</h2></div>
+          </div>
+
+          <div class="card" style="margin-bottom:1.2rem">
+            <h3 style="margin:0 0 1.2rem;font-size:1.05rem;color:#1e40af">🔗 Google Apps Script</h3>
+
+            <!-- STATUS DO SISTEMA -->
+            <div style="display:flex;align-items:center;gap:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin-bottom:1.2rem">
+              <div id="admin-status-dot" style="width:12px;height:12px;border-radius:50%;background:#94a3b8;flex-shrink:0;transition:background .3s"></div>
+              <div>
+                <div id="admin-status-text" style="font-weight:600;font-size:0.92rem;color:#1e293b">Verificando...</div>
+                <div id="admin-status-detail" style="font-size:0.78rem;color:#64748b;margin-top:2px"></div>
+              </div>
+              <button id="btn-test-apis" class="btn-secondary" style="margin-left:auto;padding:6px 14px;font-size:0.82rem">🔍 Testar</button>
+            </div>
+
+            <!-- VANTAGENS DO GAS -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:1.2rem">
+              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:1.6rem">♾️</div>
+                <div style="font-weight:700;color:#16a34a;font-size:1rem">Ilimitado</div>
+                <div style="font-size:0.75rem;color:#64748b">Requisições/mês</div>
+              </div>
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:1.6rem">⚡</div>
+                <div style="font-weight:700;color:#2563eb;font-size:1rem">1 chamada</div>
+                <div style="font-size:0.75rem;color:#64748b">Busca tudo de uma vez</div>
+              </div>
+              <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:1.6rem">🆓</div>
+                <div style="font-weight:700;color:#d97706;font-size:1rem">Gratuito</div>
+                <div style="font-size:0.75rem;color:#64748b">100% Google</div>
+              </div>
+            </div>
+
+            <!-- LINKS -->
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <a href="https://script.google.com" target="_blank" class="btn-secondary" style="text-decoration:none;padding:10px 16px;border-radius:8px;font-size:0.85rem;text-align:center">�️ Painel Apps Script</a>
+              <a href="https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit" target="_blank" class="btn-primary" style="text-decoration:none;padding:10px 16px;border-radius:8px;font-size:0.85rem;text-align:center">� Abrir Planilha</a>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin:0 0 1rem;font-size:1.05rem;color:#1e40af">ℹ️ Sistema</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+              <div style="background:#f8fafc;border-radius:8px;padding:14px">
+                <div style="font-size:0.75rem;color:#64748b">Cache SW</div>
+                <div style="font-weight:600;color:#1e293b">v45</div>
+              </div>
+              <div style="background:#f8fafc;border-radius:8px;padding:14px">
+                <div style="font-size:0.75rem;color:#64748b">Apps Script (ID)</div>
+                <div style="font-weight:600;color:#16a34a;font-size:0.8rem;word-break:break-all" id="admin-gas-id">—</div>
+              </div>
+              <div style="background:#f8fafc;border-radius:8px;padding:14px">
+                <div style="font-size:0.75rem;color:#64748b">Modo</div>
+                <div style="font-weight:600;color:#16a34a">Offline-first PWA</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Configuracoes -->
+          <div class="card" style="margin-top:1.2rem">
+            <h3 style="margin:0 0 1.2rem;font-size:1.05rem;color:#1e40af">⚙️ Configuracoes do Sistema</h3>
+            <div class="form-row">
+              <div class="form-field">
+                <label>🔗 URL do Google Apps Script</label>
+                <input type="url" id="cfg-gas-url" placeholder="https://script.google.com/macros/s/.../exec" />
+                <small>Cole aqui a URL gerada ao implantar o Apps Script</small>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
+                <label>� Intervalo de Sync (horas)</label>
+                <input type="number" id="cfg-sync-interval" min="1" max="24" placeholder="6" style="max-width:120px" />
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
+                <label>📋 Link da Planilha Google Sheets</label>
+                <input type="url" id="cfg-sheets-url" placeholder="https://docs.google.com/spreadsheets/d/..." />
+              </div>
+              <div class="form-field">
+                <label>📧 E-mail para notificações</label>
+                <input type="email" id="cfg-notify-email" placeholder="Ex: gerencia@hygicare.com.br" />
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
+                <label>💰 Preço por kg (R$) — usado no relatório</label>
+                <input type="number" id="cfg-price-kg" min="0" step="0.01" placeholder="Ex: 3.50" style="max-width:180px" />
+                <small>Deixe 0 ou vazio para não exibir o valor total no relatório</small>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
+                <button id="btn-save-config" class="btn-primary" style="width:100%">💾 Salvar Configuracoes</button>
+              </div>
+            </div>
+            <p id="config-saved-msg" class="sync-time-info" style="margin-top:8px"></p>
+          </div>
+        </section>
+
+        <section id="screen-reports" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title">
+              <h2>📄 Emitir Relatorio</h2>
+              <span class="count-badge" id="records-count">0</span>
+            </div>
+          </div>
+          <div class="search-bar">
+            <span>🔍</span>
+            <input type="text" id="search-records" placeholder="Buscar por cliente, maquina ou processo..." />
+          </div>
+          <!-- inputs ocultos mantidos para o JS funcionar -->
+          <select id="filter-client-records" style="display:none"><option value="">Todos os clientes</option></select>
+          <input type="hidden" id="filter-date-start" />
+          <input type="hidden" id="filter-date-end" />
+          <button id="btn-clear-filters" style="display:none">Limpar</button>
+          <div id="records-list"></div>
+        </section>
+      </main>
+      <footer><small>Hygicare Lavanderia — Offline-first PWA · Google Apps Script</small></footer>
+    </div>
+    <script src="config.js"></script>
+    <script src="auth.js"></script>
+    <script src="db.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
