@@ -1,7 +1,9 @@
 ﻿// Configuracoes — Google Apps Script (substitui SheetDB)
 const CONFIG = {
-  // Cole a URL do seu Apps Script implantado aqui (ou configure no Painel Admin)
-  GAS_URL: "YOUR_GAS_URL",
+  // ✅ Cole aqui a URL gerada ao implantar o google-apps-script.js
+  // Formato: https://script.google.com/macros/s/XXXXX/exec
+  // Após colar, faça deploy no Vercel — todos os usuários recebem automaticamente
+  GAS_URL: "https://script.google.com/macros/s/AKfycbzvQTnHT3IIojMVEKHyoWgkx4dYr7AuhrVROEfGzZjFRajR0xYtkC7TFoqaA3evTYBuag/exec",
   SYNC_INTERVAL_HOURS: 6
 };
 

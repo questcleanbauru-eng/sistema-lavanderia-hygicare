@@ -2,9 +2,15 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#1e3a8a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Hygicare" />
     <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='72' font-size='62' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>H</text></svg>" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Sistema Lavanderia Hygicare</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -14,14 +20,18 @@
 
     <!-- Modal Editar Registro -->
     <div id="modal-edit-record" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:720px">
+      <div class="modal-box modal-edit-record-box">
         <div class="modal-hdr">
-          <h3>✏️ Editar Registro</h3>
+          <div>
+            <h3>✏️ Editar Registro</h3>
+            <p class="modal-hdr-sub">Ajuste as quantidades e as datas do período</p>
+          </div>
           <button class="btn-close" id="modal-edit-record-close">✕</button>
         </div>
         <form id="form-edit-record">
           <input type="hidden" id="edit-record-key" />
-          <div class="form-row">
+          <!-- Datas lado a lado sempre -->
+          <div class="edit-dates-row">
             <div class="form-field">
               <label>📅 Data Início</label>
               <input type="date" id="edit-record-date-start" required />
@@ -31,7 +41,11 @@
               <input type="date" id="edit-record-date-end" required />
             </div>
           </div>
-          <div style="font-size:0.82rem;color:#64748b;margin:0.6rem 0 0.4rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Linhas do Registro</div>
+          <!-- Linhas do registro -->
+          <div class="edit-rows-header">
+            <span>Máquina / Processo</span>
+            <span class="edit-rows-header-right">Exec. &nbsp;&nbsp; Canc.</span>
+          </div>
           <div id="edit-record-rows"></div>
           <div class="form-footer" style="margin-top:1rem">
             <button type="button" class="btn-secondary" id="modal-edit-record-cancel">Cancelar</button>
@@ -43,7 +57,7 @@
 
     <!-- Modal Novo Usuário -->
     <div id="modal-user" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:480px">
+      <div class="modal-box" style="max-width:520px">
         <div class="modal-hdr">
           <h3 id="modal-user-title">👤 Novo Usuário</h3>
           <button class="btn-close" id="modal-user-close">✕</button>
@@ -65,6 +79,7 @@
               <label>Perfil *</label>
               <select id="user-role" name="role">
                 <option value="vendedor">Vendedor</option>
+                <option value="gerente">Gerente</option>
                 <option value="admin">Administrador</option>
               </select>
             </div>
@@ -79,6 +94,23 @@
               <input id="user-email" name="email" type="email" placeholder="usuario@hygicare.com.br" />
             </div>
           </div>
+
+          <!-- Permissões por tela (oculto para admin) -->
+          <div id="permissions-section" style="margin-top:0.8rem;padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">
+            <div style="font-weight:600;font-size:0.88rem;color:#1e293b;margin-bottom:10px">🔐 Permissões de acesso</div>
+            <div style="font-size:0.78rem;color:#64748b;margin-bottom:10px">Selecione quais telas este usuário pode acessar:</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <label class="perm-check"><input type="checkbox" name="perm_clients"   checked /> 👤 Clientes</label>
+              <label class="perm-check"><input type="checkbox" name="perm_machines"  checked /> ⚙️ Máquinas</label>
+              <label class="perm-check"><input type="checkbox" name="perm_processes" checked /> 🔄 Processos</label>
+              <label class="perm-check"><input type="checkbox" name="perm_form"      checked /> 📋 Produção</label>
+              <label class="perm-check"><input type="checkbox" name="perm_reports"   checked /> 📊 Relatórios</label>
+              <label class="perm-check"><input type="checkbox" name="perm_charts"    checked /> 📈 Gráficos</label>
+              <label class="perm-check"><input type="checkbox" name="perm_users"              /> 👥 Usuários</label>
+              <label class="perm-check perm-only-admin" style="opacity:0.4;pointer-events:none"><input type="checkbox" disabled /> 🛠️ Admin (só admin)</label>
+            </div>
+          </div>
+
           <div class="form-footer" style="margin-top:1rem">
             <button type="button" class="btn-secondary" id="modal-user-cancel">Cancelar</button>
             <button type="submit" class="btn-primary">💾 Salvar</button>
@@ -134,7 +166,7 @@
           <button class="nav-btn" id="nav-processes">📋 Processos</button>
           <button class="nav-btn" id="nav-charts">📊 Graficos</button>
           <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio</button>
-          <button class="nav-btn" id="nav-form">📝 Gerar Relatorio</button>
+          <button class="nav-btn" id="nav-form">📝 Gerar Relatório</button>
           <button class="nav-btn admin-only hidden" id="nav-users">👤 Usuarios</button>
           <button class="nav-btn admin-only hidden" id="nav-admin">🛠️ Admin</button>
         </nav>
@@ -229,20 +261,20 @@
           <div id="processes-list-cad" class="items-list"></div>
         </section>
         <section id="screen-form" class="screen hidden">
-          <div class="screen-header"><div class="screen-title"><h2>📝 Gerar Relatorio</h2></div></div>
+          <div class="screen-header"><div class="screen-title"><h2>📝 Gerar Relatório</h2></div></div>
           <div class="card prod-setup">
-            <div class="form-row">
-              <div class="form-field"><label>Cliente *</label><select id="prod-client-select"><option value="">-- Selecione --</option></select></div>
-              <div class="form-field"><label>Data Inicio</label><input type="date" id="prod-date-start" /></div>
-              <div class="form-field"><label>Data Fim</label><input type="date" id="prod-date-end" /></div>
+            <div class="form-row" style="grid-template-columns:1fr">
+              <div class="form-field"><label>Cliente *</label><select id="prod-client-select"><option value="">-- Selecione um cliente --</option></select></div>
             </div>
-          </div>
-          <div id="machines-list"></div>
-          <div class="card prod-footer">
-            <div class="prod-btn-row">
+            <div class="form-row" style="grid-template-columns:1fr 1fr">
+              <div class="form-field"><label>📅 Data Início</label><input type="date" id="prod-date-start" /></div>
+              <div class="form-field"><label>📅 Data Fim</label><input type="date" id="prod-date-end" /></div>
+            </div>
+            <div id="machines-list"></div>
+            <div class="prod-btn-row" style="margin-top:0.5rem">
               <button id="save-production" class="btn-primary btn-lg">💾 Salvar</button>
             </div>
-            <p id="last-sync-time" class="sync-time-info">Ultima sincronizacao: Nunca</p>
+            <p id="last-sync-time" class="sync-time-info" style="text-align:center;margin-top:0.5rem">Última sincronização: Nunca</p>
           </div>
         </section>
 
@@ -250,49 +282,70 @@
         <section id="screen-charts" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title"><h2>📊 Gráficos</h2></div>
-            <button id="btn-apply-charts" class="btn-primary">🔍 Aplicar Filtros</button>
           </div>
-          <!-- Filtros -->
-          <div class="charts-filters">
-            <div class="form-field">
-              <label>📅 Período — Início</label>
-              <input type="month" id="chart-filter-start" />
-            </div>
-            <div class="form-field">
-              <label>📅 Período — Fim</label>
-              <input type="month" id="chart-filter-end" />
-            </div>
-            <div class="form-field" style="min-width:200px">
-              <label>👥 Cliente</label>
-              <select id="chart-filter-client">
-                <option value="">Todos os clientes</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label>👤 Vendedor</label>
-              <select id="chart-filter-seller">
-                <option value="">Todos os vendedores</option>
-              </select>
-            </div>
-            <button type="button" class="btn-secondary" id="btn-clear-charts" style="align-self:flex-end">🗑️ Limpar</button>
+
+          <!-- Atalhos de período — pill buttons -->
+          <div class="chart-presets">
+            <button type="button" class="chart-preset-btn" id="chart-preset-month">Este mês</button>
+            <button type="button" class="chart-preset-btn" id="chart-preset-3m">Últ. 3 meses</button>
+            <button type="button" class="chart-preset-btn active" id="chart-preset-year">Este ano</button>
+            <button type="button" class="chart-preset-btn" id="chart-preset-all">Todos</button>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.2rem;margin-bottom:1.2rem">
-            <div class="card">
-              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">📦 Total kg por Cliente</h3>
+
+          <!-- Filtros avançados (colapsável em mobile) -->
+          <details class="charts-filters-wrap">
+            <summary class="charts-filters-toggle">
+              <span>🔍 Filtros avançados</span>
+              <span class="toggle-arrow">▾</span>
+            </summary>
+            <div class="charts-filters">
+              <div class="form-field">
+                <label>📅 Início</label>
+                <input type="month" id="chart-filter-start" />
+              </div>
+              <div class="form-field">
+                <label>📅 Fim</label>
+                <input type="month" id="chart-filter-end" />
+              </div>
+              <div class="form-field">
+                <label>👥 Cliente</label>
+                <select id="chart-filter-client">
+                  <option value="">Todos os clientes</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>👤 Vendedor</label>
+                <select id="chart-filter-seller">
+                  <option value="">Todos os vendedores</option>
+                </select>
+              </div>
+              <button type="button" class="btn-secondary btn-sm" id="btn-clear-charts" style="align-self:flex-end">🗑️ Limpar</button>
+            </div>
+          </details>
+
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <h3 class="chart-title">📦 Total kg por Cliente</h3>
               <canvas id="chart-kg-cliente" height="220"></canvas>
             </div>
-            <div class="card">
-              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">📅 Registros por Mes</h3>
+            <div class="card chart-card">
+              <h3 class="chart-title">📅 Evolução Mensal (kg)</h3>
               <canvas id="chart-por-mes" height="220"></canvas>
             </div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.2rem">
-            <div class="card">
-              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">⚙️ kg por Maquina (Top 8)</h3>
+            <div class="card chart-card">
+              <h3 class="chart-title">⚙️ Processos por Máquina</h3>
               <canvas id="chart-kg-maquina" height="220"></canvas>
             </div>
-            <div class="card">
-              <h3 style="margin:0 0 1rem;font-size:0.95rem;color:#1e40af">👤 Registros por Vendedor</h3>
+            <div class="card chart-card">
+              <h3 class="chart-title">🔵 % Processos por Tipo</h3>
+              <canvas id="chart-proc-tipo" height="220"></canvas>
+            </div>
+            <div class="card chart-card">
+              <h3 class="chart-title">❌ Processos Cancelados (%)</h3>
+              <canvas id="chart-cancelados" height="220"></canvas>
+            </div>
+            <div class="card chart-card">
+              <h3 class="chart-title">👤 Registros por Vendedor</h3>
               <canvas id="chart-por-vendedor" height="220"></canvas>
             </div>
           </div>
@@ -357,7 +410,7 @@
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
               <div style="background:#f8fafc;border-radius:8px;padding:14px">
                 <div style="font-size:0.75rem;color:#64748b">Cache SW</div>
-                <div style="font-weight:600;color:#1e293b">v45</div>
+                <div style="font-weight:600;color:#1e293b">v51</div>
               </div>
               <div style="background:#f8fafc;border-radius:8px;padding:14px">
                 <div style="font-size:0.75rem;color:#64748b">Apps Script (ID)</div>
@@ -394,13 +447,10 @@
               <div class="form-field">
                 <label>📧 E-mail para notificações</label>
                 <input type="email" id="cfg-notify-email" placeholder="Ex: gerencia@hygicare.com.br" />
+                <small>Após salvar, clique em "Testar" para confirmar o recebimento</small>
               </div>
-            </div>
-            <div class="form-row" style="margin-top:0.5rem">
-              <div class="form-field">
-                <label>💰 Preço por kg (R$) — usado no relatório</label>
-                <input type="number" id="cfg-price-kg" min="0" step="0.01" placeholder="Ex: 3.50" style="max-width:180px" />
-                <small>Deixe 0 ou vazio para não exibir o valor total no relatório</small>
+              <div class="form-field" style="display:flex;align-items:flex-end;padding-bottom:2px">
+                <button id="btn-test-email" class="btn-secondary" style="white-space:nowrap">📨 Testar E-mail</button>
               </div>
             </div>
             <div class="form-row" style="margin-top:0.5rem">
@@ -422,6 +472,7 @@
           <div class="search-bar">
             <span>🔍</span>
             <input type="text" id="search-records" placeholder="Buscar por cliente, maquina ou processo..." />
+            <button id="btn-check-drive-pdfs" class="admin-only hidden" onclick="window._checkDrivePdfs()" title="Verificar PDFs salvos no Drive e liberar botões de e-mail" style="flex-shrink:0;background:rgba(59,130,246,0.1);color:#1d4ed8;border:1px solid rgba(59,130,246,0.3);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;white-space:nowrap">� Verificar PDFs</button>
           </div>
           <!-- inputs ocultos mantidos para o JS funcionar -->
           <select id="filter-client-records" style="display:none"><option value="">Todos os clientes</option></select>
@@ -431,8 +482,63 @@
           <div id="records-list"></div>
         </section>
       </main>
+      <!-- Barra de navegação inferior — visível apenas em mobile -->
+      <nav id="bottom-nav" class="bottom-nav">
+        <button class="bnav-btn" data-nav="nav-form">
+          <span class="bnav-icon">📝</span>
+          <span class="bnav-label">Gerar</span>
+        </button>
+        <button class="bnav-btn" data-nav="nav-reports">
+          <span class="bnav-icon">📄</span>
+          <span class="bnav-label">Relatório</span>
+        </button>
+        <button class="bnav-btn" data-nav="nav-clients">
+          <span class="bnav-icon">👥</span>
+          <span class="bnav-label">Clientes</span>
+        </button>
+        <button class="bnav-btn" data-nav="nav-charts">
+          <span class="bnav-icon">📊</span>
+          <span class="bnav-label">Gráficos</span>
+        </button>
+        <button class="bnav-btn admin-only hidden" data-nav="nav-users" id="bnav-users">
+          <span class="bnav-icon">👤</span>
+          <span class="bnav-label">Usuários</span>
+        </button>
+        <button class="bnav-btn" data-nav="nav-admin" id="bnav-more">
+          <span class="bnav-icon">⋯</span>
+          <span class="bnav-label">Mais</span>
+        </button>
+      </nav>
       <footer><small>Hygicare Lavanderia — Offline-first PWA · Google Apps Script</small></footer>
     </div>
+    <!-- Modal Compartilhar Relatório -->
+    <div id="modal-share-report" class="modal-overlay hidden">
+      <div class="modal-box modal-share-box">
+        <div class="modal-hdr">
+          <div>
+            <h3>🎉 Relatório salvo!</h3>
+            <p class="modal-hdr-sub" id="share-report-summary"></p>
+          </div>
+          <button class="btn-close" id="modal-share-close">✕</button>
+        </div>
+        <div class="share-options" style="grid-template-columns:repeat(2,1fr)">
+          <a id="share-email-client" class="share-btn share-email" href="#" target="_blank">
+            <span>📧</span><span>E-mail Cliente</span>
+          </a>
+          <a id="share-email-seller" class="share-btn share-email-seller" href="#" target="_blank">
+            <span>👨‍💼</span><span>E-mail Vendedor</span>
+          </a>
+        </div>
+        <button id="share-pdf-btn" class="share-btn-pdf" style="margin-top:0.85rem;width:100%;display:flex;align-items:center;justify-content:center;gap:0.5rem;background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;border:none;border-radius:12px;padding:0.85rem 1rem;font-size:0.9rem;font-weight:700;cursor:pointer;letter-spacing:0.3px">
+          <span style="font-size:1.2rem">📄</span><span>Gerar PDF / Imprimir</span>
+        </button>
+        <p style="font-size:0.72rem;color:#94a3b8;text-align:center;margin-top:0.5rem">Na janela de impressão, escolha <strong>Salvar como PDF</strong> para baixar o arquivo.</p>
+        <div style="margin-top:1rem;text-align:center">
+          <button class="btn-secondary" id="modal-share-close2" style="width:100%">✓ Fechar</button>
+        </div>
+      </div>
+    </div>
+
     <script src="config.js"></script>
     <script src="auth.js"></script>
     <script src="db.js"></script>

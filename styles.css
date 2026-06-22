@@ -925,8 +925,20 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   border-radius: 999px; font-size: 0.74rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em;
 }
-.role-admin  { background: #dbeafe; color: #1d4ed8; }
+.role-admin    { background: #dbeafe; color: #1d4ed8; }
 .role-vendedor { background: #dcfce7; color: #15803d; }
+.role-gerente  { background: #fef3c7; color: #b45309; }
+
+/* ── Checkboxes de permissão ── */
+.perm-check {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.83rem; color: #334155; cursor: pointer;
+  padding: 5px 8px; border-radius: 6px; transition: background .15s;
+}
+.perm-check:hover { background: #e0f2fe; }
+.perm-check input[type="checkbox"] {
+  width: 15px; height: 15px; accent-color: #2563eb; cursor: pointer; flex-shrink: 0;
+}
 
 /* =========== REFRESH SPLIT BUTTON =========== */
 .refresh-split {

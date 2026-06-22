@@ -11,7 +11,7 @@ const USERS = [
     canEdit: true,
     canDelete: true
   },
-  { 
+  {
     username: 'vendedor1', 
     password: 'vend123', 
     role: 'vendedor', 

@@ -15,19 +15,49 @@ function toast(msg, type = 'info', duration = 3500) {
   }, duration);
 }
 
-// ---------- STATUS DA API (GAS — sem limite de requisições) ----------
-function updateApiDisplay() {
-  const gasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
-  const badge  = document.getElementById('api-badge');
-  if (!badge) return;
-  const configured = gasUrl && !gasUrl.includes('YOUR_GAS_URL');
-  badge.textContent = configured ? '🟢 GAS Conectado' : '🔴 GAS não configurado';
-  badge.classList.remove('api-warn', 'api-alert');
-  if (!configured) badge.classList.add('api-alert');
+// ---------- API COUNTER ----------
+const API_KEY       = 'hygicare_api_count';        // escrita
+const API_KEY_READ  = 'hygicare_api_count_read';   // leitura
+const API_MONTH_KEY = 'hygicare_api_month_v2';     // v2 = formato YYYY-MM
+
+function getApiCount(type = 'write') {
+  const month = new Date().toISOString().slice(0, 7); // ex: '2026-05'
+  const stored = localStorage.getItem(API_MONTH_KEY);
+  // Só zera se realmente mudou o mês (formato YYYY-MM)
+  if (stored !== month) {
+    localStorage.setItem(API_MONTH_KEY, month);
+    // Migração: se tinha dados válidos no mês atual com chave antiga, preserva
+    const oldMonth = localStorage.getItem('hygicare_api_month');
+    const isOldFormat = oldMonth && (oldMonth.length <= 2); // formato antigo era número
+    if (!isOldFormat && stored && stored.slice(0, 7) === month) {
+      // mesmo mês em outro formato — não zera
+    } else {
+      localStorage.setItem(API_KEY,      '0');
+      localStorage.setItem(API_KEY_READ, '0');
+    }
+  }
+  return parseInt(localStorage.getItem(type === 'read' ? API_KEY_READ : API_KEY) || '0');
 }
-// Stubs de compatibilidade (não fazem nada — GAS é gratuito/ilimitado)
-function getApiCount()    { return 0; }
-function addApiCount()    { return 0; }
+
+function addApiCount(n = 1, type = 'write') {
+  const key   = type === 'read' ? API_KEY_READ : API_KEY;
+  // Lê diretamente do localStorage para não acionar o reset do getApiCount
+  const current = parseInt(localStorage.getItem(key) || '0');
+  const count = current + n;
+  localStorage.setItem(key, String(count));
+  if (type === 'write') updateApiDisplay(count);
+  return count;
+}
+
+function updateApiDisplay(count) {
+  const el = document.getElementById('api-count');
+  const badge = document.getElementById('api-badge');
+  if (!el || !badge) return;
+  el.textContent = count;
+  badge.classList.remove('api-warn', 'api-alert');
+  if (count >= 450) badge.classList.add('api-alert');
+  else if (count >= 350) badge.classList.add('api-warn');
+}
 
 // ---------- ESTADO ----------
 let currentUser = null;
@@ -36,16 +66,17 @@ if (savedSession) {
   try { currentUser = JSON.parse(savedSession); } catch (e) { localStorage.removeItem('lavanderia_session'); }
 }
 
+// Migração: garante que a chave de mês v2 existe no formato correto
+// para evitar reset indevido dos contadores
+(function migrateApiMonth() {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  if (!localStorage.getItem('hygicare_api_month_v2')) {
+    localStorage.setItem('hygicare_api_month_v2', currentMonth);
+  }
+})();
+
 // ---------- MAIN ----------
 document.addEventListener('DOMContentLoaded', async () => {
-
-  // Mostrar/ocultar senha no login
-  document.getElementById('btn-toggle-pw')?.addEventListener('click', () => {
-    const inp = document.getElementById('login-password');
-    const btn = document.getElementById('btn-toggle-pw');
-    if (inp.type === 'password') { inp.type = 'text';     btn.textContent = '🙈'; }
-    else                         { inp.type = 'password'; btn.textContent = '👁️'; }
-  });
 
   // Service Worker
   if ('serviceWorker' in navigator) {
@@ -87,32 +118,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let users = [...(window.USERS || [])];
 
-    // Buscar usuários do Google Apps Script (GAS)
-    const gasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
-    if (gasUrl && !gasUrl.includes('YOUR_GAS_URL')) {
+    if (CONFIG.SHEETDB_READ && !CONFIG.SHEETDB_READ.includes('YOUR_SHEETDB_ID')) {
       try {
-        const r = await fetch(`${gasUrl}?sheet=${SHEETS.USERS}`);
+        const r = await fetch(`${CONFIG.SHEETDB_READ}?sheet=${SHEETS.USERS}`);
         if (r.ok) {
-          const resp = await r.json();
-          const data = Array.isArray(resp) ? resp : (resp.data || []);
+          addApiCount(1, 'read');
+          const raw = await r.json();
+          const data = Array.isArray(raw) ? raw : (raw.data || []);
           const sheetUsers = data.map(u => ({
             username: u.username, password: u.password,
             role: u.role || 'vendedor', name: u.name, sellerName: u.sellerName || u.name,
             // active vazio ou ausente = ativo; só bloqueia se explicitamente 'FALSE'
             active: String(u.active || '').toUpperCase() !== 'FALSE'
           })).filter(u => u.active !== false);
-          // Mesclar: GAS sobrescreve locais pelo username
+          // Mesclar: SheetDB sobrescreve locais pelo username
           sheetUsers.forEach(su => {
             const idx = users.findIndex(u => u.username === su.username);
             if (idx >= 0) users[idx] = su; else users.push(su);
           });
         }
-      } catch (e) { console.warn('Fallback para usuários locais (GAS offline)'); }
+      } catch (e) { console.warn('Fallback para usuários locais'); }
     }
 
     // Também consulta usuários criados pela tela (IndexedDB)
     try {
-      const dbUsers = await window.getAll('users');
+      const dbUsers = await _originalGetAll('users');
       dbUsers.forEach(du => {
         if (du.username && du.password) {
           const idx = users.findIndex(u => u.username === du.username);
@@ -154,7 +184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     userNameSpan.textContent = `👤 ${currentUser.name}`;
     document.getElementById('header-subtitle').textContent =
       currentUser.role === 'admin' ? 'Administrador' : 'Vendedor';
-    updateApiDisplay();
+    updateApiDisplay(getApiCount());
     updateSyncStatus();
     initApp();
   }
@@ -176,13 +206,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function initApp() {
 
     // Aplicar configuracoes salvas no localStorage
-    const savedGas = localStorage.getItem('hygicare_cfg_gas_url');
-    const savedSync = localStorage.getItem('hygicare_cfg_sync_interval');
-    if (savedGas)  CONFIG.GAS_URL = savedGas;
-    if (savedSync) CONFIG.SYNC_INTERVAL_HOURS = parseInt(savedSync);
+    const savedWrite = localStorage.getItem('hygicare_cfg_sheetdb_write');
+    const savedRead  = localStorage.getItem('hygicare_cfg_sheetdb_read');
+    const savedSync  = localStorage.getItem('hygicare_cfg_sync_interval');
+    // Retrocompatibilidade: URL antiga só serve de fallback para escrita
+    const legacyUrl  = localStorage.getItem('hygicare_cfg_sheetdb_url');
+    if (savedWrite) CONFIG.SHEETDB_WRITE = savedWrite;
+    else if (legacyUrl) CONFIG.SHEETDB_WRITE = legacyUrl;
+    // Leitura: usa o valor salvo novo, ou o valor definido no config.js (nunca a URL legada)
+    if (savedRead)  CONFIG.SHEETDB_READ = savedRead;
+    // CONFIG.SHEETDB_READ já vem definido corretamente no config.js como 6esskmb0uxer5
+    if (savedSync)  CONFIG.SYNC_INTERVAL_HOURS = parseInt(savedSync);
 
-    // Atualiza badge no header
-    updateApiDisplay();
+    // Se ainda não salvou a URL de leitura no novo formato, persiste agora
+    if (!savedRead) {
+      localStorage.setItem('hygicare_cfg_sheetdb_read', CONFIG.SHEETDB_READ);
+    }
 
     // Carregar usuários do IndexedDB para window.USERS (login offline)
     try {
@@ -258,76 +297,159 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function refreshAdminPanel() {
-      const cfgGas    = localStorage.getItem('hygicare_cfg_gas_url')      || CONFIG.GAS_URL || '';
-      const cfgSync   = localStorage.getItem('hygicare_cfg_sync_interval') || CONFIG.SYNC_INTERVAL_HOURS;
-      const cfgSheets = localStorage.getItem('hygicare_cfg_sheets_url')    || 'https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit';
-      const cfgEmail  = localStorage.getItem('hygicare_cfg_notify_email')  || '';
+      // Ler configuracoes salvas
+      const cfgWrite    = localStorage.getItem('hygicare_cfg_sheetdb_write')  || CONFIG.SHEETDB_WRITE || '';
+      const cfgRead     = localStorage.getItem('hygicare_cfg_sheetdb_read')   || CONFIG.SHEETDB_READ  || '';
+      const cfgSync     = localStorage.getItem('hygicare_cfg_sync_interval')  || CONFIG.SYNC_INTERVAL_HOURS;
+      const cfgLimit    = parseInt(localStorage.getItem('hygicare_cfg_api_limit') || '500');
+      const cfgYellow   = localStorage.getItem('hygicare_cfg_warn_yellow')    || '70';
+      const cfgRed      = localStorage.getItem('hygicare_cfg_warn_red')       || '90';
+      const cfgSheets   = localStorage.getItem('hygicare_cfg_sheets_url')     || 'https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit';
+      const cfgEmail    = localStorage.getItem('hygicare_cfg_notify_email')   || '';
+      const apiUsedWrite = parseInt(localStorage.getItem('hygicare_api_count')       || '0');
+      const apiUsedRead  = parseInt(localStorage.getItem('hygicare_api_count_read')  || '0');
+      const apiUsedTotal = apiUsedWrite + apiUsedRead;
 
+      // Preencher campos
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-      set('cfg-gas-url',     cfgGas);
+      set('cfg-sheetdb-write', cfgWrite);
+      set('cfg-sheetdb-read',  cfgRead);
       set('cfg-sync-interval', cfgSync);
-      set('cfg-sheets-url',  cfgSheets);
-      set('cfg-notify-email', cfgEmail);
+      set('cfg-api-limit',     cfgLimit);
+      set('cfg-warn-yellow',   cfgYellow);
+      set('cfg-warn-red',      cfgRed);
+      set('cfg-api-used',      apiUsedWrite);
+      set('cfg-api-used-read', apiUsedRead);
+      set('cfg-sheets-url',    cfgSheets);
+      set('cfg-notify-email',  cfgEmail);
 
-      // Mostra domínio do GAS no card de sistema
-      const gasIdEl = document.getElementById('admin-gas-id');
-      if (gasIdEl) {
-        try { gasIdEl.textContent = cfgGas ? new URL(cfgGas).pathname.split('/')[4] || '—' : '—'; }
-        catch { gasIdEl.textContent = cfgGas ? cfgGas.slice(-20) : '—'; }
+      // IDs das APIs no card de sistema
+      const writeIdEl = document.getElementById('admin-write-id');
+      const readIdEl  = document.getElementById('admin-read-id');
+      if (writeIdEl) writeIdEl.textContent = (cfgWrite.split('/').pop() || '—');
+      if (readIdEl)  readIdEl.textContent  = (cfgRead.split('/').pop()  || '—');
+
+      // Barras de API — Escrita
+      const pctWrite = Math.min(Math.round(apiUsedWrite / cfgLimit * 100), 100);
+      const elCntW   = document.getElementById('admin-api-count-write');
+      const barW     = document.getElementById('admin-api-bar-write');
+      const lblW     = document.getElementById('admin-api-label-write');
+      if (elCntW) elCntW.textContent = apiUsedWrite;
+      if (lblW)   lblW.textContent   = `${pctWrite}% utilizado este mês`;
+      if (barW) {
+        barW.style.width = pctWrite + '%';
+        barW.style.background = pctWrite >= parseInt(cfgRed) ? '#dc2626' : pctWrite >= parseInt(cfgYellow) ? '#f59e0b' : '#ea580c';
       }
 
-      updateApiDisplay();
+      // Barras de API — Leitura
+      const pctRead = Math.min(Math.round(apiUsedRead / cfgLimit * 100), 100);
+      const elCntR  = document.getElementById('admin-api-count-read');
+      const barR    = document.getElementById('admin-api-bar-read');
+      const lblR    = document.getElementById('admin-api-label-read');
+      if (elCntR) elCntR.textContent = apiUsedRead;
+      if (lblR)   lblR.textContent   = `${pctRead}% utilizado este mês`;
+      if (barR) {
+        barR.style.width = pctRead + '%';
+        barR.style.background = pctRead >= parseInt(cfgRed) ? '#dc2626' : pctRead >= parseInt(cfgYellow) ? '#f59e0b' : '#2563eb';
+      }
 
-      // Link da planilha
+      // Total combinado
+      const pctTotal = Math.min(Math.round(apiUsedTotal / (cfgLimit * 2) * 100), 100);
+      const elTotal  = document.getElementById('admin-api-count');
+      const barTotal = document.getElementById('admin-api-bar');
+      const lblTotal = document.getElementById('admin-api-label');
+      if (elTotal)  elTotal.textContent  = apiUsedTotal;
+      if (lblTotal) lblTotal.textContent = `${pctTotal}% do total`;
+      if (barTotal) {
+        barTotal.style.width = pctTotal + '%';
+        barTotal.style.background = pctTotal >= parseInt(cfgRed) ? '#dc2626' : pctTotal >= parseInt(cfgYellow) ? '#f59e0b' : '#7c3aed';
+      }
+
+      // Atualiza também o contador do header
+      updateApiDisplay(apiUsedWrite);
+
+      // Link da planilha — abre via elemento <a> para evitar bloqueio do browser
       const sheetsBtn = document.getElementById('admin-sheets-link');
       if (sheetsBtn) {
         sheetsBtn.onclick = () => {
           const url = localStorage.getItem('hygicare_cfg_sheets_url') || 'https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit';
-          const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener';
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
         };
       }
     }
 
-    // Testar Google Apps Script e exibir status
+    // Testar ambas as APIs e exibir status
     async function testApis() {
       const dot    = document.getElementById('admin-status-dot');
       const txt    = document.getElementById('admin-status-text');
       const detail = document.getElementById('admin-status-detail');
+      const wBadge = document.getElementById('admin-write-status');
+      const rBadge = document.getElementById('admin-read-status');
       const btn    = document.getElementById('btn-test-apis');
 
-      if (dot)  dot.style.background = '#f59e0b';
-      if (txt)  txt.textContent      = 'Testando Apps Script...';
-      if (detail) detail.textContent = '';
+      if (dot)  dot.style.background  = '#f59e0b';
+      if (txt)  txt.textContent       = 'Testando APIs...';
+      if (detail) detail.textContent  = '';
       if (btn)  btn.disabled = true;
 
-      const gasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
-      if (!gasUrl || gasUrl.includes('YOUR_GAS_URL')) {
-        if (dot) dot.style.background = '#dc2626';
-        if (txt) txt.textContent = '❌ URL do Apps Script não configurada';
-        if (btn) btn.disabled = false;
-        return;
+      const writeUrl = CONFIG.SHEETDB_WRITE;
+      const readUrl  = CONFIG.SHEETDB_READ;
+
+      async function pingRead(url) {
+        if (!url || url.includes('YOUR_SHEETDB_ID')) return { ok: false, ms: 0, msg: 'URL não configurada' };
+        const t0 = Date.now();
+        try {
+          const r = await fetch(`${url}?sheet=${SHEETS.CLIENTS}&limit=1`);
+          const ms = Date.now() - t0;
+          if (r.ok) { addApiCount(1, 'read'); return { ok: true, ms }; }
+          return { ok: false, ms, msg: `HTTP ${r.status}` };
+        } catch (e) {
+          return { ok: false, ms: Date.now() - t0, msg: 'Sem conexão' };
+        }
       }
 
-      const t0 = Date.now();
-      try {
-        const r = await fetch(`${gasUrl}?sheet=${SHEETS.CLIENTS}`);
-        const ms = Date.now() - t0;
-        if (r.ok) {
-          if (dot) dot.style.background = '#16a34a';
-          if (txt) txt.textContent = `✅ Apps Script funcionando normalmente`;
-          if (detail) detail.textContent = `Resposta em ${ms}ms · Sem limites de requisições`;
-        } else {
-          if (dot) dot.style.background = '#dc2626';
-          if (txt) txt.textContent = `❌ Erro HTTP ${r.status}`;
-          if (detail) detail.textContent = `Verifique se a URL está correta e o script está implantado`;
-        }
-      } catch (e) {
-        if (dot) dot.style.background = '#dc2626';
-        if (txt) txt.textContent = '❌ Sem conexão com o Apps Script';
-        if (detail) detail.textContent = String(e);
+      // API de escrita: valida apenas a URL sintaticamente (sem fazer requisição
+      // para não consumir cota nem contar como chamada de escrita)
+      async function pingWrite(url) {
+        if (!url || url.includes('YOUR_SHEETDB_ID')) return { ok: false, ms: 0, msg: 'URL não configurada' };
+        try { new URL(url); } catch { return { ok: false, ms: 0, msg: 'URL inválida' }; }
+        return { ok: true, ms: 0 };
       }
-      updateApiDisplay();
+
+      const [wRes, rRes] = await Promise.all([pingWrite(writeUrl), pingRead(readUrl)]);
+
+      // Badges individuais
+      const badge = (el, ok, ms, msg) => {
+        if (!el) return;
+        el.textContent = ok ? `✅ ${ms}ms` : `❌ ${msg}`;
+        el.style.background = ok ? '#d1fae5' : '#fee2e2';
+        el.style.color      = ok ? '#065f46' : '#991b1b';
+      };
+      badge(wBadge, wRes.ok, wRes.ms, wRes.msg);
+      badge(rBadge, rRes.ok, rRes.ms, rRes.msg);
+
+      // Status geral
+      const bothOk = wRes.ok && rRes.ok;
+      const oneOk  = wRes.ok || rRes.ok;
+      if (dot) dot.style.background = bothOk ? '#16a34a' : oneOk ? '#f59e0b' : '#dc2626';
+      if (txt) txt.textContent = bothOk
+        ? '✅ Sistema funcionando normalmente'
+        : oneOk
+          ? '⚠️ Uma das APIs com problema'
+          : '❌ Ambas as APIs inacessíveis';
+      if (detail) {
+        const parts = [];
+        parts.push(`Escrita: ${wRes.ok ? `OK (${wRes.ms}ms)` : wRes.msg}`);
+        parts.push(`Leitura: ${rRes.ok ? `OK (${rRes.ms}ms)` : rRes.msg}`);
+        detail.textContent = parts.join('  ·  ');
+      }
+
       if (btn) btn.disabled = false;
     }
 
@@ -335,23 +457,57 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Salvar configuracoes
     document.getElementById('btn-save-config').addEventListener('click', () => {
-      const gas    = document.getElementById('cfg-gas-url')?.value.trim() || '';
-      const sync   = document.getElementById('cfg-sync-interval').value.trim();
-      const sheets = document.getElementById('cfg-sheets-url').value.trim();
+      const write    = document.getElementById('cfg-sheetdb-write').value.trim();
+      const read     = document.getElementById('cfg-sheetdb-read').value.trim();
+      const sync     = document.getElementById('cfg-sync-interval').value.trim();
+      const limit    = document.getElementById('cfg-api-limit').value.trim();
+      const yellow   = document.getElementById('cfg-warn-yellow').value.trim();
+      const red      = document.getElementById('cfg-warn-red').value.trim();
+      const apiUsed     = document.getElementById('cfg-api-used').value.trim();
+      const apiUsedRead = document.getElementById('cfg-api-used-read')?.value.trim() ?? '';
+      const sheets   = document.getElementById('cfg-sheets-url').value.trim();
       const notifyEmail = document.getElementById('cfg-notify-email')?.value.trim() || '';
-      const priceKg = document.getElementById('cfg-price-kg')?.value.trim() || '';
 
-      if (gas)    { localStorage.setItem('hygicare_cfg_gas_url', gas); CONFIG.GAS_URL = gas; }
-      if (sync)   { localStorage.setItem('hygicare_cfg_sync_interval', sync); CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync); }
-      if (sheets)   localStorage.setItem('hygicare_cfg_sheets_url', sheets);
+      if (write)  localStorage.setItem('hygicare_cfg_sheetdb_write', write);
+      if (read)   localStorage.setItem('hygicare_cfg_sheetdb_read',  read);
+      else        localStorage.setItem('hygicare_cfg_sheetdb_read',  CONFIG.SHEETDB_READ); // garante que nunca perde a URL de leitura
+      if (sync)   localStorage.setItem('hygicare_cfg_sync_interval', sync);
+      if (limit)  localStorage.setItem('hygicare_cfg_api_limit',     limit);
+      if (yellow) localStorage.setItem('hygicare_cfg_warn_yellow',   yellow);
+      if (red)    localStorage.setItem('hygicare_cfg_warn_red',      red);
+      if (sheets) localStorage.setItem('hygicare_cfg_sheets_url',    sheets);
       localStorage.setItem('hygicare_cfg_notify_email', notifyEmail);
-      if (priceKg !== '') localStorage.setItem('hygicare_cfg_price_kg', priceKg);
+      if (apiUsed !== '') {
+        localStorage.setItem('hygicare_api_count', apiUsed);
+        updateApiDisplay(parseInt(apiUsed));
+      }
+      if (apiUsedRead !== '') {
+        localStorage.setItem('hygicare_api_count_read', apiUsedRead);
+      }
+      // Garante que a chave de mês está no formato correto para evitar reset
+      localStorage.setItem('hygicare_api_month_v2', new Date().toISOString().slice(0, 7));
+
+      // Aplicar imediatamente
+      if (write) CONFIG.SHEETDB_WRITE       = write;
+      if (read)  CONFIG.SHEETDB_READ        = read;
+      if (sync)  CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync);
 
       const msg = document.getElementById('config-saved-msg');
       if (msg) { msg.textContent = '✅ Configuracoes salvas!'; setTimeout(() => msg.textContent = '', 3000); }
       refreshAdminPanel();
       testApis();
       toast('Configuracoes salvas!', 'success');
+    });
+
+    // Zerar contador de API
+    document.getElementById('btn-reset-api-count').addEventListener('click', () => {
+      if (!confirm('Zerar o contador de requisicoes de API?')) return;
+      localStorage.setItem('hygicare_api_count',      '0');
+      localStorage.setItem('hygicare_api_count_read', '0');
+      localStorage.setItem('hygicare_api_month_v2', new Date().toISOString().slice(0, 7));
+      updateApiDisplay(0);
+      refreshAdminPanel();
+      toast('Contador de API zerado!', 'success');
     });
 
     // Setar active inicial
@@ -418,13 +574,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     async function doRefresh(target = 'all') {
-      const gasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
-      if (!gasUrl || gasUrl.includes('YOUR_GAS_URL')) {
-        return toast('Configure a URL do Google Apps Script no Painel Admin primeiro!', 'warning');
+      if (!CONFIG.SHEETDB_READ || CONFIG.SHEETDB_READ.includes('YOUR_SHEETDB_ID')) {
+        return toast('Configure a API de leitura no Painel Admin primeiro!', 'warning');
       }
 
       const isAll = target === 'all';
-      const labelTarget = isAll ? 'todas as abas' : SHEET_MAP[target]?.label || target;
+      const cost  = isAll ? 5 : 1;
+      const remaining = parseInt(localStorage.getItem(API_KEY_READ) || '0');
+      const cfgLimit  = parseInt(localStorage.getItem('hygicare_cfg_api_limit') || '500');
+      if ((cfgLimit - remaining) < cost) {
+        return toast(`Limite da API de leitura atingido! Apenas ${cfgLimit - remaining} acessos restantes este mês.`, 'error');
+      }
+
+      const labelTarget = isAll ? 'todas as abas (5)' : SHEET_MAP[target]?.label || target;
+
+      // Confirmar apenas quando atualiza tudo (5 chamadas). Individual é silencioso.
+      if (isAll) {
+        if (!confirm(`🔄 Buscar dados atualizados do Google Sheets?\n\nIsso usará 5 dos seus ${cfgLimit - remaining} acessos API restantes este mês.`)) return;
+      }
 
       const btn = document.getElementById('btn-refresh-data');
       btn.disabled = true;
@@ -432,33 +599,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!isAll) toast(`🔄 Buscando "${labelTarget}"...`, 'info', 1500);
 
       try {
+        let sheetsToFetch = isAll ? Object.values(SHEET_MAP) : [SHEET_MAP[target]];
+        const results = await Promise.allSettled(
+          sheetsToFetch.map(s => fetch(`${CONFIG.SHEETDB_READ}?sheet=${s.sheet}`).then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+        );
+        const successCount = results.filter(r => r.status === 'fulfilled').length;
+        if (successCount > 0) addApiCount(successCount, 'read');
+
         let imported = 0;
-
-        if (isAll) {
-          // 1 única chamada busca TUDO — muito mais rápido que SheetDB (que fazia 5 chamadas)
-          const r = await fetch(`${gasUrl}?sheet=all`);
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const resp = await r.json();
-          const allData = resp.data || resp;
-
-          for (const { sheet, store, label } of Object.values(SHEET_MAP)) {
-            const items = Array.isArray(allData[sheet]) ? allData[sheet] : [];
-            console.log(`📥 ${label} (${items.length} itens)`);
+        for (let i = 0; i < sheetsToFetch.length; i++) {
+          const { store, label } = sheetsToFetch[i];
+          const result = results[i];
+          if (result.status === 'fulfilled') {
+            const items = Array.isArray(result.value) ? result.value : [];
+            console.log(`📥 ${label} (${items.length} itens):`, items);
+            // Para users sempre chama saveToStore para garantir remoção de excluídos
             if (store === 'users' || items.length > 0) {
               const saved = await saveToStore(store, items);
               imported += saved;
+              console.log(`✅ ${saved} ${label} importados`);
             }
+          } else {
+            console.warn(`⚠️ Falha ao buscar ${label}:`, result.reason);
+            toast(`Erro ao buscar ${label}`, 'error');
           }
-        } else {
-          // Aba individual
-          const { sheet, store, label } = SHEET_MAP[target];
-          const r = await fetch(`${gasUrl}?sheet=${sheet}`);
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const resp = await r.json();
-          const items = Array.isArray(resp) ? resp : (resp.data || []);
-          console.log(`📥 ${label} (${items.length} itens)`);
-          const saved = await saveToStore(store, items);
-          imported += saved;
         }
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
@@ -478,6 +642,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (updated.includes('users') || isAll) {
           const allDbUsers = await dbGetAll_raw('users');
           localStorage.setItem('hygicare_users', JSON.stringify(allDbUsers));
+          // Reconstruir window.USERS do zero para refletir remoções
           window.USERS = window.USERS.filter(u => allDbUsers.some(du => du.username === u.username));
           allDbUsers.forEach(du => {
             if (!du.username) return;
@@ -490,13 +655,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           await renderUsersList();
         }
         await updateSyncStatus();
-        updateApiDisplay();
 
         toast(`✅ "${labelTarget}" atualizado(s)! (${imported} registro(s))`, 'success');
 
       } catch (err) {
         console.error('❌ Erro no Atualizar:', err);
-        toast('❌ Sem conexão ou erro no Apps Script. Verifique e tente novamente.', 'error', 6000);
+        toast('❌ Sem conexão com a internet. Verifique sua conexão e tente novamente.', 'error', 6000);
       } finally {
         btn.disabled = false;
         btn.textContent = '🔄 Atualizar';
@@ -541,7 +705,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (n.executed !== undefined && n.executed !== '')  n.executed = parseFloat(n.executed) || 0;
       if (n.canceled !== undefined && n.canceled !== '')  n.canceled = parseFloat(n.canceled) || 0;
       if (n.total    !== undefined && n.total    !== '')  n.total    = parseFloat(n.total)    || 0;
-      if (n.price_kg !== undefined && n.price_kg !== '')  n.price_kg = parseFloat(n.price_kg) || 0;
       return n;
     }
 
@@ -582,44 +745,51 @@ document.addEventListener('DOMContentLoaded', async () => {
       return saved;
     }
 
-    // ── Helpers de comunicação com o Google Apps Script ──────────────
-    function _gasUrl() {
-      return localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
-    }
-    function _gasOk() {
-      const u = _gasUrl();
-      return u && !u.includes('YOUR_GAS_URL');
-    }
-    async function _gasPost(body) {
-      const r = await fetch(_gasUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (r.ok) { updateApiDisplay(); return true; }
-      console.warn(`⚠️ GAS falhou [${r.status}]:`, await r.text());
-      return false;
-    }
-
-    // Inserir nova linha na planilha
+    // Postar para SheetDB (com controle de API)
+    // SheetDB exige body no formato: {"data": { campos... }}
     async function postToSheetDB(sheetName, data) {
-      if (!_gasOk() || !navigator.onLine) return false;
-      try { return await _gasPost({ action: 'insert', sheet: sheetName, data }); }
-      catch (e) { console.warn('postToSheetDB error:', e); return false; }
+      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) return false;
+      if (!navigator.onLine) return false;
+      try {
+        const r = await fetch(`${CONFIG.SHEETDB_WRITE}?sheet=${sheetName}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: data })
+        });
+        if (r.ok) { addApiCount(1); return true; }
+        console.warn(`⚠️ SheetDB POST falhou [${r.status}]:`, await r.text());
+        return false;
+      } catch (e) { console.warn('postToSheetDB error:', e); return false; }
     }
 
-    // Atualizar linha existente na planilha
+    // Atualizar linha no SheetDB via PATCH (busca pelo campo id)
     async function patchSheetDB(sheetName, id, data) {
-      if (!_gasOk() || !navigator.onLine) return false;
-      try { return await _gasPost({ action: 'update', sheet: sheetName, id, data }); }
-      catch (e) { console.warn('patchSheetDB error:', e); return false; }
+      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) return false;
+      if (!navigator.onLine) return false;
+      try {
+        const url = `${CONFIG.SHEETDB_WRITE}/id/${id}?sheet=${sheetName}`;
+        const r = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: data })
+        });
+        if (r.ok) { addApiCount(1); return true; }
+        console.warn(`⚠️ SheetDB PATCH falhou [${r.status}]:`, await r.text());
+        return false;
+      } catch (e) { console.warn('patchSheetDB error:', e); return false; }
     }
 
-    // Excluir linha da planilha
+    // Excluir linha no SheetDB via DELETE (busca pelo campo id)
     async function deleteSheetDB(sheetName, id) {
-      if (!_gasOk() || !navigator.onLine) return false;
-      try { return await _gasPost({ action: 'delete', sheet: sheetName, id }); }
-      catch (e) { console.warn('deleteSheetDB error:', e); return false; }
+      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) return false;
+      if (!navigator.onLine) return false;
+      try {
+        const url = `${CONFIG.SHEETDB_WRITE}/id/${id}?sheet=${sheetName}`;
+        const r = await fetch(url, { method: 'DELETE' });
+        if (r.ok) { addApiCount(1); return true; }
+        console.warn(`⚠️ SheetDB DELETE falhou [${r.status}]:`, await r.text());
+        return false;
+      } catch (e) { console.warn('deleteSheetDB error:', e); return false; }
     }
 
 
@@ -762,7 +932,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       formClient.seller.value      = c.seller || '';
       formClient.email_client.value = c.email_client || '';
       formClient.email_seller.value = c.email_seller || '';
-      formClient.price_kg.value     = c.price_kg != null && c.price_kg !== '' ? c.price_kg : '';
       formClient.send_client.checked = !!c.send_client;
       formClient.send_seller.checked = !!c.send_seller;
       formClientCard.classList.remove('hidden');
@@ -879,7 +1048,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               ${c.email_client ? `<span class="detail-chip">📧 ${c.email_client}</span>` : ''}
               ${c.send_client ? `<span class="badge badge-green">✉️ Envia cliente</span>` : ''}
               ${c.send_seller ? `<span class="badge badge-green">✉️ Envia vendedor</span>` : ''}
-              ${c.price_kg > 0 ? `<span class="badge badge-yellow">💰 R$ ${parseFloat(c.price_kg).toFixed(2)}/kg</span>` : ''}
             </div>
           </div>
           <div class="list-item-actions">
@@ -1145,8 +1313,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dateEnd   = document.getElementById('prod-date-end').value;
       if (!dateStart || !dateEnd) return toast('Preencha as datas do período', 'warning');
 
-      if (!_gasOk()) {
-        return toast('Configure a URL do Apps Script no Painel Admin primeiro!', 'warning');
+      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) {
+        return toast('Configure a API de escrita no Painel Admin primeiro!', 'warning');
       }
 
       const rows = [];
@@ -1186,18 +1354,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Atualiza local com id
           await dbPut('records', rWithId);
 
-          const res = await fetch(_gasUrl(), {
+          const res = await fetch(`${CONFIG.SHEETDB_WRITE}?sheet=${SHEETS.RECORDS}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'insert', sheet: SHEETS.RECORDS, data: rWithId })
+            body: JSON.stringify({ data: rWithId })
           });
           if (res.ok) {
+            addApiCount(1);
             synced++;
           } else {
-            // Falhou no GAS — remove o registro local para não duplicar
+            // Falhou no SheetDB — remove o registro local para não duplicar
             await dbDelete('records', newId);
             const errText = await res.text();
-            console.error(`❌ GAS POST falhou [${res.status}]:`, errText);
+            console.error(`❌ SheetDB POST falhou [${res.status}]:`, errText);
             toast(`Erro ao enviar registro ${synced + 1}: ${res.status}. Verifique a conexão e tente novamente.`, 'error', 7000);
             return;
           }
@@ -1407,7 +1576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, period, createdMonth, monthSortKey, priceKg: parseFloat(client?.price_kg || 0), rows: [], totalKg: 0 };
+        if (!grouped[key]) grouped[key] = { clientName, period, createdMonth, monthSortKey, rows: [], totalKg: 0 };
         grouped[key].rows.push({ machineName, procName, executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
@@ -1484,6 +1653,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
                 <span class="badge badge-gray">${g.rows.length} linha(s)</span>
                 <button class="btn-record-action btn-print" onclick="window._printGroup('${safeKey}')" title="Imprimir relatório">🖨️ Imprimir</button>
+                <button class="btn-record-action btn-pdf" onclick="window._pdfGroup('${safeKey}')" title="Salvar como PDF">📥 PDF</button>
                 <button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>
                 ${currentUser?.role === 'admin' ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}')" title="Excluir registro">🗑️ Excluir</button>` : ''}
                 <span style="font-size:0.8rem;color:var(--muted)">▼</span>
@@ -1516,256 +1686,253 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
       }).join('');
 
-    }
-
-    // ---- Função compartilhada: gera HTML do relatório ----
-    async function _buildReportHtml(g, mode) {
-        // mode: 'print' (auto-abre dialog) | 'pdf' (mostra botão salvar)
-
-        // Agrupa linhas por máquina
-        const byMachine = {};
-        g.rows.forEach(row => {
-          if (!byMachine[row.machineName]) byMachine[row.machineName] = [];
-          byMachine[row.machineName].push(row);
-        });
-
-        const COLORS = ['#2563eb','#ef4444','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#e11d48'];
-
-        // Gera canvas de gráfico donut para cada máquina
-        async function makeChartImg(labels, data, colors) {
-          return new Promise(resolve => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 320; canvas.height = 240;
-            canvas.style.position = 'fixed';
-            canvas.style.left = '-9999px';
-            document.body.appendChild(canvas);
-            const ctx = canvas.getContext('2d');
-            const total = data.reduce((s, v) => s + v, 0);
-            const percentPlugin = {
-              id: 'percentLabels',
-              afterDraw(chart) {
-                const { ctx: c2 } = chart;
-                chart.data.datasets.forEach((dataset, di) => {
-                  chart.getDatasetMeta(di).data.forEach((arc, index) => {
-                    const value = dataset.data[index];
-                    const pct = total > 0 ? ((value / total) * 100) : 0;
-                    if (pct < 4) return;
-                    const { x, y } = arc.tooltipPosition();
-                    c2.save();
-                    c2.fillStyle = '#fff';
-                    c2.font = 'bold 10px Arial';
-                    c2.textAlign = 'center';
-                    c2.textBaseline = 'middle';
-                    c2.shadowColor = 'rgba(0,0,0,0.5)';
-                    c2.shadowBlur = 3;
-                    c2.fillText(pct.toFixed(0) + '%', x, y);
-                    c2.restore();
-                  });
-                });
-              }
-            };
-            const chart = new Chart(ctx, {
-              type: 'doughnut',
-              data: { labels, datasets: [{ data, backgroundColor: colors }] },
-              plugins: [percentPlugin],
-              options: {
-                responsive: false,
-                animation: {
-                  duration: 400,
-                  onComplete: () => {
-                    const img = canvas.toDataURL('image/png');
-                    chart.destroy();
-                    document.body.removeChild(canvas);
-                    resolve(img);
-                  }
-                },
-                plugins: {
-                  legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } },
-                  tooltip: { enabled: false }
-                },
-                cutout: '50%'
-              }
-            });
-          });
-        }
-
-        // Monta seções de cada máquina
-        const machineNames = Object.keys(byMachine);
-        const machineSections = [];
-        for (let i = 0; i < machineNames.length; i++) {
-          const mName = machineNames[i];
-          const rows  = byMachine[mName];
-          const totalKgMaq = rows.reduce((s, r) => s + parseFloat(r.total||0), 0);
-          const labels = rows.map(r => r.procName);
-          const data   = rows.map(r => parseFloat(r.total||0));
-          const colors = COLORS.slice(0, rows.length);
-          const chartImg = await makeChartImg(labels, data, colors);
-
-          const rowsHtml = rows.map(r => `
-            <tr>
-              <td>${r.procName}</td>
-              <td class="c">${r.executed}</td>
-              <td class="c">${r.canceled}</td>
-              <td class="r">${parseFloat(r.total).toFixed(0)} kg</td>
-            </tr>`).join('');
-
-          machineSections.push(`
-            <div class="section">
-              <div class="section-title">${i+1}ª MÁQUINA — ${mName.toUpperCase()}</div>
-              <div class="section-body">
-                <div class="table-wrap">
-                  <table>
-                    <thead><tr><th>Total de processos</th><th class="c">Exec.</th><th class="c">Cancelados</th><th class="r">Total</th></tr></thead>
-                    <tbody>${rowsHtml}</tbody>
-                    <tfoot><tr class="foot"><td colspan="3"><strong>Total em KG</strong></td><td class="r"><strong>${totalKgMaq.toFixed(0)} kg</strong></td></tr></tfoot>
-                  </table>
-                </div>
-                <div class="chart-wrap">
-                  <img src="${chartImg}" style="width:100%;max-width:280px" />
-                </div>
-              </div>
-            </div>
-          `);
-        }
-
-        // Total geral
-        const totalData     = machineNames.map(m => byMachine[m].reduce((s,r) => s + parseFloat(r.total||0), 0));
-        const totalChartImg = await makeChartImg(machineNames, totalData, COLORS.slice(0, machineNames.length));
-        const grandTotal    = totalData.reduce((s,v) => s+v, 0);
-
-        const allProcTotals = {};
-        g.rows.forEach(r => { allProcTotals[r.procName] = (allProcTotals[r.procName]||0) + parseFloat(r.total||0); });
-        const totalRowsHtml = Object.entries(allProcTotals).map(([proc, tot]) => `
-          <tr><td>${proc}</td><td class="r">${tot.toFixed(0)} kg</td></tr>`).join('');
-
-        const priceKg = parseFloat(g.priceKg || localStorage.getItem('hygicare_price_kg') || '0');
-        const priceHtml = priceKg > 0
-          ? `<div class="price-row">Preço/kg: R$ ${priceKg.toFixed(2)} &nbsp;|&nbsp; <strong>Total: R$ ${(grandTotal * priceKg).toFixed(2)}</strong></div>`
-          : '';
-
-        // Botão PDF flutuante (só no mode=pdf)
-        const pdfBarHtml = mode === 'pdf' ? `
-          <div class="pdf-bar no-print">
-            <span>📄 Para salvar como PDF: clique em <strong>Imprimir</strong> → selecione <strong>"Salvar como PDF"</strong></span>
-            <button onclick="window.print()" class="pdf-btn">🖨️ Salvar como PDF</button>
-          </div>` : '';
-
-        const scriptHtml = mode === 'print'
-          ? `<script>window.onload=()=>{ setTimeout(()=>window.print(), 300); }<\/script>`
-          : '';
-
-        const now = new Date();
-        const dateStr = now.toLocaleDateString('pt-BR');
-        const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-        return `<!DOCTYPE html><html lang="pt-BR"><head>
-          <meta charset="utf-8"/>
-          <title>Relatório — ${g.clientName}</title>
-          <style>
-            * { box-sizing:border-box; margin:0; padding:0; }
-            body { font-family:Arial,sans-serif; background:#fff; color:#1e293b; }
-            /* ── Barra de impressão (só na tela) ── */
-            .pdf-bar { display:flex; align-items:center; justify-content:space-between; gap:12px;
-              background:#1e40af; color:#fff; padding:10px 20px; font-size:0.85rem; }
-            .pdf-btn { background:#fff; color:#1e40af; border:none; border-radius:6px;
-              padding:7px 18px; font-size:0.85rem; font-weight:700; cursor:pointer; white-space:nowrap; }
-            .pdf-btn:hover { background:#dbeafe; }
-            @media print { .no-print { display:none !important; } body { padding:0; } }
-            /* ── Cabeçalho do documento ── */
-            .page-meta { display:flex; justify-content:space-between; align-items:center;
-              padding:6px 20px; border-bottom:1px solid #e2e8f0; font-size:0.72rem; color:#64748b; }
-            .report-body { padding:16px 20px; }
-            .report-header { text-align:center; border:2px solid #334155; border-radius:6px;
-              padding:12px 16px; margin-bottom:14px; }
-            .report-header h1 { font-size:1.4rem; font-weight:900; letter-spacing:.05em; color:#0f172a; }
-            .report-header .sub { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
-            .report-header .period { background:#f1f5f9; border:1px solid #cbd5e1;
-              padding:4px 16px; font-size:0.85rem; border-radius:4px; letter-spacing:.03em; }
-            /* ── Seções por máquina ── */
-            .section { border:1px solid #cbd5e1; border-radius:6px; margin-bottom:14px; overflow:hidden; page-break-inside:avoid; }
-            .section-title { background:#334155; color:#fff; font-size:0.82rem; font-weight:700; padding:6px 14px; letter-spacing:.04em; }
-            .section-body { display:flex; }
-            .table-wrap { flex:1; padding:10px; }
-            .chart-wrap { width:270px; display:flex; align-items:center; justify-content:center;
-              padding:8px 12px; border-left:1px solid #e2e8f0; background:#fafafa; }
-            table { width:100%; border-collapse:collapse; font-size:0.8rem; }
-            thead th { background:#dbeafe; color:#1e40af; padding:5px 8px; text-align:left;
-              font-size:0.75rem; border:1px solid #bfdbfe; font-weight:700; }
-            tbody tr:nth-child(even) td { background:#f8fafc; }
-            tbody td { padding:5px 8px; border:1px solid #e2e8f0; }
-            tfoot .foot td { padding:6px 8px; background:#dcfce7; font-size:0.82rem;
-              border:1px solid #86efac; color:#15803d; font-weight:700; }
-            .c { text-align:center; }
-            .r { text-align:right; font-weight:600; color:#15803d; }
-            /* ── Seção total geral ── */
-            .total-section { border:2px solid #1e40af; border-radius:6px; margin-bottom:14px; overflow:hidden; page-break-inside:avoid; }
-            .total-title { background:#1e40af; color:#fff; font-size:0.9rem; font-weight:700;
-              padding:8px 14px; letter-spacing:.04em; text-align:center; }
-            .price-row { text-align:center; font-size:0.85rem; padding:8px 10px; margin-top:8px;
-              background:#fefce8; border:1px solid #fde68a; border-radius:4px; color:#92400e; }
-          </style></head><body>
-          ${pdfBarHtml}
-          <div class="page-meta">
-            <span>${dateStr}, ${timeStr}</span>
-            <span>Relatório — ${g.clientName}</span>
-            <span></span>
-          </div>
-          <div class="report-body">
-            <div class="report-header">
-              <h1>${g.clientName.toUpperCase()}</h1>
-              <div class="sub">
-                <span style="font-size:0.78rem;color:#64748b">Hygicare Lavanderia</span>
-                <span class="period">${g.period}</span>
-                <span style="font-size:0.78rem;color:#64748b">Gerado: ${dateStr}</span>
-              </div>
-            </div>
-            ${machineSections.join('')}
-            <div class="total-section">
-              <div class="total-title">TOTAL GERAL</div>
-              <div class="section-body">
-                <div class="table-wrap">
-                  <table>
-                    <thead><tr><th>Processo</th><th class="r">Total (kg)</th></tr></thead>
-                    <tbody>${totalRowsHtml}</tbody>
-                    <tfoot><tr class="foot"><td><strong>Total em KG</strong></td><td class="r"><strong>${grandTotal.toFixed(0)} kg</strong></td></tr></tfoot>
-                  </table>
-                  ${priceHtml}
-                </div>
-                <div class="chart-wrap">
-                  <img src="${totalChartImg}" style="width:100%;max-width:270px" />
-                </div>
-              </div>
-            </div>
-          </div>
-          ${scriptHtml}
-          </body></html>`;
-      }
-
-      window._printGroup = async function(safeKey) {
+      // ---- Imprimir um grupo ----
+      window._printGroup = function(safeKey) {
         const g = window._recordGroups[safeKey];
         if (!g) return;
-
-        // Abre a janela ANTES dos awaits (necessário para não ser bloqueado como popup)
-        const win = window.open('', '_blank', 'width=960,height=800');
+        const html = buildGroupHtml(g);
+        const win = window.open('', '_blank', 'width=900,height=700');
         if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
-
-        win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head>
+        win.document.write(`
+          <!DOCTYPE html><html lang="pt-BR"><head>
           <meta charset="utf-8"/>
           <title>Relatório — ${g.clientName}</title>
           <style>
-            * { box-sizing:border-box; margin:0; padding:0; }
-            body { font-family:Arial,sans-serif; background:#fff; color:#1e293b; padding:20px; }
-            .loading { text-align:center; padding:40px; font-size:1.1rem; color:#64748b; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 2rem; color: #0f172a; }
+            h1 { color: #1e40af; font-size: 1.4rem; margin-bottom: 0.3rem; }
+            .meta { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+            table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+            th { background: #eff6ff; padding: 0.5rem 0.8rem; text-align: left; font-size: 0.78rem; text-transform: uppercase; border-bottom: 2px solid #bfdbfe; }
+            td { padding: 0.5rem 0.8rem; border-bottom: 1px solid #f1f5f9; font-size: 0.88rem; }
+            .total-row td { font-weight: 700; background: #f0fdf4; color: #065f46; border-top: 2px solid #a7f3d0; }
+            .right { text-align: right; }
+            .center { text-align: center; }
+            @media print { body { padding: 0; } }
           </style></head><body>
-          <div class="loading">⏳ Gerando relatório com gráficos...</div>
-        </body></html>`);
-        win.document.close();
-
-        const html = await _buildReportHtml(g, 'print');
-        win.document.open();
-        win.document.write(html);
+          ${html}
+          <script>window.onload=()=>{window.print();}<\/script>
+          </body></html>
+        `);
         win.document.close();
       };
+
+      // ---- Gerar PDF de um grupo ----
+      window._pdfGroup = function(safeKey) {
+        const g = window._recordGroups[safeKey];
+        if (!g) return;
+        try {
+          const doc = new jspdf.jsPDF('p', 'mm', 'a4');
+          const W = 210, margin = 15;
+
+          // Header
+          doc.setFillColor(37, 99, 235);
+          doc.rect(0, 0, W, 20, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(13); doc.setFont(undefined, 'bold');
+          doc.text('HYGICARE LAVANDERIA', margin, 13);
+          doc.setFontSize(9); doc.setFont(undefined, 'normal');
+          doc.text('Relatório de Produção', W - margin, 13, { align: 'right' });
+
+          let y = 30;
+          doc.setTextColor(15, 23, 42);
+          doc.setFontSize(12); doc.setFont(undefined, 'bold');
+          doc.text(`Cliente: ${g.clientName}`, margin, y); y += 7;
+          doc.setFontSize(9); doc.setFont(undefined, 'normal');
+          doc.setTextColor(71, 85, 105);
+          doc.text(`Período: ${g.period}`, margin, y); y += 7;
+          doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, margin, y); y += 10;
+
+          // Cabeçalho tabela
+          doc.setFillColor(239, 246, 255);
+          doc.rect(margin, y - 5, W - margin * 2, 8, 'F');
+          doc.setTextColor(30, 64, 175);
+          doc.setFontSize(8); doc.setFont(undefined, 'bold');
+          const cols = [margin, 60, 100, 125, 150, 172];
+          const headers = ['Máquina', 'Processo', 'Exec.', 'Cancel.', 'Cap.(kg)', 'Total(kg)'];
+          headers.forEach((h, i) => doc.text(h, cols[i], y));
+          y += 7;
+
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(15, 23, 42);
+          let totalGeral = 0;
+          g.rows.forEach(row => {
+            if (y > 270) { doc.addPage(); y = 20; }
+            doc.setDrawColor(241, 245, 249);
+            doc.line(margin, y + 2, W - margin, y + 2);
+            doc.text(String(row.machineName).substring(0, 22), cols[0], y);
+            doc.text(String(row.procName).substring(0, 20), cols[1], y);
+            doc.text(String(row.executed), cols[2], y);
+            doc.text(String(row.canceled), cols[3], y);
+            doc.text(String(row.capacity), cols[4], y);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(5, 150, 105);
+            doc.text(parseFloat(row.total).toFixed(2), cols[5], y);
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(15, 23, 42);
+            totalGeral += parseFloat(row.total);
+            y += 7;
+          });
+
+          // Total geral
+          y += 3;
+          doc.setFillColor(240, 253, 244);
+          doc.rect(margin, y - 4, W - margin * 2, 9, 'F');
+          doc.setFont(undefined, 'bold');
+          doc.setFontSize(10);
+          doc.setTextColor(5, 150, 105);
+          doc.text(`TOTAL GERAL: ${totalGeral.toFixed(2)} kg`, W - margin, y + 1, { align: 'right' });
+
+          const fileName = `relatorio_${g.clientName.replace(/\s+/g, '_')}_${g.period.replace(/[→\s]/g, '-').replace(/-+/g, '-')}.pdf`;
+          doc.save(fileName);
+          toast('PDF salvo com sucesso!', 'success');
+        } catch(e) {
+          console.error(e);
+          toast('Erro ao gerar PDF: ' + e.message, 'error');
+        }
+      };
+
+      function buildGroupHtml(g) {
+        const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const rows = g.rows.map(r => `
+          <tr>
+            <td>${esc(r.machineName)}</td>
+            <td>${esc(r.procName)}</td>
+            <td class="center">${esc(r.executed)}</td>
+            <td class="center">${esc(r.canceled)}</td>
+            <td class="center">${esc(r.capacity)} kg</td>
+            <td class="right"><strong>${parseFloat(r.total).toFixed(2)} kg</strong></td>
+          </tr>
+        `).join('');
+        return `
+          <h1>🧺 Hygicare Lavanderia — Relatório de Produção</h1>
+          <div class="meta">
+            <strong>Cliente:</strong> ${esc(g.clientName)} &nbsp;|&nbsp;
+            <strong>Período:</strong> ${esc(g.period)} &nbsp;|&nbsp;
+            <strong>Gerado em:</strong> ${new Date().toLocaleString('pt-BR')}
+          </div>
+          <table>
+            <thead>
+              <tr><th>Máquina</th><th>Processo</th><th class="center">Exec.</th><th class="center">Cancel.</th><th class="center">Cap.</th><th class="right">Total</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td colspan="5"><strong>TOTAL GERAL</strong></td>
+                <td class="right"><strong>${g.totalKg.toFixed(2)} kg</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        `;
+      }
+    }
+
+
+    async function generatePdf(clientId, start, end) {
+      const clients   = await dbGetAll_raw('clients');
+      const machines  = await dbGetAll_raw('machines');
+      const processes = await dbGetAll_raw('processes');
+      let   records   = await dbGetAll_raw('records');
+
+      const client = clients.find(c => c.id === clientId);
+      if (!client) return toast('Cliente não encontrado', 'error');
+
+      // Filtrar por período
+      if (start) records = records.filter(r => !r.date_start || r.date_start >= start);
+      if (end)   records = records.filter(r => !r.date_end   || r.date_end   <= end);
+      records = records.filter(r => r.client_id === clientId);
+
+      const clientMachines = machines.filter(m => Number(m.client_id) === Number(clientId));
+      if (!clientMachines.length) return toast('Este cliente não possui máquinas cadastradas', 'warning');
+
+      const doc = new jspdf.jsPDF('p', 'mm', 'a4');
+      const W = 210, margin = 15;
+      let firstPage = true;
+
+      for (const machine of clientMachines) {
+        if (!firstPage) doc.addPage();
+        firstPage = false;
+
+        const procs = processes.filter(p => Number(p.machine_id) === Number(machine.id));
+        const recs  = records.filter(r => Number(r.machine_id) === Number(machine.id));
+        const rows  = procs.map(p => {
+          const recs2    = records.filter(r => Number(r.process_id) === Number(p.id));
+          const executed = recs2.reduce((s, x) => s + (x.executed || 0), 0);
+          const canceled = recs2.reduce((s, x) => s + (x.canceled || 0), 0);
+          const capacity = (p.capacity && p.capacity > 0) ? p.capacity : machine.capacity;
+          const total    = recs2.reduce((s, x) => s + (x.total || 0), 0);
+          return { name: p.name, executed, canceled, capacity, total };
+        });
+
+        // Header PDF
+        doc.setFillColor(37, 99, 235);
+        doc.rect(0, 0, W, 20, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(14); doc.setFont(undefined, 'bold');
+        doc.text('HYGICARE LAVANDERIA', margin, 13);
+        doc.setFontSize(9); doc.setFont(undefined, 'normal');
+        doc.text('Sistema de Gestão de Produção', W - margin, 13, { align: 'right' });
+
+        doc.setTextColor(15, 23, 42);
+        let y = 30;
+        doc.setFontSize(11); doc.setFont(undefined, 'bold');
+        doc.text(`Cliente: ${client.name}`, margin, y); y += 7;
+        doc.setFontSize(9); doc.setFont(undefined, 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Cidade: ${client.city || '-'}  |  Vendedor: ${client.seller || '-'}`, margin, y); y += 5;
+        doc.text(`Período: ${start || 'Todos'} a ${end || 'Todos'}`, margin, y); y += 5;
+        doc.text(`Máquina: ${machine.name} — Capacidade: ${machine.capacity} kg`, margin, y); y += 8;
+
+        // Tabela
+        doc.setTextColor(15, 23, 42);
+        const cols = [margin, 80, 105, 130, 160];
+        doc.setFillColor(241, 245, 249);
+        doc.rect(margin, y - 4, W - margin * 2, 8, 'F');
+        doc.setFontSize(8); doc.setFont(undefined, 'bold');
+        ['Processo', 'Exec.', 'Cancel.', 'Cap.(kg)', 'Total(kg)'].forEach((h, i) => doc.text(h, cols[i], y));
+        y += 6;
+        doc.setFont(undefined, 'normal');
+
+        let totalGeral = 0;
+        rows.forEach(r => {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.text(String(r.name).substring(0, 30), cols[0], y);
+          doc.text(String(r.executed), cols[1], y);
+          doc.text(String(r.canceled), cols[2], y);
+          doc.text(String(r.capacity), cols[3], y);
+          doc.text(r.total.toFixed(2), cols[4], y);
+          totalGeral += r.total;
+          y += 6;
+        });
+
+        y += 2;
+        doc.setFont(undefined, 'bold');
+        doc.text(`TOTAL GERAL: ${totalGeral.toFixed(2)} kg`, W - margin, y, { align: 'right' });
+
+        // Gráfico pizza
+        if (rows.some(r => r.total > 0)) {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 300; canvas.height = 300;
+            const ctx = canvas.getContext('2d');
+            const colors = ['#2563eb','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316'];
+            new Chart(ctx, {
+              type: 'pie',
+              data: {
+                labels: rows.map(r => r.name),
+                datasets: [{ data: rows.map(r => r.total || 0), backgroundColor: colors }]
+              },
+              options: { animation: false, plugins: { legend: { position: 'bottom' } } }
+            });
+            await new Promise(r => setTimeout(r, 600));
+            const img = canvas.toDataURL('image/png');
+            doc.addImage(img, 'PNG', W / 2, y + 5, 80, 60);
+          } catch (e) { console.warn('Chart error:', e); }
+        }
+      }
+
+      doc.save(`relatorio_${client.name.replace(/\s+/g,'_')}_${start || 'geral'}.pdf`);
+      toast('PDF gerado com sucesso!', 'success');
+    }
 
     // =====================================================
     // RENDER INICIAL
@@ -1927,10 +2094,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Botões de filtro dos gráficos
     document.getElementById('btn-apply-charts')?.addEventListener('click', () => renderCharts());
-    // Auto-aplicar filtros ao mudar qualquer select/input de gráfico
-    ['chart-filter-start','chart-filter-end','chart-filter-client','chart-filter-seller'].forEach(id => {
-      document.getElementById(id)?.addEventListener('change', () => renderCharts());
-    });
     document.getElementById('btn-clear-charts')?.addEventListener('click', () => {
       ['chart-filter-start','chart-filter-end','chart-filter-client','chart-filter-seller']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -1960,20 +2123,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       list.innerHTML = filtered.map(u => `
         <div class="list-item">
-          <div class="list-item-content">
+          <div class="list-item-info">
             <div class="list-item-name">
               ${u.name || u.username}
               <span class="user-chip-role ${u.role === 'admin' ? 'role-admin' : 'role-vendedor'}">${u.role || 'vendedor'}</span>
             </div>
-            <div class="list-item-details">
-              <span class="detail-chip">👤 ${u.username}</span>
-              ${u.email ? `<span class="detail-chip">📧 ${u.email}</span>` : ''}
+            <div class="list-item-meta">
+              👤 ${u.username}${u.email ? ` · 📧 ${u.email}` : ''}
             </div>
           </div>
           <div class="list-item-actions">
             <button class="btn-edit" onclick="window._editUser(${u.id})">✏️ Editar</button>
             ${u.username !== currentUser?.username
-              ? `<button class="btn-danger" onclick="window._deleteUser(${u.id}, '${u.username}')">🗑️</button>`
+              ? `<button class="btn-delete" onclick="window._deleteUser(${u.id}, '${u.username}')">🗑️</button>`
               : '<span style="font-size:0.75rem;color:#94a3b8">(você)</span>'}
           </div>
         </div>
