@@ -592,6 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       const isAll = target === 'all';
+      const labelTarget = isAll ? 'Todos os dados' : (SHEET_MAP[target]?.label || target);
 
       if (isAll && !confirm('🔄 Buscar dados atualizados do Google Sheets?')) return;
 
@@ -663,7 +664,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       } catch (err) {
         console.error('❌ Erro no Atualizar:', err);
-        toast('❌ Sem conexão com a internet. Verifique sua conexão e tente novamente.', 'error', 6000);
+        const msg = err instanceof TypeError ? '❌ Sem conexão com a internet.' : `❌ Erro: ${err.message || err}`;
+        toast(msg, 'error', 6000);
       } finally {
         btn.disabled = false;
         btn.textContent = '🔄 Atualizar';
