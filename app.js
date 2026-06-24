@@ -922,19 +922,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function deleteClient(id) {
       if (!confirm('Excluir este cliente? Todas as máquinas e processos vinculados também serão removidos.')) return;
+
+      // Tentar GAS primeiro; se falhar, perguntar se exclui só localmente
+      const gasOk = await deleteSheetDB(SHEETS.CLIENTS, id);
+      if (!gasOk && navigator.onLine) {
+        const forceLocal = confirm('Não foi possível excluir no Google Sheets (o registro pode não estar sincronizado).\n\nExcluir apenas localmente?');
+        if (!forceLocal) return;
+      }
+
+      // Excluir localmente em cascata
       const machines = (await dbGetAll_raw('machines')).filter(m => m.client_id === id);
       for (const m of machines) {
         const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === m.id);
         for (const p of processes) {
           await dbDelete('processes', p.id);
-          await deleteSheetDB(SHEETS.PROCESSES, p.id);
+          if (gasOk) await deleteSheetDB(SHEETS.PROCESSES, p.id);
         }
         await dbDelete('machines', m.id);
-        await deleteSheetDB(SHEETS.MACHINES, m.id);
+        if (gasOk) await deleteSheetDB(SHEETS.MACHINES, m.id);
       }
       await dbDelete('clients', id);
-      const ok = await deleteSheetDB(SHEETS.CLIENTS, id);
-      toast(ok ? 'Cliente excluído!' : 'Cliente excluído localmente (verifique o Google Sheets)', ok ? 'success' : 'warning');
+      toast(gasOk ? 'Cliente excluído!' : 'Cliente excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
       await refreshClientsSelects();
       await renderClientsList();
     }
@@ -954,14 +962,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function deleteMachine(id) {
       if (!confirm('Excluir esta máquina? Os processos vinculados também serão removidos.')) return;
+      const gasOk = await deleteSheetDB(SHEETS.MACHINES, id);
+      if (!gasOk && navigator.onLine) {
+        const forceLocal = confirm('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?');
+        if (!forceLocal) return;
+      }
       const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === id);
       for (const p of processes) {
         await dbDelete('processes', p.id);
-        await deleteSheetDB(SHEETS.PROCESSES, p.id);
+        if (gasOk) await deleteSheetDB(SHEETS.PROCESSES, p.id);
       }
       await dbDelete('machines', id);
-      const ok = await deleteSheetDB(SHEETS.MACHINES, id);
-      toast(ok ? 'Máquina excluída!' : 'Máquina excluída localmente', ok ? 'success' : 'warning');
+      toast(gasOk ? 'Máquina excluída!' : 'Máquina excluída localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
       await refreshMachinesForProcessSelect();
       await renderMachinesList();
     }
@@ -981,9 +993,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function deleteProcess(id) {
       if (!confirm('Excluir este processo?')) return;
+      const gasOk = await deleteSheetDB(SHEETS.PROCESSES, id);
+      if (!gasOk && navigator.onLine) {
+        const forceLocal = confirm('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?');
+        if (!forceLocal) return;
+      }
       await dbDelete('processes', id);
-      const ok = await deleteSheetDB(SHEETS.PROCESSES, id);
-      toast(ok ? 'Processo excluído!' : 'Processo excluído localmente', ok ? 'success' : 'warning');
+      toast(gasOk ? 'Processo excluído!' : 'Processo excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
       await renderProcessesList();
     }
 
