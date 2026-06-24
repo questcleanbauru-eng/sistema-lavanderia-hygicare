@@ -122,6 +122,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const userNameSpan = document.getElementById('user-name');
 
   // ---------- LOGIN ----------
+  document.getElementById('btn-toggle-pw')?.addEventListener('click', () => {
+    const pwInput = document.getElementById('login-password');
+    const btn     = document.getElementById('btn-toggle-pw');
+    if (pwInput.type === 'password') {
+      pwInput.type = 'text';
+      btn.textContent = '🙈';
+    } else {
+      pwInput.type = 'password';
+      btn.textContent = '👁️';
+    }
+  });
+
   formLogin.addEventListener('submit', async e => {
     e.preventDefault();
     const username = formLogin.username.value.trim();
@@ -166,7 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch(e) { console.warn('IndexedDB users fallback', e); }
 
-    const user = users.find(u => u.username === username && u.password === password);
+    const user = users.find(u => u.username === username && String(u.password) === String(password));
     btn.textContent = 'Entrar';
     btn.disabled = false;
 
