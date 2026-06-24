@@ -1556,7 +1556,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, period, createdMonth, monthSortKey, rows: [], totalKg: 0 };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, createdMonth, monthSortKey, rows: [], totalKg: 0 };
         grouped[key].rows.push({ machineName, procName, executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
@@ -1777,9 +1777,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         window._shareCtx = { g, safeKey };
 
-        // Preenche emails do cliente
+        // Preenche emails do cliente (busca por id direto para tolerar nome gerado como "Cliente #22")
         const clients = await dbGetAll_raw('clients');
-        const client  = clients.find(c => c.name === g.clientName);
+        const client  = clients.find(c => Number(c.id) === Number(g.clientId)) ||
+                        clients.find(c => c.name === g.clientName);
         document.getElementById('share-meta').textContent =
           `${g.clientName} · ${g.period} · ${g.totalKg.toFixed(2)} kg`;
         document.getElementById('share-email-client').value = client?.email_client || '';
@@ -2258,14 +2259,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!confirm('Excluir este grupo de registros? Esta ação não pode ser desfeita.')) return;
       const g = window._recordGroups?.[safeKey];
       if (!g) return;
-      const all     = await dbGetAll_raw('records');
-      const clients = await dbGetAll_raw('clients');
+      const all = await dbGetAll_raw('records');
       const [ds, de] = (g.period || '').split(' → ');
-      const client   = clients.find(c => c.name === g.clientName);
-      if (!client) return toast('Cliente não encontrado para exclusão', 'error');
 
       const toDelete = all.filter(r =>
-        Number(r.client_id) === Number(client.id) &&
+        Number(r.client_id) === Number(g.clientId) &&
         (r.date_start || '').trim() === (ds || '').trim() &&
         (r.date_end   || '').trim() === (de || '').trim()
       );
@@ -2297,11 +2295,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!g) return;
       const newDs = document.getElementById('edit-record-date-start').value;
       const newDe = document.getElementById('edit-record-date-end').value;
-      const all     = await dbGetAll_raw('records');
-      const clients = await dbGetAll_raw('clients');
+      const all = await dbGetAll_raw('records');
       const [ds, de] = (g.period || '').split(' → ');
-      const client   = clients.find(c => c.name === g.clientName);
-      if (!client) return toast('Cliente não encontrado', 'error');
 
       const btn = document.getElementById('form-edit-record').querySelector('button[type="submit"]');
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
@@ -2309,7 +2304,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       let i = 0;
       let patchOk = 0;
       const toEdit = all.filter(r =>
-        client && Number(r.client_id) === Number(client.id) &&
+        Number(r.client_id) === Number(g.clientId) &&
         (r.date_start||'').trim() === (ds||'').trim() &&
         (r.date_end  ||'').trim() === (de||'').trim()
       );
