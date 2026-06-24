@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v50';
+const CACHE = 'lavanderia-cache-v52';
 const ASSETS = [
   '/',
   '/index.html',
@@ -19,7 +19,7 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys => 
+    caches.keys().then(keys =>
       Promise.all(
         keys.filter(key => key !== CACHE).map(key => caches.delete(key))
       )
@@ -28,9 +28,15 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  if(e.request.method !== 'GET') return;
-  if(e.request.url.includes('sheetdb.io')) return; // N�o cachear API
-  
+  if (e.request.method !== 'GET') return;
+
+  // Deixa o browser lidar diretamente com APIs externas (GAS, Google, CDN)
+  const url = e.request.url;
+  if (url.includes('script.google.com')) return;
+  if (url.includes('googleusercontent.com')) return;
+  if (url.includes('googleapis.com')) return;
+  if (url.includes('cdn.jsdelivr.net')) return;
+
   e.respondWith(
     caches.match(e.request)
       .then(response => response || fetch(e.request))

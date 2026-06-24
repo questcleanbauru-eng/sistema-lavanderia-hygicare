@@ -2,6 +2,22 @@
 // APP.JS — Sistema Lavanderia Hygicare
 // ============================================================
 
+// ---------- HELPERS ----------
+// URL efetiva para chamadas API — usa proxy same-origin para evitar CORS
+function gasApiUrl() {
+  if (window.location.protocol !== 'file:' && window.location.hostname !== 'localhost') {
+    return '/api/proxy';
+  }
+  return CONFIG.GAS_URL; // fallback local (sem service worker)
+}
+
+function fmtDate(iso) {
+  if (!iso) return '?';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('pt-BR');
+}
+
 // ---------- TOAST SYSTEM ----------
 function toast(msg, type = 'info', duration = 3500) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
@@ -118,20 +134,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let users = [...(window.USERS || [])];
 
-    if (CONFIG.SHEETDB_READ && !CONFIG.SHEETDB_READ.includes('YOUR_SHEETDB_ID')) {
+    if (CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
       try {
-        const r = await fetch(`${CONFIG.SHEETDB_READ}?sheet=${SHEETS.USERS}`);
+        const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.USERS}`);
         if (r.ok) {
-          addApiCount(1, 'read');
-          const raw = await r.json();
-          const data = Array.isArray(raw) ? raw : (raw.data || []);
+          const res = await r.json();
+          const data = res.data || [];
           const sheetUsers = data.map(u => ({
             username: u.username, password: u.password,
             role: u.role || 'vendedor', name: u.name, sellerName: u.sellerName || u.name,
-            // active vazio ou ausente = ativo; só bloqueia se explicitamente 'FALSE'
             active: String(u.active || '').toUpperCase() !== 'FALSE'
           })).filter(u => u.active !== false);
-          // Mesclar: SheetDB sobrescreve locais pelo username
           sheetUsers.forEach(su => {
             const idx = users.findIndex(u => u.username === su.username);
             if (idx >= 0) users[idx] = su; else users.push(su);
@@ -206,22 +219,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function initApp() {
 
     // Aplicar configuracoes salvas no localStorage
-    const savedWrite = localStorage.getItem('hygicare_cfg_sheetdb_write');
-    const savedRead  = localStorage.getItem('hygicare_cfg_sheetdb_read');
-    const savedSync  = localStorage.getItem('hygicare_cfg_sync_interval');
-    // Retrocompatibilidade: URL antiga só serve de fallback para escrita
-    const legacyUrl  = localStorage.getItem('hygicare_cfg_sheetdb_url');
-    if (savedWrite) CONFIG.SHEETDB_WRITE = savedWrite;
-    else if (legacyUrl) CONFIG.SHEETDB_WRITE = legacyUrl;
-    // Leitura: usa o valor salvo novo, ou o valor definido no config.js (nunca a URL legada)
-    if (savedRead)  CONFIG.SHEETDB_READ = savedRead;
-    // CONFIG.SHEETDB_READ já vem definido corretamente no config.js como 6esskmb0uxer5
-    if (savedSync)  CONFIG.SYNC_INTERVAL_HOURS = parseInt(savedSync);
-
-    // Se ainda não salvou a URL de leitura no novo formato, persiste agora
-    if (!savedRead) {
-      localStorage.setItem('hygicare_cfg_sheetdb_read', CONFIG.SHEETDB_READ);
-    }
+    const savedGasUrl = localStorage.getItem('hygicare_cfg_gas_url');
+    const savedSync   = localStorage.getItem('hygicare_cfg_sync_interval');
+    if (savedGasUrl) CONFIG.GAS_URL = savedGasUrl;
+    if (savedSync)   CONFIG.SYNC_INTERVAL_HOURS = parseInt(savedSync);
 
     // Carregar usuários do IndexedDB para window.USERS (login offline)
     try {
@@ -297,157 +298,67 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function refreshAdminPanel() {
-      // Ler configuracoes salvas
-      const cfgWrite    = localStorage.getItem('hygicare_cfg_sheetdb_write')  || CONFIG.SHEETDB_WRITE || '';
-      const cfgRead     = localStorage.getItem('hygicare_cfg_sheetdb_read')   || CONFIG.SHEETDB_READ  || '';
-      const cfgSync     = localStorage.getItem('hygicare_cfg_sync_interval')  || CONFIG.SYNC_INTERVAL_HOURS;
-      const cfgLimit    = parseInt(localStorage.getItem('hygicare_cfg_api_limit') || '500');
-      const cfgYellow   = localStorage.getItem('hygicare_cfg_warn_yellow')    || '70';
-      const cfgRed      = localStorage.getItem('hygicare_cfg_warn_red')       || '90';
-      const cfgSheets   = localStorage.getItem('hygicare_cfg_sheets_url')     || 'https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit';
-      const cfgEmail    = localStorage.getItem('hygicare_cfg_notify_email')   || '';
-      const apiUsedWrite = parseInt(localStorage.getItem('hygicare_api_count')       || '0');
-      const apiUsedRead  = parseInt(localStorage.getItem('hygicare_api_count_read')  || '0');
-      const apiUsedTotal = apiUsedWrite + apiUsedRead;
+      const cfgGasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
+      const cfgSync   = localStorage.getItem('hygicare_cfg_sync_interval') || CONFIG.SYNC_INTERVAL_HOURS;
+      const cfgSheets = localStorage.getItem('hygicare_cfg_sheets_url') || 'https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit';
+      const cfgEmail  = localStorage.getItem('hygicare_cfg_notify_email') || '';
+      const apiUsedWrite = parseInt(localStorage.getItem('hygicare_api_count') || '0');
 
-      // Preencher campos
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-      set('cfg-sheetdb-write', cfgWrite);
-      set('cfg-sheetdb-read',  cfgRead);
+      set('cfg-gas-url',      cfgGasUrl);
       set('cfg-sync-interval', cfgSync);
-      set('cfg-api-limit',     cfgLimit);
-      set('cfg-warn-yellow',   cfgYellow);
-      set('cfg-warn-red',      cfgRed);
-      set('cfg-api-used',      apiUsedWrite);
-      set('cfg-api-used-read', apiUsedRead);
-      set('cfg-sheets-url',    cfgSheets);
-      set('cfg-notify-email',  cfgEmail);
+      set('cfg-sheets-url',   cfgSheets);
+      set('cfg-notify-email', cfgEmail);
 
-      // IDs das APIs no card de sistema
-      const writeIdEl = document.getElementById('admin-write-id');
-      const readIdEl  = document.getElementById('admin-read-id');
-      if (writeIdEl) writeIdEl.textContent = (cfgWrite.split('/').pop() || '—');
-      if (readIdEl)  readIdEl.textContent  = (cfgRead.split('/').pop()  || '—');
-
-      // Barras de API — Escrita
-      const pctWrite = Math.min(Math.round(apiUsedWrite / cfgLimit * 100), 100);
-      const elCntW   = document.getElementById('admin-api-count-write');
-      const barW     = document.getElementById('admin-api-bar-write');
-      const lblW     = document.getElementById('admin-api-label-write');
-      if (elCntW) elCntW.textContent = apiUsedWrite;
-      if (lblW)   lblW.textContent   = `${pctWrite}% utilizado este mês`;
-      if (barW) {
-        barW.style.width = pctWrite + '%';
-        barW.style.background = pctWrite >= parseInt(cfgRed) ? '#dc2626' : pctWrite >= parseInt(cfgYellow) ? '#f59e0b' : '#ea580c';
+      // ID do script no card de sistema
+      const gasIdEl = document.getElementById('admin-gas-id');
+      if (gasIdEl) {
+        const match = cfgGasUrl.match(/\/s\/([^/]+)\/exec/);
+        gasIdEl.textContent = match ? match[1].slice(0, 20) + '…' : '—';
       }
 
-      // Barras de API — Leitura
-      const pctRead = Math.min(Math.round(apiUsedRead / cfgLimit * 100), 100);
-      const elCntR  = document.getElementById('admin-api-count-read');
-      const barR    = document.getElementById('admin-api-bar-read');
-      const lblR    = document.getElementById('admin-api-label-read');
-      if (elCntR) elCntR.textContent = apiUsedRead;
-      if (lblR)   lblR.textContent   = `${pctRead}% utilizado este mês`;
-      if (barR) {
-        barR.style.width = pctRead + '%';
-        barR.style.background = pctRead >= parseInt(cfgRed) ? '#dc2626' : pctRead >= parseInt(cfgYellow) ? '#f59e0b' : '#2563eb';
-      }
-
-      // Total combinado
-      const pctTotal = Math.min(Math.round(apiUsedTotal / (cfgLimit * 2) * 100), 100);
-      const elTotal  = document.getElementById('admin-api-count');
-      const barTotal = document.getElementById('admin-api-bar');
-      const lblTotal = document.getElementById('admin-api-label');
-      if (elTotal)  elTotal.textContent  = apiUsedTotal;
-      if (lblTotal) lblTotal.textContent = `${pctTotal}% do total`;
-      if (barTotal) {
-        barTotal.style.width = pctTotal + '%';
-        barTotal.style.background = pctTotal >= parseInt(cfgRed) ? '#dc2626' : pctTotal >= parseInt(cfgYellow) ? '#f59e0b' : '#7c3aed';
-      }
-
-      // Atualiza também o contador do header
       updateApiDisplay(apiUsedWrite);
-
-      // Link da planilha — abre via elemento <a> para evitar bloqueio do browser
-      const sheetsBtn = document.getElementById('admin-sheets-link');
-      if (sheetsBtn) {
-        sheetsBtn.onclick = () => {
-          const url = localStorage.getItem('hygicare_cfg_sheets_url') || 'https://docs.google.com/spreadsheets/d/1t_Oo7CWfCqjGjGvSwNqFNS1M2YaCPOMt5aLiabOzMGU/edit';
-          const a = document.createElement('a');
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-        };
-      }
     }
 
-    // Testar ambas as APIs e exibir status
+    // Testar conexão com o Google Apps Script
     async function testApis() {
       const dot    = document.getElementById('admin-status-dot');
       const txt    = document.getElementById('admin-status-text');
       const detail = document.getElementById('admin-status-detail');
-      const wBadge = document.getElementById('admin-write-status');
-      const rBadge = document.getElementById('admin-read-status');
       const btn    = document.getElementById('btn-test-apis');
 
-      if (dot)  dot.style.background  = '#f59e0b';
-      if (txt)  txt.textContent       = 'Testando APIs...';
-      if (detail) detail.textContent  = '';
-      if (btn)  btn.disabled = true;
+      if (dot)    dot.style.background = '#f59e0b';
+      if (txt)    txt.textContent      = 'Testando conexão...';
+      if (detail) detail.textContent   = '';
+      if (btn)    btn.disabled = true;
 
-      const writeUrl = CONFIG.SHEETDB_WRITE;
-      const readUrl  = CONFIG.SHEETDB_READ;
+      if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        if (dot)    dot.style.background = '#dc2626';
+        if (txt)    txt.textContent      = '❌ URL do Apps Script não configurada';
+        if (detail) detail.textContent   = 'Cole a URL no campo abaixo e salve.';
+        if (btn)    btn.disabled = false;
+        return;
+      }
 
-      async function pingRead(url) {
-        if (!url || url.includes('YOUR_SHEETDB_ID')) return { ok: false, ms: 0, msg: 'URL não configurada' };
-        const t0 = Date.now();
-        try {
-          const r = await fetch(`${url}?sheet=${SHEETS.CLIENTS}&limit=1`);
-          const ms = Date.now() - t0;
-          if (r.ok) { addApiCount(1, 'read'); return { ok: true, ms }; }
-          return { ok: false, ms, msg: `HTTP ${r.status}` };
-        } catch (e) {
-          return { ok: false, ms: Date.now() - t0, msg: 'Sem conexão' };
+      const t0 = Date.now();
+      try {
+        const r  = await fetch(`${gasApiUrl()}?sheet=${SHEETS.CLIENTS}`);
+        const ms = Date.now() - t0;
+        if (r.ok) {
+          const res = await r.json();
+          const ok  = res.status === 'ok';
+          if (dot)    dot.style.background = ok ? '#16a34a' : '#f59e0b';
+          if (txt)    txt.textContent      = ok ? '✅ Google Apps Script funcionando normalmente' : '⚠️ Resposta inesperada do servidor';
+          if (detail) detail.textContent   = `Latência: ${ms}ms`;
+        } else {
+          if (dot)    dot.style.background = '#dc2626';
+          if (txt)    txt.textContent      = `❌ Erro HTTP ${r.status}`;
+          if (detail) detail.textContent   = `Latência: ${Date.now() - t0}ms`;
         }
-      }
-
-      // API de escrita: valida apenas a URL sintaticamente (sem fazer requisição
-      // para não consumir cota nem contar como chamada de escrita)
-      async function pingWrite(url) {
-        if (!url || url.includes('YOUR_SHEETDB_ID')) return { ok: false, ms: 0, msg: 'URL não configurada' };
-        try { new URL(url); } catch { return { ok: false, ms: 0, msg: 'URL inválida' }; }
-        return { ok: true, ms: 0 };
-      }
-
-      const [wRes, rRes] = await Promise.all([pingWrite(writeUrl), pingRead(readUrl)]);
-
-      // Badges individuais
-      const badge = (el, ok, ms, msg) => {
-        if (!el) return;
-        el.textContent = ok ? `✅ ${ms}ms` : `❌ ${msg}`;
-        el.style.background = ok ? '#d1fae5' : '#fee2e2';
-        el.style.color      = ok ? '#065f46' : '#991b1b';
-      };
-      badge(wBadge, wRes.ok, wRes.ms, wRes.msg);
-      badge(rBadge, rRes.ok, rRes.ms, rRes.msg);
-
-      // Status geral
-      const bothOk = wRes.ok && rRes.ok;
-      const oneOk  = wRes.ok || rRes.ok;
-      if (dot) dot.style.background = bothOk ? '#16a34a' : oneOk ? '#f59e0b' : '#dc2626';
-      if (txt) txt.textContent = bothOk
-        ? '✅ Sistema funcionando normalmente'
-        : oneOk
-          ? '⚠️ Uma das APIs com problema'
-          : '❌ Ambas as APIs inacessíveis';
-      if (detail) {
-        const parts = [];
-        parts.push(`Escrita: ${wRes.ok ? `OK (${wRes.ms}ms)` : wRes.msg}`);
-        parts.push(`Leitura: ${rRes.ok ? `OK (${rRes.ms}ms)` : rRes.msg}`);
-        detail.textContent = parts.join('  ·  ');
+      } catch (e) {
+        if (dot)    dot.style.background = '#dc2626';
+        if (txt)    txt.textContent      = '❌ Sem conexão com o servidor';
+        if (detail) detail.textContent   = e.message;
       }
 
       if (btn) btn.disabled = false;
@@ -455,42 +366,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btn-test-apis')?.addEventListener('click', testApis);
 
+    document.getElementById('btn-test-email')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-test-email');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+      try {
+        const r   = await fetch(`${gasApiUrl()}?action=test-email`);
+        const res = await r.json();
+        toast(res.status === 'ok' ? '✅ E-mail de teste enviado!' : `❌ ${res.error || 'Erro ao enviar'}`, res.status === 'ok' ? 'success' : 'error');
+      } catch (e) {
+        toast('❌ Falha ao contatar o servidor', 'error');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '📨 Testar E-mail'; }
+    });
+
     // Salvar configuracoes
     document.getElementById('btn-save-config').addEventListener('click', () => {
-      const write    = document.getElementById('cfg-sheetdb-write').value.trim();
-      const read     = document.getElementById('cfg-sheetdb-read').value.trim();
-      const sync     = document.getElementById('cfg-sync-interval').value.trim();
-      const limit    = document.getElementById('cfg-api-limit').value.trim();
-      const yellow   = document.getElementById('cfg-warn-yellow').value.trim();
-      const red      = document.getElementById('cfg-warn-red').value.trim();
-      const apiUsed     = document.getElementById('cfg-api-used').value.trim();
-      const apiUsedRead = document.getElementById('cfg-api-used-read')?.value.trim() ?? '';
-      const sheets   = document.getElementById('cfg-sheets-url').value.trim();
-      const notifyEmail = document.getElementById('cfg-notify-email')?.value.trim() || '';
+      const gasUrl      = document.getElementById('cfg-gas-url')?.value.trim()      || '';
+      const sync        = document.getElementById('cfg-sync-interval')?.value.trim() || '';
+      const sheets      = document.getElementById('cfg-sheets-url')?.value.trim()    || '';
+      const notifyEmail = document.getElementById('cfg-notify-email')?.value.trim()  || '';
 
-      if (write)  localStorage.setItem('hygicare_cfg_sheetdb_write', write);
-      if (read)   localStorage.setItem('hygicare_cfg_sheetdb_read',  read);
-      else        localStorage.setItem('hygicare_cfg_sheetdb_read',  CONFIG.SHEETDB_READ); // garante que nunca perde a URL de leitura
-      if (sync)   localStorage.setItem('hygicare_cfg_sync_interval', sync);
-      if (limit)  localStorage.setItem('hygicare_cfg_api_limit',     limit);
-      if (yellow) localStorage.setItem('hygicare_cfg_warn_yellow',   yellow);
-      if (red)    localStorage.setItem('hygicare_cfg_warn_red',      red);
+      if (gasUrl) { localStorage.setItem('hygicare_cfg_gas_url', gasUrl); CONFIG.GAS_URL = gasUrl; }
+      if (sync)   { localStorage.setItem('hygicare_cfg_sync_interval', sync); CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync); }
       if (sheets) localStorage.setItem('hygicare_cfg_sheets_url',    sheets);
       localStorage.setItem('hygicare_cfg_notify_email', notifyEmail);
-      if (apiUsed !== '') {
-        localStorage.setItem('hygicare_api_count', apiUsed);
-        updateApiDisplay(parseInt(apiUsed));
-      }
-      if (apiUsedRead !== '') {
-        localStorage.setItem('hygicare_api_count_read', apiUsedRead);
-      }
-      // Garante que a chave de mês está no formato correto para evitar reset
-      localStorage.setItem('hygicare_api_month_v2', new Date().toISOString().slice(0, 7));
 
-      // Aplicar imediatamente
-      if (write) CONFIG.SHEETDB_WRITE       = write;
-      if (read)  CONFIG.SHEETDB_READ        = read;
-      if (sync)  CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync);
+      // Persiste e-mail de notificação na aba Config do GAS para que "Testar E-mail" funcione
+      if (notifyEmail) callGAS('upsert', 'Config', { chave: 'notification_email', valor: notifyEmail });
 
       const msg = document.getElementById('config-saved-msg');
       if (msg) { msg.textContent = '✅ Configuracoes salvas!'; setTimeout(() => msg.textContent = '', 3000); }
@@ -499,15 +401,78 @@ document.addEventListener('DOMContentLoaded', async () => {
       toast('Configuracoes salvas!', 'success');
     });
 
-    // Zerar contador de API
-    document.getElementById('btn-reset-api-count').addEventListener('click', () => {
-      if (!confirm('Zerar o contador de requisicoes de API?')) return;
-      localStorage.setItem('hygicare_api_count',      '0');
-      localStorage.setItem('hygicare_api_count_read', '0');
-      localStorage.setItem('hygicare_api_month_v2', new Date().toISOString().slice(0, 7));
-      updateApiDisplay(0);
-      refreshAdminPanel();
-      toast('Contador de API zerado!', 'success');
+    // ---- Share modal ----
+    const closeShareModal = () => {
+      document.getElementById('modal-share').classList.add('hidden');
+      window._shareCtx = null;
+    };
+
+    document.getElementById('share-close')?.addEventListener('click', closeShareModal);
+    document.getElementById('modal-share')?.addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-share')) closeShareModal();
+    });
+
+    async function sendReportEmail(to) {
+      if (!to) return toast('Informe o e-mail de destino', 'error');
+      const ctx = window._shareCtx;
+      if (!ctx) return;
+      const { g } = ctx;
+      const statusEl = document.getElementById('share-status');
+      statusEl.textContent = '⏳ Enviando e-mail...';
+      try {
+        const payload = {
+          action: 'sendReportEmail',
+          to,
+          clientName: g.clientName,
+          period: g.period,
+          totalKg: g.totalKg,
+          totalRows: g.rows.length,
+          rows: g.rows,
+          senderName: 'Hygicare Lavanderia'
+        };
+        const r = await fetch(gasApiUrl(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ payload: JSON.stringify(payload) })
+        });
+        const res = await r.json();
+        if (res.status === 'ok') {
+          statusEl.textContent = `✅ E-mail enviado para ${to}`;
+          toast('E-mail enviado!', 'success');
+        } else {
+          statusEl.textContent = `❌ Erro: ${res.error || 'falha no servidor'}`;
+          toast('Falha ao enviar e-mail', 'error');
+        }
+      } catch(e) {
+        statusEl.textContent = '❌ Falha de conexão';
+        toast('Falha de conexão ao enviar e-mail', 'error');
+      }
+    }
+
+    document.getElementById('share-btn-client')?.addEventListener('click', () => {
+      const email = document.getElementById('share-email-client').value.trim();
+      sendReportEmail(email);
+    });
+
+    document.getElementById('share-btn-seller')?.addEventListener('click', () => {
+      const email = document.getElementById('share-email-seller').value.trim();
+      sendReportEmail(email);
+    });
+
+    document.getElementById('share-btn-wap')?.addEventListener('click', () => {
+      const ctx = window._shareCtx;
+      if (!ctx) return;
+      const { g } = ctx;
+      const msg = `Relatório Hygicare Lavanderia\nCliente: ${g.clientName}\nPeríodo: ${g.period}\nTotal: ${g.totalKg.toFixed(2)} kg · ${g.rows.length} itens`;
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+    });
+
+    document.getElementById('share-btn-download')?.addEventListener('click', () => {
+      if (window._shareCtx) window._pdfGroup(window._shareCtx.safeKey);
+    });
+
+    document.getElementById('share-btn-print')?.addEventListener('click', () => {
+      if (window._shareCtx) window._printGroup(window._shareCtx.safeKey);
     });
 
     // Setar active inicial
@@ -560,6 +525,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- SELECTS ---
     await refreshClientsSelects();
 
+    // Sync silencioso na inicialização — preenche IndexedDB a partir do GAS
+    // sem exibir diálogos de confirmação, para que dados apareçam automaticamente.
+    (async () => {
+      if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
+      if (!navigator.onLine) return;
+      try {
+        const existingRecords = await _originalGetAll('records');
+        const existingClients = await _originalGetAll('clients');
+        // Só sincroniza se o IndexedDB parecer vazio (nova sessão ou cache limpo)
+        if (existingRecords.length > 0 && existingClients.length > 0) return;
+
+        const results = await Promise.allSettled(
+          Object.values(SHEET_MAP).map(s =>
+            fetch(`${gasApiUrl()}?sheet=${s.sheet}`)
+              .then(r => r.ok ? r.json() : Promise.reject())
+              .then(res => ({ store: s.store, items: res.data || [] }))
+          )
+        );
+
+        for (const r of results) {
+          if (r.status !== 'fulfilled') continue;
+          const { store, items } = r.value;
+          if (store === 'users' || items.length > 0) {
+            await saveToStore(store, items);
+          }
+        }
+
+        localStorage.setItem('lastSyncTime', new Date().toISOString());
+        await refreshClientsSelects();
+        await renderClientsList();
+        await renderMachinesList();
+        await renderProcessesList();
+        await refreshReportClientFilter();
+        await renderRecordsList();
+        await updateSyncStatus();
+        toast('✅ Dados sincronizados automaticamente!', 'success', 3000);
+        const dbUsers = await _originalGetAll('users');
+        dbUsers.forEach(du => {
+          if (!du.username) return;
+          const idx = window.USERS.findIndex(u => u.username === du.username);
+          const mapped = { username: du.username, password: du.password,
+            role: du.role || 'vendedor', name: du.name, sellerName: du.sellerName || du.name };
+          if (idx >= 0) window.USERS[idx] = mapped; else window.USERS.push(mapped);
+        });
+        localStorage.setItem('hygicare_users', JSON.stringify(dbUsers));
+      } catch(e) { /* falha silenciosa — usuário pode sincronizar manualmente */ }
+    })();
+
     // =====================================================
     // BOTÃO 🔄 ATUALIZAR — economia de API
     // =====================================================
@@ -574,37 +587,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     async function doRefresh(target = 'all') {
-      if (!CONFIG.SHEETDB_READ || CONFIG.SHEETDB_READ.includes('YOUR_SHEETDB_ID')) {
-        return toast('Configure a API de leitura no Painel Admin primeiro!', 'warning');
+      if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        return toast('Configure a URL do Google Apps Script no Painel Admin!', 'warning');
       }
 
       const isAll = target === 'all';
-      const cost  = isAll ? 5 : 1;
-      const remaining = parseInt(localStorage.getItem(API_KEY_READ) || '0');
-      const cfgLimit  = parseInt(localStorage.getItem('hygicare_cfg_api_limit') || '500');
-      if ((cfgLimit - remaining) < cost) {
-        return toast(`Limite da API de leitura atingido! Apenas ${cfgLimit - remaining} acessos restantes este mês.`, 'error');
-      }
 
-      const labelTarget = isAll ? 'todas as abas (5)' : SHEET_MAP[target]?.label || target;
-
-      // Confirmar apenas quando atualiza tudo (5 chamadas). Individual é silencioso.
-      if (isAll) {
-        if (!confirm(`🔄 Buscar dados atualizados do Google Sheets?\n\nIsso usará 5 dos seus ${cfgLimit - remaining} acessos API restantes este mês.`)) return;
-      }
+      if (isAll && !confirm('🔄 Buscar dados atualizados do Google Sheets?')) return;
 
       const btn = document.getElementById('btn-refresh-data');
       btn.disabled = true;
       btn.textContent = '⏳ Buscando...';
-      if (!isAll) toast(`🔄 Buscando "${labelTarget}"...`, 'info', 1500);
 
       try {
         let sheetsToFetch = isAll ? Object.values(SHEET_MAP) : [SHEET_MAP[target]];
         const results = await Promise.allSettled(
-          sheetsToFetch.map(s => fetch(`${CONFIG.SHEETDB_READ}?sheet=${s.sheet}`).then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+          sheetsToFetch.map(s =>
+            fetch(`${gasApiUrl()}?sheet=${s.sheet}`)
+              .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
+              .then(res => res.data || [])
+          )
         );
-        const successCount = results.filter(r => r.status === 'fulfilled').length;
-        if (successCount > 0) addApiCount(successCount, 'read');
 
         let imported = 0;
         for (let i = 0; i < sheetsToFetch.length; i++) {
@@ -745,52 +748,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       return saved;
     }
 
-    // Postar para SheetDB (com controle de API)
-    // SheetDB exige body no formato: {"data": { campos... }}
-    async function postToSheetDB(sheetName, data) {
-      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) return false;
+    async function callGAS(action, sheetName, data, id) {
+      if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return false;
       if (!navigator.onLine) return false;
       try {
-        const r = await fetch(`${CONFIG.SHEETDB_WRITE}?sheet=${sheetName}`, {
+        const payload = { action, sheet: sheetName };
+        if (data !== undefined && data !== null) payload.data = data;
+        if (id  !== undefined) payload.id = id;
+        const r = await fetch(gasApiUrl(), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: data })
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ payload: JSON.stringify(payload) })
         });
-        if (r.ok) { addApiCount(1); return true; }
-        console.warn(`⚠️ SheetDB POST falhou [${r.status}]:`, await r.text());
-        return false;
-      } catch (e) { console.warn('postToSheetDB error:', e); return false; }
+        if (!r.ok) { console.warn(`GAS ${action} falhou [${r.status}]`); return false; }
+        const res = await r.json();
+        if (res.status !== 'ok') { console.warn('GAS error:', res.error); return false; }
+        addApiCount(1, 'write');
+        return res.data || true;
+      } catch (e) { console.warn('callGAS error:', e); return false; }
     }
 
-    // Atualizar linha no SheetDB via PATCH (busca pelo campo id)
-    async function patchSheetDB(sheetName, id, data) {
-      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) return false;
-      if (!navigator.onLine) return false;
-      try {
-        const url = `${CONFIG.SHEETDB_WRITE}/id/${id}?sheet=${sheetName}`;
-        const r = await fetch(url, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: data })
-        });
-        if (r.ok) { addApiCount(1); return true; }
-        console.warn(`⚠️ SheetDB PATCH falhou [${r.status}]:`, await r.text());
-        return false;
-      } catch (e) { console.warn('patchSheetDB error:', e); return false; }
-    }
-
-    // Excluir linha no SheetDB via DELETE (busca pelo campo id)
-    async function deleteSheetDB(sheetName, id) {
-      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) return false;
-      if (!navigator.onLine) return false;
-      try {
-        const url = `${CONFIG.SHEETDB_WRITE}/id/${id}?sheet=${sheetName}`;
-        const r = await fetch(url, { method: 'DELETE' });
-        if (r.ok) { addApiCount(1); return true; }
-        console.warn(`⚠️ SheetDB DELETE falhou [${r.status}]:`, await r.text());
-        return false;
-      } catch (e) { console.warn('deleteSheetDB error:', e); return false; }
-    }
+    const postToSheetDB  = (sheet, data)     => callGAS('insert', sheet, data);
+    const patchSheetDB   = (sheet, id, data) => callGAS('update', sheet, data, id);
+    const deleteSheetDB  = (sheet, id)       => callGAS('delete', sheet, null, id);
 
 
     // =====================================================
@@ -1313,8 +1293,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dateEnd   = document.getElementById('prod-date-end').value;
       if (!dateStart || !dateEnd) return toast('Preencha as datas do período', 'warning');
 
-      if (!CONFIG.SHEETDB_WRITE || CONFIG.SHEETDB_WRITE.includes('YOUR_SHEETDB_ID')) {
-        return toast('Configure a API de escrita no Painel Admin primeiro!', 'warning');
+      if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        return toast('Configure a URL do Google Apps Script no Painel Admin!', 'warning');
       }
 
       const rows = [];
@@ -1334,13 +1314,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (!rows.length) return toast('Nenhum dado preenchido para salvar', 'warning');
 
-      const usedWrite = parseInt(localStorage.getItem(API_KEY) || '0');
-      const cfgLimitW = parseInt(localStorage.getItem('hygicare_cfg_api_limit') || '500');
-      const remaining = cfgLimitW - usedWrite;
-      if (remaining < rows.length) {
-        return toast(`Limite da API de escrita insuficiente. Disponível: ${remaining}, necessário: ${rows.length}`, 'error');
-      }
-
       const btn = document.getElementById('save-production');
       btn.disabled = true;
       btn.textContent = '⏳ Enviando...';
@@ -1348,26 +1321,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         let synced = 0;
         for (const r of rows) {
-          // Primeiro salva local para obter o id gerado
-          const newId = await dbAdd('records', r);
+          const newId   = await dbAdd('records', r);
           const rWithId = { ...r, id: newId };
-          // Atualiza local com id
           await dbPut('records', rWithId);
 
-          const res = await fetch(`${CONFIG.SHEETDB_WRITE}?sheet=${SHEETS.RECORDS}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: rWithId })
-          });
-          if (res.ok) {
-            addApiCount(1);
+          const ok = await callGAS('insert', SHEETS.RECORDS, rWithId);
+          if (ok) {
             synced++;
           } else {
-            // Falhou no SheetDB — remove o registro local para não duplicar
             await dbDelete('records', newId);
-            const errText = await res.text();
-            console.error(`❌ SheetDB POST falhou [${res.status}]:`, errText);
-            toast(`Erro ao enviar registro ${synced + 1}: ${res.status}. Verifique a conexão e tente novamente.`, 'error', 7000);
+            toast(`Erro ao enviar registro ${synced + 1}. Verifique a conexão e tente novamente.`, 'error', 7000);
             return;
           }
         }
@@ -1382,7 +1345,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         toast(`✅ ${synced} registro(s) enviados para o Google Sheets com sucesso!`, 'success', 5000);
 
-        // Limpar formulário
         document.getElementById('prod-client-select').value = '';
         document.getElementById('prod-date-start').value = '';
         document.getElementById('prod-date-end').value = '';
@@ -1545,7 +1507,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!list) return;
 
       if (!records.length) {
-        list.innerHTML = `<div class="empty-state">📭 Nenhum registro sincronizado ainda.<p>Salve e sincronize produções para vê-las aqui.</p></div>`;
+        list.innerHTML = `<div class="empty-state">📭 Nenhum registro encontrado.<p>Clique em <strong>🔄 Atualizar</strong> para buscar dados do Google Sheets, ou salve produções pelo formulário.</p></div>`;
         return;
       }
 
@@ -1559,7 +1521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const clientName  = client?.name  || `Cliente #${r.client_id}`;
         const machineName = machine?.name || `Máquina #${r.machine_id}`;
         const procName    = process?.name || `Processo #${r.process_id}`;
-        const period      = `${r.date_start || '?'} → ${r.date_end || '?'}`;
+        const period      = `${fmtDate(r.date_start)} → ${fmtDate(r.date_end)}`;
 
         // Data de criação: usa synced_at, created_at ou date_start como fallback
         const rawDate = r.synced_at || r.created_at || r.date_start || '';
@@ -1652,8 +1614,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               <div class="records-group-meta">
                 <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
                 <span class="badge badge-gray">${g.rows.length} linha(s)</span>
-                <button class="btn-record-action btn-print" onclick="window._printGroup('${safeKey}')" title="Imprimir relatório">🖨️ Imprimir</button>
-                <button class="btn-record-action btn-pdf" onclick="window._pdfGroup('${safeKey}')" title="Salvar como PDF">📥 PDF</button>
+                <button class="btn-record-action" style="background:#16a34a;color:#fff" onclick="window._shareGroup('${safeKey}')" title="Compartilhar / Enviar relatório">📤 Enviar</button>
                 <button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>
                 ${currentUser?.role === 'admin' ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}')" title="Excluir registro">🗑️ Excluir</button>` : ''}
                 <span style="font-size:0.8rem;color:var(--muted)">▼</span>
@@ -1784,11 +1745,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           const fileName = `relatorio_${g.clientName.replace(/\s+/g, '_')}_${g.period.replace(/[→\s]/g, '-').replace(/-+/g, '-')}.pdf`;
           doc.save(fileName);
-          toast('PDF salvo com sucesso!', 'success');
+          toast('PDF baixado com sucesso!', 'success');
         } catch(e) {
           console.error(e);
           toast('Erro ao gerar PDF: ' + e.message, 'error');
         }
+      };
+
+      // ---- Compartilhar relatório ----
+      window._shareGroup = async function(safeKey) {
+        const g = window._recordGroups?.[safeKey];
+        if (!g) return toast('Relatório não encontrado', 'error');
+
+        window._shareCtx = { g, safeKey };
+
+        // Preenche emails do cliente
+        const clients = await dbGetAll_raw('clients');
+        const client  = clients.find(c => c.name === g.clientName);
+        document.getElementById('share-meta').textContent =
+          `${g.clientName} · ${g.period} · ${g.totalKg.toFixed(2)} kg`;
+        document.getElementById('share-email-client').value = client?.email_client || '';
+        document.getElementById('share-email-seller').value = client?.email_seller || '';
+        document.getElementById('share-status').textContent = '';
+        document.getElementById('modal-share').classList.remove('hidden');
       };
 
       function buildGroupHtml(g) {

@@ -14,6 +14,7 @@
     <title>Sistema Lavanderia Hygicare</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   </head>
   <body>
     <div id="toast-container"></div>
@@ -140,7 +141,7 @@
             <div><h1>Hygicare Lavanderia</h1><small id="header-subtitle">Sistema de Gestao</small></div>
           </div>
           <div class="header-actions">
-            <div class="api-badge" id="api-badge">� GAS não configurado</div>
+            <div class="api-badge" id="api-badge">✅ API: <span id="api-count">0</span></div>
             <div class="refresh-split">
               <button id="btn-refresh-data" class="hdr-btn hdr-btn-green">🔄 Atualizar</button>
               <div class="refresh-dropdown-wrap">
@@ -482,60 +483,58 @@
           <div id="records-list"></div>
         </section>
       </main>
-      <!-- Barra de navegação inferior — visível apenas em mobile -->
-      <nav id="bottom-nav" class="bottom-nav">
-        <button class="bnav-btn" data-nav="nav-form">
-          <span class="bnav-icon">📝</span>
-          <span class="bnav-label">Gerar</span>
-        </button>
-        <button class="bnav-btn" data-nav="nav-reports">
-          <span class="bnav-icon">📄</span>
-          <span class="bnav-label">Relatório</span>
-        </button>
-        <button class="bnav-btn" data-nav="nav-clients">
-          <span class="bnav-icon">👥</span>
-          <span class="bnav-label">Clientes</span>
-        </button>
-        <button class="bnav-btn" data-nav="nav-charts">
-          <span class="bnav-icon">📊</span>
-          <span class="bnav-label">Gráficos</span>
-        </button>
-        <button class="bnav-btn admin-only hidden" data-nav="nav-users" id="bnav-users">
-          <span class="bnav-icon">👤</span>
-          <span class="bnav-label">Usuários</span>
-        </button>
-        <button class="bnav-btn" data-nav="nav-admin" id="bnav-more">
-          <span class="bnav-icon">⋯</span>
-          <span class="bnav-label">Mais</span>
-        </button>
-      </nav>
       <footer><small>Hygicare Lavanderia — Offline-first PWA · Google Apps Script</small></footer>
     </div>
     <!-- Modal Compartilhar Relatório -->
-    <div id="modal-share-report" class="modal-overlay hidden">
-      <div class="modal-box modal-share-box">
+    <div id="modal-share" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:460px">
         <div class="modal-hdr">
           <div>
-            <h3>🎉 Relatório salvo!</h3>
-            <p class="modal-hdr-sub" id="share-report-summary"></p>
+            <h3>📤 Compartilhar Relatório</h3>
+            <p class="modal-hdr-sub" id="share-meta" style="margin-top:2px"></p>
           </div>
-          <button class="btn-close" id="modal-share-close">✕</button>
+          <button class="btn-close" id="share-close">✕</button>
         </div>
-        <div class="share-options" style="grid-template-columns:repeat(2,1fr)">
-          <a id="share-email-client" class="share-btn share-email" href="#" target="_blank">
-            <span>📧</span><span>E-mail Cliente</span>
-          </a>
-          <a id="share-email-seller" class="share-btn share-email-seller" href="#" target="_blank">
-            <span>👨‍💼</span><span>E-mail Vendedor</span>
-          </a>
+
+        <!-- E-mail Cliente -->
+        <div style="margin-bottom:0.85rem">
+          <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:4px">📧 E-mail do Cliente</label>
+          <div style="display:flex;gap:8px">
+            <input type="email" id="share-email-client" class="form-input" placeholder="cliente@email.com" style="flex:1;font-size:0.88rem;padding:0.5rem 0.7rem" />
+            <button id="share-btn-client" class="btn-primary" style="white-space:nowrap;padding:0.5rem 1rem;font-size:0.85rem">Enviar</button>
+          </div>
         </div>
-        <button id="share-pdf-btn" class="share-btn-pdf" style="margin-top:0.85rem;width:100%;display:flex;align-items:center;justify-content:center;gap:0.5rem;background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;border:none;border-radius:12px;padding:0.85rem 1rem;font-size:0.9rem;font-weight:700;cursor:pointer;letter-spacing:0.3px">
-          <span style="font-size:1.2rem">📄</span><span>Gerar PDF / Imprimir</span>
-        </button>
-        <p style="font-size:0.72rem;color:#94a3b8;text-align:center;margin-top:0.5rem">Na janela de impressão, escolha <strong>Salvar como PDF</strong> para baixar o arquivo.</p>
-        <div style="margin-top:1rem;text-align:center">
-          <button class="btn-secondary" id="modal-share-close2" style="width:100%">✓ Fechar</button>
+
+        <!-- E-mail Vendedor -->
+        <div style="margin-bottom:1.2rem">
+          <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:4px">👨‍💼 E-mail do Vendedor</label>
+          <div style="display:flex;gap:8px">
+            <input type="email" id="share-email-seller" class="form-input" placeholder="vendedor@email.com" style="flex:1;font-size:0.88rem;padding:0.5rem 0.7rem" />
+            <button id="share-btn-seller" class="btn-primary" style="white-space:nowrap;padding:0.5rem 1rem;font-size:0.85rem">Enviar</button>
+          </div>
         </div>
+
+        <!-- Divisor -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem">
+          <div style="flex:1;height:1px;background:#e2e8f0"></div>
+          <span style="font-size:0.75rem;color:#94a3b8">ou</span>
+          <div style="flex:1;height:1px;background:#e2e8f0"></div>
+        </div>
+
+        <!-- Ações rápidas -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:1rem">
+          <button id="share-btn-wap" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:0.7rem 0.5rem;background:#dcfce7;border:1px solid #86efac;border-radius:10px;cursor:pointer;font-size:0.78rem;font-weight:600;color:#15803d">
+            <span style="font-size:1.4rem">📱</span>WhatsApp
+          </button>
+          <button id="share-btn-download" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:0.7rem 0.5rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;cursor:pointer;font-size:0.78rem;font-weight:600;color:#1d4ed8">
+            <span style="font-size:1.4rem">💾</span>Baixar PDF
+          </button>
+          <button id="share-btn-print" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:0.7rem 0.5rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;font-size:0.78rem;font-weight:600;color:#374151">
+            <span style="font-size:1.4rem">🖨️</span>Imprimir
+          </button>
+        </div>
+
+        <p id="share-status" style="font-size:0.8rem;color:#64748b;text-align:center;min-height:1.2em;margin:0"></p>
       </div>
     </div>
 
