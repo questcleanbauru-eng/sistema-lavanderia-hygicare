@@ -2264,8 +2264,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const toDelete = all.filter(r =>
         Number(r.client_id) === Number(g.clientId) &&
-        (r.date_start || '').trim() === (ds || '').trim() &&
-        (r.date_end   || '').trim() === (de || '').trim()
+        fmtDate(r.date_start) === ds &&
+        fmtDate(r.date_end)   === de
       );
 
       if (!toDelete.length) return toast('Nenhum registro encontrado para excluir', 'warning');
@@ -2305,8 +2305,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       let patchOk = 0;
       const toEdit = all.filter(r =>
         Number(r.client_id) === Number(g.clientId) &&
-        (r.date_start||'').trim() === (ds||'').trim() &&
-        (r.date_end  ||'').trim() === (de||'').trim()
+        fmtDate(r.date_start) === ds &&
+        fmtDate(r.date_end)   === de
       );
 
       for (const r of toEdit) {
