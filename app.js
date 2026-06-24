@@ -1954,39 +1954,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     // GRAFICOS
     // =====================================================
     let _charts = {};
+    const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor'];
+    const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
 
     async function refreshChartsFilters() {
       const clients = await dbGetAll_raw('clients');
-
-      // Populate client filter
       const sel = document.getElementById('chart-filter-client');
       if (sel) {
-        sel.innerHTML = '<option value="">Todos os clientes</option>';
-        clients.sort((a,b) => (a.name||'').localeCompare(b.name||'')).forEach(c => {
-          sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-        });
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">👥 Todos os clientes</option>';
+        clients.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+               .forEach(c => sel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
+        if (cur) sel.value = cur;
       }
-
-      // Populate seller filter: combina usuários cadastrados + vendedores já usados nos clientes
-      const selSeller = document.getElementById('chart-filter-seller');
-      if (selSeller) {
+      const selS = document.getElementById('chart-filter-seller');
+      if (selS) {
+        const cur = selS.value;
         const users = await _originalGetAll('users');
-        const fromUsers  = users.map(u => u.name || u.username).filter(Boolean);
-        const fromClients = clients.map(c => c.seller).filter(Boolean);
-        const allSellers = [...new Set([...fromUsers, ...fromClients])].sort();
-        selSeller.innerHTML = '<option value="">Todos os vendedores</option>';
-        allSellers.forEach(s => selSeller.innerHTML += `<option value="${s}">${s}</option>`);
+        const sellers = [...new Set([
+          ...users.map(u => u.sellerName || u.name).filter(Boolean),
+          ...clients.map(c => c.seller).filter(Boolean)
+        ])].sort();
+        selS.innerHTML = '<option value="">👤 Todos os vendedores</option>';
+        sellers.forEach(s => selS.innerHTML += `<option value="${s}">${s}</option>`);
+        if (cur) selS.value = cur;
       }
     }
 
-    async function renderCharts() {
-      let records   = await dbGetAll_raw('records');
-      const clients   = await dbGetAll_raw('clients');
-      const machines  = await dbGetAll_raw('machines');
+    function _resetChartCanvases(heights = {}) {
+      Object.values(_charts).forEach(c => { try { c.destroy(); } catch(e) {} });
+      _charts = {};
+      CHART_IDS.forEach(id => {
+        const old = document.getElementById(id);
+        if (!old) return;
+        const nc = document.createElement('canvas');
+        nc.id = id;
+        nc.height = heights[id] || 220;
+        old.replaceWith(nc);
+      });
+    }
 
-      // Ler filtros
-      const filterStart  = document.getElementById('chart-filter-start')?.value  || '';
-      const filterEnd    = document.getElementById('chart-filter-end')?.value    || '';
+    function _setKpis(totalKg, totalRec, totalClients, cancelPct) {
+      const fmt = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
+      const el = id => document.getElementById(id);
+      if (el('kpi-total-kg'))     el('kpi-total-kg').textContent     = fmt(totalKg) + ' kg';
+      if (el('kpi-registros'))    el('kpi-registros').textContent    = totalRec;
+      if (el('kpi-clientes'))     el('kpi-clientes').textContent     = totalClients;
+      if (el('kpi-cancelamento')) el('kpi-cancelamento').textContent = cancelPct.toFixed(1) + '%';
+    }
+
+    async function renderCharts() {
+      let records  = await dbGetAll_raw('records');
+      const clients  = await dbGetAll_raw('clients');
+      const machines = await dbGetAll_raw('machines');
+
+      // Período ativo (definido pelos preset buttons via dataset.activePeriod)
+      const activePeriod = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm   = String(now.getMonth() + 1).padStart(2, '0');
+      let filterStart = '', filterEnd = '';
+      if (activePeriod === 'month') {
+        filterStart = filterEnd = `${yyyy}-${mm}`;
+      } else if (activePeriod === '3m') {
+        const d3 = new Date(now); d3.setMonth(d3.getMonth() - 2);
+        filterStart = `${d3.getFullYear()}-${String(d3.getMonth()+1).padStart(2,'0')}`;
+        filterEnd   = `${yyyy}-${mm}`;
+      } else if (activePeriod === '6m') {
+        const d6 = new Date(now); d6.setMonth(d6.getMonth() - 5);
+        filterStart = `${d6.getFullYear()}-${String(d6.getMonth()+1).padStart(2,'0')}`;
+        filterEnd   = `${yyyy}-${mm}`;
+      } else if (activePeriod === 'year') {
+        filterStart = `${yyyy}-01`;
+        filterEnd   = `${yyyy}-12`;
+      }
+
       const filterClient = document.getElementById('chart-filter-client')?.value || '';
       const filterSeller = document.getElementById('chart-filter-seller')?.value || '';
 
@@ -1994,119 +2036,168 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (filterClient) records = records.filter(r => Number(r.client_id) === Number(filterClient));
       if (filterSeller) records = records.filter(r => {
         const c = clients.find(c => Number(c.id) === Number(r.client_id));
-        return c?.seller === filterSeller;
+        return (c?.seller || '') === filterSeller;
       });
       if (filterStart || filterEnd) {
         records = records.filter(r => {
-          const raw = r.synced_at || r.created_at || r.date_start || '';
-          const m = raw.slice(0,7);
+          const m = (r.date_start || r.created_at || '').slice(0, 7);
           if (filterStart && m < filterStart) return false;
           if (filterEnd   && m > filterEnd)   return false;
           return true;
         });
       }
 
-      // Destruir gráficos anteriores e RECRIAR os canvas
-      // (evita bug do Chart.js ao reutilizar canvas após destroy)
-      Object.values(_charts).forEach(c => c.destroy());
-      _charts = {};
-      ['chart-kg-cliente','chart-por-mes','chart-kg-maquina','chart-por-vendedor'].forEach(id => {
-        const old = document.getElementById(id);
-        if (old) {
-          const newCanvas = document.createElement('canvas');
-          newCanvas.id = id;
-          newCanvas.height = 220;
-          old.replaceWith(newCanvas);
-        }
-      });
+      // Destruir e recriar canvas
+      _resetChartCanvases({ 'chart-por-mes': 160 });
 
-      const colors = ['#2563eb','#16a34a','#dc2626','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c'];
+      // KPIs
+      const totalKg    = records.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+      const totalExec  = records.reduce((s, r) => s + parseFloat(r.executed || 0), 0);
+      const totalCanc  = records.reduce((s, r) => s + parseFloat(r.canceled || 0), 0);
+      const cancelPct  = (totalExec + totalCanc) > 0 ? (totalCanc / (totalExec + totalCanc)) * 100 : 0;
+      const clientsSet = new Set(records.map(r => r.client_id));
+      _setKpis(totalKg, records.length, clientsSet.size, cancelPct);
 
       if (!records.length) {
-        ['chart-kg-cliente','chart-por-mes','chart-kg-maquina','chart-por-vendedor'].forEach(id => {
-          const ctx = document.getElementById(id);
-          if (ctx) ctx.insertAdjacentHTML('afterend',
-            `<p id="no-data-${id}" style="text-align:center;color:#94a3b8;padding:2rem 0;margin:0">📭 Sem dados para os filtros selecionados</p>`);
+        CHART_IDS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.insertAdjacentHTML('afterend',
+            `<p style="text-align:center;color:#94a3b8;padding:2rem 0;margin:0;font-size:0.85rem">📭 Sem dados para este período</p>`);
         });
         return;
       }
 
-      // 1. kg por cliente
-      const kgCliente = {};
-      for (const r of records) {
-        const c = clients.find(c => Number(c.id) === Number(r.client_id));
-        const name = c?.name || `#${r.client_id}`;
-        kgCliente[name] = (kgCliente[name] || 0) + parseFloat(r.total || 0);
-      }
-      const sortedClientes = Object.entries(kgCliente).sort((a,b) => b[1]-a[1]).slice(0,10);
-      const ctxC = document.getElementById('chart-kg-cliente');
-      if (ctxC) _charts.kgCliente = new Chart(ctxC, {
-        type: 'bar',
-        data: { labels: sortedClientes.map(e=>e[0]), datasets: [{ label: 'Total kg', data: sortedClientes.map(e=>+e[1].toFixed(2)), backgroundColor: colors }] },
-        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-      });
-
-      // 2. Registros por mês
+      // ── Gráfico 1: Evolução mensal (linha) ──────────────────
       const porMes = {};
       for (const r of records) {
-        const d = new Date(r.synced_at || r.created_at || r.date_start || '');
-        if (!isNaN(d)) {
-          const key = d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-          const sortKey = d.toISOString().slice(0,7);
-          if (!porMes[key]) porMes[key] = { sort: sortKey, count: 0, kg: 0 };
-          porMes[key].count++;
-          porMes[key].kg += parseFloat(r.total || 0);
-        }
+        const raw = r.date_start || r.created_at || '';
+        const key = raw.slice(0, 7);
+        if (!key) continue;
+        const label = new Date(key + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        if (!porMes[key]) porMes[key] = { label, kg: 0 };
+        porMes[key].kg += parseFloat(r.total || 0);
       }
-      const mesSorted = Object.entries(porMes).sort((a,b) => a[1].sort.localeCompare(b[1].sort));
+      const mesSorted = Object.entries(porMes).sort((a,b) => a[0].localeCompare(b[0]));
       const ctxM = document.getElementById('chart-por-mes');
       if (ctxM) _charts.porMes = new Chart(ctxM, {
         type: 'line',
         data: {
-          labels: mesSorted.map(e=>e[0]),
-          datasets: [
-            { label: 'Registros', data: mesSorted.map(e=>e[1].count), borderColor: '#2563eb', backgroundColor: '#dbeafe', fill: true, tension: 0.3 },
-            { label: 'Total kg',  data: mesSorted.map(e=>+e[1].kg.toFixed(2)), borderColor: '#16a34a', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y2' }
-          ]
+          labels: mesSorted.map(e => e[1].label),
+          datasets: [{
+            label: 'kg processado',
+            data: mesSorted.map(e => +e[1].kg.toFixed(2)),
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.1)',
+            fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6
+          }]
         },
-        options: { responsive: true, scales: { y: { beginAtZero: true }, y2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } } } }
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
+        }
       });
 
-      // 3. kg por máquina top 8
-      const kgMaquina = {};
+      // ── Gráfico 2: kg por cliente (barra horizontal) ────────
+      const kgCliente = {};
+      for (const r of records) {
+        const c = clients.find(c => Number(c.id) === Number(r.client_id));
+        const name = c?.name || `Cliente #${r.client_id}`;
+        kgCliente[name] = (kgCliente[name] || 0) + parseFloat(r.total || 0);
+      }
+      const sortedCli = Object.entries(kgCliente).sort((a,b) => b[1]-a[1]).slice(0, 10);
+      const ctxC = document.getElementById('chart-kg-cliente');
+      if (ctxC) _charts.kgCliente = new Chart(ctxC, {
+        type: 'bar',
+        data: {
+          labels: sortedCli.map(e => e[0]),
+          datasets: [{ label: 'kg', data: sortedCli.map(e => +e[1].toFixed(2)), backgroundColor: CHART_COLORS }]
+        },
+        options: {
+          indexAxis: 'y', responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { x: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
+        }
+      });
+
+      // ── Gráfico 3: Execução vs Cancelamento por mês (barra agrupada) ──
+      const execCancel = {};
+      for (const r of records) {
+        const key = (r.date_start || r.created_at || '').slice(0, 7);
+        if (!key) continue;
+        const label = new Date(key + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        if (!execCancel[key]) execCancel[key] = { label, exec: 0, cancel: 0 };
+        execCancel[key].exec   += parseFloat(r.executed || 0) * parseFloat(r.capacity || 0);
+        execCancel[key].cancel += parseFloat(r.canceled || 0) * parseFloat(r.capacity || 0);
+      }
+      const ecSorted = Object.entries(execCancel).sort((a,b) => a[0].localeCompare(b[0]));
+      const ctxEC = document.getElementById('chart-exec-cancel');
+      if (ctxEC) _charts.execCancel = new Chart(ctxEC, {
+        type: 'bar',
+        data: {
+          labels: ecSorted.map(e => e[1].label),
+          datasets: [
+            { label: 'Executado (kg)', data: ecSorted.map(e => +e[1].exec.toFixed(2)), backgroundColor: '#16a34a' },
+            { label: 'Cancelado (kg)', data: ecSorted.map(e => +e[1].cancel.toFixed(2)), backgroundColor: '#dc2626' }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { x: { stacked: false }, y: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
+        }
+      });
+
+      // ── Gráfico 4: kg por máquina (doughnut) ────────────────
+      const kgMaq = {};
       for (const r of records) {
         const m = machines.find(m => Number(m.id) === Number(r.machine_id));
-        const name = m?.name || `#${r.machine_id}`;
-        kgMaquina[name] = (kgMaquina[name] || 0) + parseFloat(r.total || 0);
+        const name = m?.name || `Máq. #${r.machine_id}`;
+        kgMaq[name] = (kgMaq[name] || 0) + parseFloat(r.total || 0);
       }
-      const sortedMaq = Object.entries(kgMaquina).sort((a,b) => b[1]-a[1]).slice(0,8);
+      const sortedMaq = Object.entries(kgMaq).sort((a,b) => b[1]-a[1]).slice(0, 8);
       const ctxMaq = document.getElementById('chart-kg-maquina');
       if (ctxMaq) _charts.kgMaquina = new Chart(ctxMaq, {
         type: 'doughnut',
-        data: { labels: sortedMaq.map(e=>e[0]), datasets: [{ data: sortedMaq.map(e=>+e[1].toFixed(2)), backgroundColor: colors }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        data: { labels: sortedMaq.map(e=>e[0]), datasets: [{ data: sortedMaq.map(e=>+e[1].toFixed(2)), backgroundColor: CHART_COLORS }] },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
       });
 
-      // 4. Registros por vendedor
-      const porVendedor = {};
+      // ── Gráfico 5: kg por vendedor (pie) ────────────────────
+      const kgVend = {};
       for (const r of records) {
         const c = clients.find(c => Number(c.id) === Number(r.client_id));
         const seller = c?.seller || 'Sem vendedor';
-        porVendedor[seller] = (porVendedor[seller] || 0) + 1;
+        kgVend[seller] = (kgVend[seller] || 0) + parseFloat(r.total || 0);
       }
       const ctxV = document.getElementById('chart-por-vendedor');
       if (ctxV) _charts.porVendedor = new Chart(ctxV, {
         type: 'pie',
-        data: { labels: Object.keys(porVendedor), datasets: [{ data: Object.values(porVendedor), backgroundColor: colors }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        data: { labels: Object.keys(kgVend), datasets: [{ data: Object.values(kgVend).map(v=>+v.toFixed(2)), backgroundColor: CHART_COLORS }] },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
       });
     }
 
-    // Botões de filtro dos gráficos
-    document.getElementById('btn-apply-charts')?.addEventListener('click', () => renderCharts());
+    // Preset buttons — aplicam o período e re-renderizam
+    document.querySelectorAll('.chart-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderCharts();
+      });
+    });
+
+    // Filtros de cliente e vendedor — auto-aplicam
+    document.getElementById('chart-filter-client')?.addEventListener('change', () => renderCharts());
+    document.getElementById('chart-filter-seller')?.addEventListener('change', () => renderCharts());
+
+    // Limpar filtros
     document.getElementById('btn-clear-charts')?.addEventListener('click', () => {
-      ['chart-filter-start','chart-filter-end','chart-filter-client','chart-filter-seller']
-        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['chart-filter-client','chart-filter-seller'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+      });
+      document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-preset="year"]')?.classList.add('active');
       renderCharts();
     });
 
