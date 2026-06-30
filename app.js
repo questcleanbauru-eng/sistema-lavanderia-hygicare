@@ -13,22 +13,57 @@ function gasApiUrl() {
 
 function fmtDate(iso) {
   if (!iso) return '?';
+  // Parse YYYY-MM-DD as local date (avoids UTC midnight → dia anterior no UTC-3)
+  const parts = String(iso).split('T')[0].split('-');
+  if (parts.length === 3) {
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (!isNaN(d)) return d.toLocaleDateString('pt-BR');
+  }
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('pt-BR');
 }
 
+function findClientById(id, clients) {
+  return clients.find(c => Number(c.id) === Number(id));
+}
+
 // ---------- TOAST SYSTEM ----------
-function toast(msg, type = 'info', duration = 3500) {
+function toast(msg, type = 'info', duration = 3500, action = null) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
-  el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
+  el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>${action ? `<button class="toast-action-btn">${action.label}</button>` : ''}`;
+  if (action) el.querySelector('.toast-action-btn').addEventListener('click', () => { action.fn(); el.remove(); });
   document.getElementById('toast-container').appendChild(el);
-  setTimeout(() => {
+  const timer = setTimeout(() => {
     el.style.animation = 'toastOut 0.3s ease forwards';
     setTimeout(() => el.remove(), 300);
   }, duration);
+  if (action) el.querySelector('.toast-action-btn').addEventListener('click', () => clearTimeout(timer));
+  return el;
+}
+
+// ---------- DIALOG DE CONFIRMAÇÃO ----------
+function confirmAction(msg, confirmLabel = 'Confirmar', danger = true) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+    const btnColor = danger ? '#ef4444' : '#2563eb';
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:1.5rem 1.25rem;max-width:320px;width:100%;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+        <p style="font-size:1rem;line-height:1.5;margin-bottom:1.3rem;color:#111827">${msg}</p>
+        <div style="display:flex;gap:0.75rem;justify-content:center">
+          <button id="_cd-cancel" style="flex:1;padding:0.75rem;border:1.5px solid #e5e7eb;border-radius:10px;background:#f9fafb;cursor:pointer;font-size:0.95rem;font-weight:600">Cancelar</button>
+          <button id="_cd-ok" style="flex:1;padding:0.75rem;border:none;border-radius:10px;background:${btnColor};color:#fff;cursor:pointer;font-size:0.95rem;font-weight:700">${confirmLabel}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = v => { overlay.remove(); resolve(v); };
+    overlay.querySelector('#_cd-ok').onclick     = () => close(true);
+    overlay.querySelector('#_cd-cancel').onclick = () => close(false);
+    overlay.onclick = e => { if (e.target === overlay) close(false); };
+  });
 }
 
 // ---------- API COUNTER ----------
@@ -155,6 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const sheetUsers = data.map(u => ({
             username: u.username, password: u.password,
             role: u.role || 'vendedor', name: u.name, sellerName: u.sellerName || u.name,
+            manager: u.manager || '',
             active: String(u.active || '').toUpperCase() !== 'FALSE'
           })).filter(u => u.active !== false);
           sheetUsers.forEach(su => {
@@ -172,7 +208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (du.username && du.password) {
           const idx = users.findIndex(u => u.username === du.username);
           const mapped = { username: du.username, password: du.password,
-            role: du.role || 'vendedor', name: du.name, sellerName: du.name, id: du.id };
+            role: du.role || 'vendedor', name: du.name, sellerName: du.name, id: du.id, manager: du.manager || '' };
           if (idx >= 0) users[idx] = mapped; else users.push(mapped);
         }
       });
@@ -183,7 +219,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.disabled = false;
 
     if (user) {
-      currentUser = { username: user.username, role: user.role, name: user.name, sellerName: user.sellerName };
+      currentUser = { username: user.username, role: user.role, name: user.name,
+        sellerName: user.sellerName, manager: user.manager || '',
+        permissions: user.permissions || '', sellers_access: user.sellers_access || '' };
       localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
       // Salvar lista de usuários para o select de vendedor
       localStorage.setItem('hygicare_users', JSON.stringify(users));
@@ -208,7 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     appMain.classList.remove('hidden');
     userNameSpan.textContent = `👤 ${currentUser.name}`;
     document.getElementById('header-subtitle').textContent =
-      currentUser.role === 'admin' ? 'Administrador' : 'Vendedor';
+      `${currentUser.name} · ${{ admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' }[currentUser.role] || 'Vendedor'}`;
     updateApiDisplay(getApiCount());
     updateSyncStatus();
     initApp();
@@ -223,6 +261,265 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (el2 && lastSync) {
       el2.textContent = `Última sincronização: ${new Date(lastSync).toLocaleString('pt-BR')}`;
     }
+  }
+
+  // ============================================================
+  // REPORT HTML BUILDER  (A4 landscape, 90% zoom, Chart.js)
+  // ============================================================
+  function buildReportHtml(g, autoPrint = false) {
+    const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    // Paleta fixa por processo
+    const PROC_COLORS = {
+      'PESADO':'#1565c0','LEVE':'#42a5f5','PANO DE CHÃO':'#66bb6a',
+      'COMPRESSAS':'#ef5350','DESENGOMA':'#ab47bc','COBERTORES':'#ff7043',
+      'RETORNO':'#26c6da','AXILAS':'#d4e157','COMPRESSAS 30KG':'#ec407a',
+      'PULVERIZAÇÃO':'#8d6e63','LEVE 70KG':'#29b6f6','PESADO 70KG':'#0d47a1'
+    };
+    const FALLBACK = ['#546e7a','#78909c','#90a4ae','#607d8b','#455a64','#37474f'];
+    const getClr = (name, fi) => PROC_COLORS[(name||'').toUpperCase().trim()] || FALLBACK[fi % FALLBACK.length];
+
+    // Agrupar linhas por máquina
+    const byMachine = {};
+    for (const row of g.rows) {
+      if (!byMachine[row.machineName]) byMachine[row.machineName] = [];
+      byMachine[row.machineName].push(row);
+    }
+    const machineEntries = Object.entries(byMachine);
+
+    // Dias do período
+    const [startStr, endStr] = (g.period || '').split(' → ');
+    const parsePt = s => { const [d,m,y] = (s||'').split('/'); return new Date(+y,+m-1,+d); };
+    const sd = parsePt(startStr), ed = parsePt(endStr);
+    const diffDays = (!isNaN(sd) && !isNaN(ed)) ? Math.round((ed-sd)/86400000)+1 : 0;
+    const daysLabel = diffDays > 0 ? `${diffDays} dia${diffDays!==1?'s':''}` : '';
+    const today = new Date().toLocaleDateString('pt-BR');
+
+    // --- Seções por máquina ---
+    let chartInits = '';
+    let sectionsHtml = '';
+
+    machineEntries.forEach(([machineName, rows], idx) => {
+      const machineKg   = rows.reduce((s,r) => s + parseFloat(r.total    ||0), 0);
+      const machineExec = rows.reduce((s,r) => s + parseFloat(r.executed ||0), 0);
+      const machineCanc = rows.reduce((s,r) => s + parseFloat(r.canceled ||0), 0);
+      const cid = `ch${idx}`;
+
+      const tRows = rows.map((r, i) => {
+        const ex = parseFloat(r.executed||0), ca = parseFloat(r.canceled||0), kg = parseFloat(r.total||0);
+        const pct = machineKg > 0 ? (kg/machineKg*100).toFixed(1) : '0.0';
+        return `<tr>
+          <td class="tc">${i+1}</td><td class="tl">${esc(r.procName)}</td>
+          <td class="tc">${ex}</td>
+          <td class="tc${ca>0?' t-red':''}">${ca}</td>
+          <td class="tc">${ex+ca}</td>
+          <td class="tc tb">${kg.toFixed(2)}</td>
+          <td class="tc">${pct}%</td>
+        </tr>`;
+      }).join('');
+
+      const active = rows.filter(r => parseFloat(r.total||0) > 0);
+      const clrs   = active.map((r,i) => getClr(r.procName, i));
+      const legend = active.map((r,i) =>
+        `<div class="li"><div class="ld" style="background:${clrs[i]}"></div><span>${esc(r.procName)}</span></div>`
+      ).join('');
+      const isEmpty = !active.length;
+
+      chartInits += isEmpty ? '' :
+        `new Chart(document.getElementById('${cid}'),{type:'doughnut',data:{labels:${JSON.stringify(active.map(r=>r.procName))},datasets:[{data:${JSON.stringify(active.map(r=>parseFloat(r.total||0)))},backgroundColor:${JSON.stringify(clrs)},borderWidth:1,borderColor:'#fff'}]},options:{responsive:false,animation:false,plugins:{legend:{display:false},tooltip:{enabled:false}},cutout:'58%'}});`;
+
+      const chartBlock = isEmpty
+        ? `<p class="maint-txt">EM MANUTENÇÃO</p>`
+        : `<canvas id="${cid}" width="130" height="130"></canvas><div class="leg">${legend}</div>`;
+
+      sectionsHtml += `
+<div class="sec">
+  <div class="sec-hd blue">${esc(machineName.toUpperCase())}</div>
+  <div class="sec-body">
+    <div class="tbl-area">
+      <table>
+        <thead><tr><th class="tc w30">Nº</th><th class="tl">Processos</th><th class="tc w80">Executado</th><th class="tc w80">Abortado</th><th class="tc w90">Total Proc</th><th class="tc w90">Total Kg</th><th class="tc w70">%</th></tr></thead>
+        <tbody>${tRows}</tbody>
+        <tfoot><tr><td colspan="2" class="tr">Total em KG:</td><td class="tc">${machineExec}</td><td class="tc">${machineCanc}</td><td class="tc">${machineExec+machineCanc}</td><td class="tc">${machineKg.toFixed(2)}</td><td></td></tr></tfoot>
+      </table>
+    </div>
+    <div class="chart-area">${chartBlock}</div>
+  </div>
+</div>`;
+    });
+
+    // --- Total Geral ---
+    const totByProc = {};
+    for (const row of g.rows) {
+      const k = row.procName;
+      if (!totByProc[k]) totByProc[k] = { ex:0, ca:0, kg:0 };
+      totByProc[k].ex += parseFloat(row.executed||0);
+      totByProc[k].ca += parseFloat(row.canceled||0);
+      totByProc[k].kg += parseFloat(row.total   ||0);
+    }
+    const totProcs  = Object.entries(totByProc);
+    const totExec   = g.rows.reduce((s,r) => s + parseFloat(r.executed||0), 0);
+    const totCanc   = g.rows.reduce((s,r) => s + parseFloat(r.canceled||0), 0);
+    const totLav    = totExec; // total de lavagens = soma de execuções
+
+    const geralRows = totProcs.map(([proc, d], i) => {
+      const pct = g.totalKg > 0 ? (d.kg/g.totalKg*100).toFixed(1) : '0.0';
+      return `<tr>
+        <td class="tc">${i+1}</td><td class="tl">${esc(proc)}</td>
+        <td class="tc">${d.ex}</td>
+        <td class="tc${d.ca>0?' t-red':''}">${d.ca}</td>
+        <td class="tc">${d.ex+d.ca}</td>
+        <td class="tc tb">${d.kg.toFixed(2)}</td>
+        <td class="tc">${pct}%</td>
+      </tr>`;
+    }).join('');
+
+    const geralActive = totProcs.filter(([,d]) => d.kg > 0);
+    const geralClrs   = geralActive.map(([p],i) => getClr(p, i));
+    const geralLegend = geralActive.map(([p],i) =>
+      `<div class="li"><div class="ld" style="background:${geralClrs[i]}"></div><span>${esc(p)}</span></div>`
+    ).join('');
+    chartInits += geralActive.length
+      ? `new Chart(document.getElementById('chtotal'),{type:'doughnut',data:{labels:${JSON.stringify(geralActive.map(([p])=>p))},datasets:[{data:${JSON.stringify(geralActive.map(([,d])=>d.kg))},backgroundColor:${JSON.stringify(geralClrs)},borderWidth:1,borderColor:'#fff'}]},options:{responsive:false,animation:false,plugins:{legend:{display:false},tooltip:{enabled:false}},cutout:'58%'}});`
+      : '';
+
+    // --- Seção de preço ---
+    const precoKg   = g.precoKg || null;
+    let priceSection = '';
+    if (precoKg && precoKg > 0) {
+      const fatTotal = g.totalKg * precoKg;
+      const fmt = v => v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+      priceSection = `
+<div class="sec" style="margin-top:8px">
+  <div class="sec-hd" style="background:#263238">FATURAMENTO</div>
+  <div style="padding:0">
+    <div class="price-row">Preço por Kg<span>R$ ${fmt(precoKg)}</span></div>
+    <div class="price-row">Total Kg Lavado<span>${fmt(g.totalKg)} kg</span></div>
+    <div class="price-row" style="background:#e8f5e9;color:#1b5e20;font-weight:bold;font-size:11px">
+      PREÇO DO KG × TOTAL DE KG LAVADO<span>R$ ${fmt(fatTotal)}</span>
+    </div>
+  </div>
+</div>`;
+    }
+
+    const printScript = autoPrint ? `setTimeout(()=>window.print(),800);` : '';
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relatório — ${esc(g.clientName)}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
+.hdr{display:flex;align-items:center;background:#1a237e;color:#fff;min-height:60px;max-height:60px;padding:0 10px;gap:10px;margin-bottom:8px}
+.hdr-logo{width:40px;height:40px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;text-align:center;line-height:1.3;flex-shrink:0;letter-spacing:.5px}
+.hdr-c{flex:1;text-align:center;line-height:1.3}
+.hdr-c h1{font-size:18px;font-weight:bold;color:#fff;letter-spacing:.3px}
+.hdr-info{font-size:10px;color:#c5cae9;margin-top:4px}
+.hdr-sub{font-size:9px;color:#9fa8da;margin-top:2px}
+.sec{margin-bottom:8px;border:1px solid #ddd;page-break-inside:avoid}
+.sec-hd{background:#1a237e;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
+.blue{background:#1a237e}.gray{background:#37474f}
+.sec-body{display:flex;align-items:stretch}
+.tbl-area{flex:0 0 75%;width:75%}
+.chart-area{flex:0 0 25%;width:25%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 8px;border-left:1px solid #ddd;gap:5px}
+table{width:100%;border-collapse:collapse;font-size:9px}
+thead th{background:#e3e8f0;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #ddd;white-space:nowrap;text-align:center}
+th.tl{text-align:left}
+tbody tr{height:22px}
+tbody tr:nth-child(even) td{background:#f9f9f9}
+tbody td{padding:3px 6px;border:1px solid #ddd;vertical-align:middle}
+.tc{text-align:center}.tl{text-align:left}.tr{text-align:right}.tb{font-weight:bold}.t-red{color:#e53935;font-weight:bold}
+.w30{width:30px}.w80{width:80px}.w90{width:90px}.w70{width:70px}
+tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #ddd;font-size:9px}
+.leg{width:100%;font-size:8px;line-height:1.5}
+.li{display:flex;align-items:center;gap:4px;margin-bottom:1px;white-space:nowrap;overflow:hidden}
+.ld{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.maint-txt{color:#9e9e9e;font-style:italic;font-size:10px;text-align:center;padding:20px 4px}
+.price-row{display:flex;justify-content:space-between;align-items:center;padding:5px 14px;border-bottom:1px solid #eee;font-size:10px}
+.price-row:last-child{border-bottom:none}
+.rpt-footer{margin-top:10px;border-top:2px solid #1a237e;padding:7px 0 0;text-align:center;font-size:8px;color:#555;line-height:1.7;page-break-inside:avoid}
+.rpt-footer strong{color:#1a237e;font-size:8.5px}
+@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:10mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
+@media screen{
+  .action-bar{position:sticky;top:0;z-index:999;background:#1a237e;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .btn-close-rpt{background:#fff;color:#1a237e}
+  .btn-print-rpt{background:#4caf50;color:#fff}
+  .action-bar-label{color:#c5cae9;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+}
+@media screen and (max-width:600px){
+  body{font-size:9px}
+  .hdr{min-height:48px;max-height:unset;padding:6px 8px}
+  .hdr-c h1{font-size:13px}
+  .hdr-info,.hdr-sub{font-size:8px}
+  .hdr-logo{width:34px;height:34px;font-size:6px}
+  .sec-body{flex-direction:column}
+  .tbl-area{width:100%;flex:none}
+  .chart-area{width:100%;flex:none;border-left:none;border-top:1px solid #ddd;flex-direction:row;justify-content:center;padding:8px;gap:12px}
+  .chart-area canvas{width:90px!important;height:90px!important}
+  table{font-size:8px}
+  thead th,tbody td,tfoot td{padding:2px 3px}
+  .w80,.w90{width:auto}
+}
+</style>
+</head>
+<body>
+<div class="action-bar">
+  <button class="btn-close-rpt" onclick="window.close()">✕ Fechar</button>
+  <button class="btn-print-rpt" onclick="window.print()">🖨️ Salvar PDF</button>
+  <span class="action-bar-label">${esc(g.clientName)} · ${esc(g.period)}</span>
+</div>
+<div class="hdr">
+  <div class="hdr-logo" style="width:50px;height:42px;font-size:7px;letter-spacing:.3px">HYGICARE</div>
+  <div class="hdr-c">
+    <h1>${esc(g.clientName)}</h1>
+    <div class="hdr-info">Período: ${esc(g.period)}${daysLabel?'&nbsp;&nbsp;|&nbsp;&nbsp;'+daysLabel:''}</div>
+    <div class="hdr-sub">Relatório de Produção &nbsp;·&nbsp; Emitido em ${today} &nbsp;·&nbsp; Hygicare Lavanderia</div>
+  </div>
+  <div class="hdr-logo" style="width:50px;height:42px;font-size:7px;letter-spacing:.3px">HC LAV</div>
+</div>
+
+${sectionsHtml}
+
+<div class="sec">
+  <div class="sec-hd gray">TOTAL GERAL</div>
+  <div class="sec-body">
+    <div class="tbl-area">
+      <table>
+        <thead><tr><th class="tc w30">Nº</th><th class="tl">Processos</th><th class="tc w80">Executado</th><th class="tc w80">Abortado</th><th class="tc w90">Total Proc</th><th class="tc w90">Total Kg</th><th class="tc w70">%</th></tr></thead>
+        <tbody>${geralRows||'<tr><td colspan="7" style="text-align:center;color:#9e9e9e;padding:10px">Sem registros</td></tr>'}</tbody>
+        <tfoot>
+          <tr><td colspan="2" class="tr">Total em KG:</td><td class="tc">${totExec}</td><td class="tc">${totCanc}</td><td class="tc">${totExec+totCanc}</td><td class="tc">${g.totalKg.toFixed(2)}</td><td></td></tr>
+          <tr><td colspan="5" class="tr">LAVAGENS MAQ:</td><td class="tc">${totLav}</td><td></td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="chart-area">
+      ${geralActive.length ? `<canvas id="chtotal" width="130" height="130"></canvas><div class="leg">${geralLegend}</div>` : '<p class="maint-txt">Sem dados</p>'}
+    </div>
+  </div>
+</div>
+
+${priceSection}
+
+<div class="rpt-footer">
+  <strong>Hygicare Produtos de Higiene Ltda EPP.</strong> — DISTRIBUIDOR AUTORIZADO DIVERSEY<br>
+  Rua Dr. Jose Ranieri, 9-41 Jd. Cruzeiro do Sul — CEP: 17030-370 Bauru/SP &nbsp;|&nbsp; e-mail: comercial@hygicare.com.br &nbsp;|&nbsp; Tel/Fax: (14) 3879-7040<br>
+  CNPJ: 08.159.080/0001-34 &nbsp;|&nbsp; Inscrição Estadual: 209.376.609.111
+</div>
+
+<script>
+window.addEventListener('load',function(){
+${chartInits}
+${printScript}
+});
+<\/script>
+</body>
+</html>`;
   }
 
   // ============================================================
@@ -243,7 +540,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!du.username || !du.password) return;
         const idx = window.USERS.findIndex(u => u.username === du.username);
         const mapped = { username: du.username, password: du.password,
-          role: du.role || 'vendedor', name: du.name, sellerName: du.name };
+          role: du.role || 'vendedor', name: du.name, sellerName: du.name,
+          manager: du.manager || '', permissions: du.permissions || '',
+          sellers_access: du.sellers_access || '' };
         if (idx >= 0) window.USERS[idx] = mapped; else window.USERS.push(mapped);
       });
     } catch(e) {}
@@ -258,11 +557,123 @@ document.addEventListener('DOMContentLoaded', async () => {
       navBtns.forEach(b => {
         b.classList.toggle('active', b.dataset.screen === id || b.id === 'nav-' + id.replace('screen-', ''));
       });
+      // Sync bottom nav active state
+      document.querySelectorAll('.bnav-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.target === id);
+      });
+      // Close drawer if open
+      closeDrawer();
+    }
+
+    // ===== DRAWER / BOTTOM NAV =====
+    const drawerOverlay = document.getElementById('drawer-overlay');
+    const drawerEl      = document.getElementById('drawer-more');
+
+    function openDrawer() {
+      drawerOverlay?.classList.remove('hidden');
+      drawerEl?.classList.remove('hidden');
+    }
+    function closeDrawer() {
+      drawerOverlay?.classList.add('hidden');
+      drawerEl?.classList.add('hidden');
+    }
+
+    document.getElementById('bnav-more')?.addEventListener('click', openDrawer);
+    drawerOverlay?.addEventListener('click', closeDrawer);
+
+    // Bottom nav buttons (screen-targets)
+    document.querySelectorAll('.bnav-btn[data-target]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const screenId = btn.dataset.target;
+        show(screenId);
+        if (screenId === 'screen-home')      await initHomeScreen();
+        if (screenId === 'screen-clients')   { await renderClientsList(); await refreshSellerSelect(); }
+        if (screenId === 'screen-machines')  await renderMachinesList();
+        if (screenId === 'screen-processes') await renderProcessesList();
+        if (screenId === 'screen-charts')    { await refreshChartsFilters(); await renderCharts(); }
+        if (screenId === 'screen-vazao')     await initVazaoScreen();
+        if (screenId === 'screen-recipes')   await initRecipesScreen();
+        if (screenId === 'screen-form') {
+          const today = new Date().toISOString().slice(0, 10);
+          const firstOfMonth = today.slice(0, 7) + '-01';
+          const startEl = document.getElementById('prod-date-start');
+          const endEl   = document.getElementById('prod-date-end');
+          if (startEl && !startEl.value) startEl.value = firstOfMonth;
+          if (endEl   && !endEl.value)   endEl.value   = today;
+        }
+        if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
+        if (screenId === 'screen-users')   await renderUsersList();
+        if (screenId === 'screen-admin')   { refreshAdminPanel(); testApis(); }
+      });
+    });
+
+    // Drawer menu items
+    document.querySelectorAll('.drawer-item[data-target]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const screenId = btn.dataset.target;
+        closeDrawer();
+        show(screenId);
+        if (screenId === 'screen-clients')   { await renderClientsList(); await refreshSellerSelect(); }
+        if (screenId === 'screen-machines')  await renderMachinesList();
+        if (screenId === 'screen-processes') await renderProcessesList();
+        if (screenId === 'screen-vazao')     await initVazaoScreen();
+        if (screenId === 'screen-recipes')   await initRecipesScreen();
+        if (screenId === 'screen-users')     await renderUsersList();
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); testApis(); }
+      });
+    });
+
+    // Logout no drawer
+    document.getElementById('drawer-logout')?.addEventListener('click', () => {
+      document.getElementById('btn-logout')?.click();
+    });
+
+    // Estado compartilhado entre funções (sem poluir window)
+    let _shareCtx      = null;
+    let _recordGroups  = {};
+    let _saving        = false;
+
+    function setSaving(active, triggerBtn = null, loadingText = '⏳ Salvando...') {
+      _saving = active;
+      const allBtns = document.querySelectorAll('button');
+      if (active) {
+        allBtns.forEach(btn => {
+          btn.dataset.wasDis = btn.disabled ? '1' : '0';
+          btn.disabled = true;
+        });
+        if (triggerBtn) {
+          triggerBtn.dataset.origTxt = triggerBtn.textContent;
+          triggerBtn.textContent = loadingText;
+        }
+      } else {
+        allBtns.forEach(btn => {
+          btn.disabled = btn.dataset.wasDis === '1';
+          delete btn.dataset.wasDis;
+        });
+        if (triggerBtn) {
+          triggerBtn.textContent = triggerBtn.dataset.origTxt || triggerBtn.textContent;
+          delete triggerBtn.dataset.origTxt;
+        }
+      }
     }
 
     // =====================================================
-    // FILTRO DE DADOS POR USUÁRIO (vendedor)
+    // FILTRO DE DADOS POR USUÁRIO (vendedor / gerente)
     // =====================================================
+    function getManagedSellerNames() {
+      if (currentUser.role === 'consultor') {
+        const access = (currentUser.sellers_access || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        return new Set(access);
+      }
+      const allUsers = JSON.parse(localStorage.getItem('hygicare_users') || '[]');
+      const myName = (currentUser.sellerName || currentUser.name || '').toLowerCase();
+      return new Set(
+        allUsers
+          .filter(u => (u.manager || '').toLowerCase() === myName)
+          .map(u => (u.sellerName || u.name || '').toLowerCase())
+      );
+    }
+
     const _originalGetAll = window.getAll;
 
     async function dbGetAll_raw(store) {
@@ -276,28 +687,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         const data = await _originalGetAll(store);
         if (!currentUser || currentUser.role === 'admin') return data;
         if (store !== 'clients') return data;
+        if (currentUser.role === 'gerente' || currentUser.role === 'consultor') {
+          const managed = getManagedSellerNames();
+          return data.filter(c => managed.has((c.seller || '').toLowerCase()));
+        }
         return data.filter(c => (c.seller || '').toLowerCase() === (currentUser.sellerName || '').toLowerCase());
       };
     }
 
     // Mapear nav buttons
     const navMap = {
+      'nav-home':      'screen-home',
       'nav-clients':   'screen-clients',
       'nav-machines':  'screen-machines',
       'nav-processes': 'screen-processes',
       'nav-charts':    'screen-charts',
+      'nav-vazao':     'screen-vazao',
+      'nav-recipes':   'screen-recipes',
       'nav-form':      'screen-form',
       'nav-reports':   'screen-reports',
       'nav-users':     'screen-users',
       'nav-admin':     'screen-admin',
     };
     Object.entries(navMap).forEach(([btnId, screenId]) => {
-      document.getElementById(btnId).addEventListener('click', async () => {
+      const el = document.getElementById(btnId);
+      if (!el) return;
+      el.addEventListener('click', async () => {
         show(screenId);
+        if (screenId === 'screen-home')      await initHomeScreen();
         if (screenId === 'screen-clients')   { await renderClientsList(); await refreshSellerSelect(); }
         if (screenId === 'screen-machines')  await renderMachinesList();
         if (screenId === 'screen-processes') await renderProcessesList();
         if (screenId === 'screen-charts')    { await refreshChartsFilters(); await renderCharts(); }
+        if (screenId === 'screen-vazao')     await initVazaoScreen();
+        if (screenId === 'screen-recipes')   await initRecipesScreen();
+        if (screenId === 'screen-form') {
+          const today = new Date().toISOString().slice(0, 10);
+          const firstOfMonth = today.slice(0, 7) + '-01';
+          const startEl = document.getElementById('prod-date-start');
+          const endEl   = document.getElementById('prod-date-end');
+          if (startEl && !startEl.value) startEl.value = firstOfMonth;
+          if (endEl   && !endEl.value)   endEl.value   = today;
+        }
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')     await renderUsersList();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); testApis(); }
@@ -416,7 +847,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ---- Share modal ----
     const closeShareModal = () => {
       document.getElementById('modal-share').classList.add('hidden');
-      window._shareCtx = null;
+      _shareCtx = null;
     };
 
     document.getElementById('share-close')?.addEventListener('click', closeShareModal);
@@ -424,68 +855,97 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (e.target === document.getElementById('modal-share')) closeShareModal();
     });
 
-    async function sendReportEmail(to) {
-      if (!to) return toast('Informe o e-mail de destino', 'error');
-      const ctx = window._shareCtx;
+    function openNotifyEmail(to) {
+      if (!to) return toast('Informe o e-mail do vendedor', 'error');
+      const ctx = _shareCtx;
       if (!ctx) return;
       const { g } = ctx;
+      const subject = `[Hygicare] Relatório disponível — ${g.clientName}`;
+      const body = [
+        'Olá,',
+        '',
+        'Um novo relatório operacional foi elaborado no sistema.',
+        '',
+        `Cliente: ${g.clientName}`,
+        `Período: ${g.period}`,
+        `Total lavado: ${g.totalKg || 0} kg`,
+        `Gerado por: ${currentUser?.name || 'Sistema'}`,
+        `Data: ${new Date().toLocaleString('pt-BR')}`,
+        '',
+        'Acesse o sistema para visualizar e salvar o PDF.',
+        '',
+        'Hygicare Lavanderia — Sistema de Gestão',
+      ].join('\n');
+      const mailto = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(mailto, '_blank');
       const statusEl = document.getElementById('share-status');
-      statusEl.textContent = '⏳ Enviando e-mail...';
-      try {
-        const payload = {
-          action: 'sendReportEmail',
-          to,
-          clientName: g.clientName,
-          period: g.period,
-          totalKg: g.totalKg,
-          totalRows: g.rows.length,
-          rows: g.rows,
-          senderName: 'Hygicare Lavanderia'
-        };
-        const r = await fetch(gasApiUrl(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ payload: JSON.stringify(payload) })
-        });
-        const res = await r.json();
-        if (res.status === 'ok') {
-          statusEl.textContent = `✅ E-mail enviado para ${to}`;
-          toast('E-mail enviado!', 'success');
-        } else {
-          statusEl.textContent = `❌ Erro: ${res.error || 'falha no servidor'}`;
-          toast('Falha ao enviar e-mail', 'error');
-        }
-      } catch(e) {
-        statusEl.textContent = '❌ Falha de conexão';
-        toast('Falha de conexão ao enviar e-mail', 'error');
-      }
+      if (statusEl) statusEl.textContent = `✅ E-mail aberto para ${to} — clique em Enviar no seu aplicativo`;
     }
 
-    document.getElementById('share-btn-client')?.addEventListener('click', () => {
-      const email = document.getElementById('share-email-client').value.trim();
-      sendReportEmail(email);
-    });
+    function buildShareText(g) {
+      return [
+        `📋 *Relatório Hygicare*`,
+        ``,
+        `👥 Cliente: ${g.clientName}`,
+        `📅 Período: ${g.period}`,
+        `⚖️ Total lavado: ${(g.totalKg || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})} kg`,
+        `👤 Gerado por: ${currentUser?.name || 'Sistema'}`,
+        `🗓️ Data: ${new Date().toLocaleString('pt-BR')}`,
+        ``,
+        `Acesse o sistema para visualizar e salvar o PDF.`,
+      ].join('\n');
+    }
 
     document.getElementById('share-btn-seller')?.addEventListener('click', () => {
       const email = document.getElementById('share-email-seller').value.trim();
-      sendReportEmail(email);
+      openNotifyEmail(email);
     });
 
-    document.getElementById('share-btn-wap')?.addEventListener('click', () => {
-      const ctx = window._shareCtx;
+    document.getElementById('share-btn-whatsapp')?.addEventListener('click', () => {
+      const ctx = _shareCtx;
       if (!ctx) return;
-      const { g } = ctx;
-      const msg = `Relatório Hygicare Lavanderia\nCliente: ${g.clientName}\nPeríodo: ${g.period}\nTotal: ${g.totalKg.toFixed(2)} kg · ${g.rows.length} itens`;
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
-    });
-
-    document.getElementById('share-btn-download')?.addEventListener('click', () => {
-      if (window._shareCtx) window._pdfGroup(window._shareCtx.safeKey);
+      const text = buildShareText(ctx.g);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      const statusEl = document.getElementById('share-status');
+      if (statusEl) statusEl.textContent = '💬 WhatsApp aberto — escolha o contato para enviar';
     });
 
     document.getElementById('share-btn-print')?.addEventListener('click', () => {
-      if (window._shareCtx) window._printGroup(window._shareCtx.safeKey);
+      if (_shareCtx) window._printGroup(_shareCtx.safeKey);
     });
+
+    // Aplicar permissões de acesso nos itens de navegação
+    function applyNavPermissions() {
+      if (!currentUser || currentUser.role === 'admin') return;
+      // Consultor nunca acessa o admin
+      if (currentUser.role === 'consultor') {
+        document.getElementById('nav-admin')?.style.setProperty('display', 'none');
+        document.querySelector('.bnav-btn[data-target="screen-admin"]')?.style.setProperty('display', 'none');
+        document.querySelector('.drawer-item[data-target="screen-admin"]')?.style.setProperty('display', 'none');
+      }
+      const permsStr = (currentUser.permissions || '').trim();
+      if (!permsStr) return; // sem restrições = acesso total
+      const allowed = new Set(permsStr.split(',').map(s => s.trim()).filter(Boolean));
+      const map = {
+        clients:   'screen-clients',
+        machines:  'screen-machines',
+        processes: 'screen-processes',
+        form:      'screen-form',
+        reports:   'screen-reports',
+        charts:    'screen-charts',
+        vazao:     'screen-vazao',
+        recipes:   'screen-recipes',
+        users:     'screen-users',
+      };
+      Object.entries(map).forEach(([perm, screenId]) => {
+        if (allowed.has(perm)) return;
+        const navId = 'nav-' + screenId.replace('screen-', '');
+        document.getElementById(navId)?.style.setProperty('display', 'none');
+        document.querySelector(`.bnav-btn[data-target="${screenId}"]`)?.style.setProperty('display', 'none');
+        document.querySelector(`.drawer-item[data-target="${screenId}"]`)?.style.setProperty('display', 'none');
+      });
+    }
+    applyNavPermissions();
 
     // Setar active inicial
     document.getElementById('nav-clients').classList.add('active');
@@ -545,8 +1005,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const existingRecords = await _originalGetAll('records');
         const existingClients = await _originalGetAll('clients');
-        // Só sincroniza se o IndexedDB parecer vazio (nova sessão ou cache limpo)
-        if (existingRecords.length > 0 && existingClients.length > 0) return;
+        // Sincroniza se IndexedDB estiver vazio OU se última sync foi há mais de 4h
+        const lastSync = localStorage.getItem('lastSyncTime');
+        const stale = !lastSync || (Date.now() - new Date(lastSync).getTime() > 4 * 60 * 60 * 1000);
+        if (existingRecords.length > 0 && existingClients.length > 0 && !stale) return;
 
         const results = await Promise.allSettled(
           Object.values(SHEET_MAP).map(s =>
@@ -591,11 +1053,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Mapa de sheets individuais
     const SHEET_MAP = {
-      clients:   { sheet: SHEETS.CLIENTS,   store: 'clients',   label: 'clientes'  },
-      machines:  { sheet: SHEETS.MACHINES,  store: 'machines',  label: 'máquinas'  },
-      processes: { sheet: SHEETS.PROCESSES, store: 'processes', label: 'processos' },
-      records:   { sheet: SHEETS.RECORDS,   store: 'records',   label: 'registros' },
-      users:     { sheet: SHEETS.USERS,     store: 'users',     label: 'usuários'  },
+      clients:       { sheet: SHEETS.CLIENTS,       store: 'clients',       label: 'clientes'        },
+      machines:      { sheet: SHEETS.MACHINES,      store: 'machines',      label: 'máquinas'        },
+      processes:     { sheet: SHEETS.PROCESSES,     store: 'processes',     label: 'processos'       },
+      records:       { sheet: SHEETS.RECORDS,       store: 'records',       label: 'registros'       },
+      users:         { sheet: SHEETS.USERS,         store: 'users',         label: 'usuários'        },
+      vazoes:          { sheet: SHEETS.VAZOES,          store: 'vazoes',          label: 'vazões'           },
+      vazao_records:   { sheet: SHEETS.VAZAO_RECORDS,   store: 'vazao_records',   label: 'leituras vazão'   },
+      recipes:         { sheet: SHEETS.RECIPES,         store: 'recipes',         label: 'receitas'         },
+      recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
     };
 
     async function doRefresh(target = 'all') {
@@ -606,7 +1072,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isAll = target === 'all';
       const labelTarget = isAll ? 'Todos os dados' : (SHEET_MAP[target]?.label || target);
 
-      if (isAll && !confirm('🔄 Buscar dados atualizados do Google Sheets?')) return;
+      if (isAll) {
+        const ok = await confirmAction('Buscar dados atualizados do Google Sheets?\nIsso consome uma chamada de API.', '🔄 Atualizar', false);
+        if (!ok) return;
+      }
 
       const btn = document.getElementById('btn-refresh-data');
       btn.disabled = true;
@@ -628,15 +1097,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           const result = results[i];
           if (result.status === 'fulfilled') {
             const items = Array.isArray(result.value) ? result.value : [];
-            console.log(`📥 ${label} (${items.length} itens):`, items);
-            // Para users sempre chama saveToStore para garantir remoção de excluídos
             if (store === 'users' || items.length > 0) {
               const saved = await saveToStore(store, items);
               imported += saved;
-              console.log(`✅ ${saved} ${label} importados`);
             }
           } else {
-            console.warn(`⚠️ Falha ao buscar ${label}:`, result.reason);
             toast(`Erro ao buscar ${label}`, 'error');
           }
         }
@@ -737,7 +1202,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         for (const local of existing) {
           if (local.username && !sheetUsernames.includes(local.username.toLowerCase())) {
             await dbDelete('users', local.id);
-            console.log(`🗑️ Usuário "${local.username}" removido (não está mais na planilha)`);
           }
         }
 
@@ -790,12 +1254,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =====================================================
     formClient.addEventListener('submit', async e => {
       e.preventDefault();
+      if (_saving) return;
       const data = Object.fromEntries(new FormData(formClient).entries());
       data.send_client = !!data.send_client;
       data.send_seller = !!data.send_seller;
 
       const editId = editClientIdField.value ? Number(editClientIdField.value) : null;
-
+      const submitBtn = formClient.querySelector('button[type="submit"]');
+      setSaving(true, submitBtn);
       try {
         let id;
         if (editId) {
@@ -824,6 +1290,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (err) {
         console.error(err);
         toast('Erro ao salvar cliente: ' + err.message, 'error');
+      } finally {
+        setSaving(false, submitBtn);
       }
     });
 
@@ -832,6 +1300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =====================================================
     formMachine.addEventListener('submit', async e => {
       e.preventDefault();
+      if (_saving) return;
       const clientId = Number(machineClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
 
@@ -840,7 +1309,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       data.capacity    = parseFloat(data.capacity) || 0;
 
       const editId = editMachineIdField.value ? Number(editMachineIdField.value) : null;
-
+      const submitBtn = formMachine.querySelector('button[type="submit"]');
+      setSaving(true, submitBtn);
       try {
         if (editId) {
           const existing = (await dbGetAll_raw('machines')).find(m => Number(m.id) === editId);
@@ -867,6 +1337,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       } catch (err) {
         toast('Erro ao salvar máquina: ' + err.message, 'error');
+      } finally {
+        setSaving(false, submitBtn);
       }
     });
 
@@ -875,6 +1347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =====================================================
     formProcess.addEventListener('submit', async e => {
       e.preventDefault();
+      if (_saving) return;
       const machineId = Number(processMachineSelect.value);
       if (!machineId) return toast('Selecione uma máquina', 'warning');
 
@@ -883,7 +1356,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       data.capacity    = data.capacity ? parseFloat(data.capacity) : null;
 
       const editId = editProcessIdField.value ? Number(editProcessIdField.value) : null;
-
+      const submitBtn = formProcess.querySelector('button[type="submit"]');
+      setSaving(true, submitBtn);
       try {
         if (editId) {
           const existing = (await dbGetAll_raw('processes')).find(p => Number(p.id) === editId);
@@ -909,6 +1383,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       } catch (err) {
         toast('Erro ao salvar processo: ' + err.message, 'error');
+      } finally {
+        setSaving(false, submitBtn);
       }
     });
 
@@ -921,11 +1397,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!c) return;
       editClientIdField.value = id;
       document.getElementById('form-client-title').textContent = '✏️ Editar Cliente';
-      formClient.name.value        = c.name || '';
-      formClient.city.value        = c.city || '';
-      formClient.seller.value      = c.seller || '';
+      formClient.name.value         = c.name || '';
+      formClient.city.value         = c.city || '';
+      formClient.seller.value       = c.seller || '';
       formClient.email_client.value = c.email_client || '';
       formClient.email_seller.value = c.email_seller || '';
+      formClient.price_kg.value     = c.price_kg || '';
       formClient.send_client.checked = !!c.send_client;
       formClient.send_seller.checked = !!c.send_seller;
       formClientCard.classList.remove('hidden');
@@ -933,13 +1410,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function deleteClient(id) {
-      if (!confirm('Excluir este cliente? Todas as máquinas e processos vinculados também serão removidos.')) return;
+      const records = await dbGetAll_raw('records');
+      const hasRecords = records.some(r => Number(r.client_id) === Number(id));
+      const msg = hasRecords
+        ? '⚠️ Este cliente possui registros de produção vinculados.\n\nExcluir mesmo assim? Todas as máquinas, processos e registros serão removidos.'
+        : 'Excluir este cliente? Todas as máquinas e processos vinculados também serão removidos.';
+      if (!await confirmAction(msg, 'Excluir')) return;
 
-      // Tentar GAS primeiro; se falhar, perguntar se exclui só localmente
       const gasOk = await deleteSheetDB(SHEETS.CLIENTS, id);
       if (!gasOk && navigator.onLine) {
-        const forceLocal = confirm('Não foi possível excluir no Google Sheets (o registro pode não estar sincronizado).\n\nExcluir apenas localmente?');
-        if (!forceLocal) return;
+        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) return;
       }
 
       // Excluir localmente em cascata
@@ -973,11 +1453,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function deleteMachine(id) {
-      if (!confirm('Excluir esta máquina? Os processos vinculados também serão removidos.')) return;
+      const records = await dbGetAll_raw('records');
+      const hasRecords = records.some(r => Number(r.machine_id) === Number(id));
+      const msg = hasRecords
+        ? '⚠️ Esta máquina possui registros de produção vinculados.\n\nExcluir mesmo assim? Os processos e registros vinculados serão removidos.'
+        : 'Excluir esta máquina? Os processos vinculados também serão removidos.';
+      if (!await confirmAction(msg, 'Excluir')) return;
       const gasOk = await deleteSheetDB(SHEETS.MACHINES, id);
       if (!gasOk && navigator.onLine) {
-        const forceLocal = confirm('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?');
-        if (!forceLocal) return;
+        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) return;
       }
       const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === id);
       for (const p of processes) {
@@ -1004,11 +1488,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function deleteProcess(id) {
-      if (!confirm('Excluir este processo?')) return;
+      if (!await confirmAction('Excluir este processo?', 'Excluir')) return;
       const gasOk = await deleteSheetDB(SHEETS.PROCESSES, id);
       if (!gasOk && navigator.onLine) {
-        const forceLocal = confirm('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?');
-        if (!forceLocal) return;
+        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) return;
       }
       await dbDelete('processes', id);
       toast(gasOk ? 'Processo excluído!' : 'Processo excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
@@ -1026,6 +1509,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =====================================================
     // RENDER — CLIENTES
     // =====================================================
+    let _clientsGrouped = false;
+    function _clientItemHtml(c) {
+      return `
+        <div class="list-item">
+          <div class="list-item-content">
+            <div class="list-item-name">
+              👤 ${c.name}
+              <span class="badge">${c.city || 'Sem cidade'}</span>
+            </div>
+            <div class="list-item-details">
+              ${c.seller ? `<span class="detail-chip">👨‍💼 ${c.seller}</span>` : ''}
+              ${c.price_kg ? `<span class="detail-chip">💰 R$ ${parseFloat(c.price_kg).toFixed(2)}/kg</span>` : ''}
+              ${c.email_client ? `<span class="detail-chip">📧 ${c.email_client}</span>` : ''}
+              ${c.send_client ? `<span class="badge badge-green">✉️ Envia cliente</span>` : ''}
+              ${c.send_seller ? `<span class="badge badge-green">✉️ Envia vendedor</span>` : ''}
+            </div>
+          </div>
+          <div class="list-item-actions">
+            <button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>
+            <button class="btn-danger" onclick="window._deleteClient(${c.id})">🗑️</button>
+          </div>
+        </div>`;
+    }
+
     async function renderClientsList(filter = '') {
       let clients = await getAll('clients');
       const countEl = document.getElementById('clients-count');
@@ -1046,30 +1553,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      list.innerHTML = clients.map(c => `
-        <div class="list-item">
-          <div class="list-item-content">
-            <div class="list-item-name">
-              👤 ${c.name}
-              <span class="badge">${c.city || 'Sem cidade'}</span>
-            </div>
-            <div class="list-item-details">
-              ${c.seller ? `<span class="detail-chip">👨‍💼 ${c.seller}</span>` : ''}
-              ${c.email_client ? `<span class="detail-chip">📧 ${c.email_client}</span>` : ''}
-              ${c.send_client ? `<span class="badge badge-green">✉️ Envia cliente</span>` : ''}
-              ${c.send_seller ? `<span class="badge badge-green">✉️ Envia vendedor</span>` : ''}
-            </div>
-          </div>
-          <div class="list-item-actions">
-            <button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>
-            <button class="btn-danger" onclick="window._deleteClient(${c.id})">🗑️</button>
-          </div>
-        </div>
-      `).join('');
+      if (_clientsGrouped) {
+        const bySeller = {};
+        for (const c of clients) {
+          const s = c.seller || '(Sem vendedor)';
+          if (!bySeller[s]) bySeller[s] = [];
+          bySeller[s].push(c);
+        }
+        list.innerHTML = Object.entries(bySeller)
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([seller, cs]) => `
+            <div class="client-group">
+              <div class="client-group-hdr">👨‍💼 ${seller}<span class="count-badge" style="margin-left:auto">${cs.length}</span></div>
+              ${cs.map(_clientItemHtml).join('')}
+            </div>`)
+          .join('');
+      } else {
+        list.innerHTML = clients.map(_clientItemHtml).join('');
+      }
     }
 
     // Busca em tempo real
     document.getElementById('search-clients').addEventListener('input', e => renderClientsList(e.target.value));
+
+    // Toggle lista / agrupado por vendedor
+    document.getElementById('clients-view-toggle')?.querySelectorAll('.qf-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.getElementById('clients-view-toggle').querySelectorAll('.qf-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        _clientsGrouped = this.dataset.cv === 'group';
+        renderClientsList(document.getElementById('search-clients')?.value || '');
+      });
+    });
 
     // =====================================================
     // RENDER — MÁQUINAS
@@ -1120,26 +1635,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         byClient[clientName].items.push(m);
       }
 
-      list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { client, items }]) => `
-        <div class="client-group-separator">
-          <span>👤 ${clientName}</span>
-          <span class="badge">${items.length} máquina(s)</span>
-        </div>
-        ${items.map(m => `
-          <div class="list-item">
-            <div class="list-item-content">
-              <div class="list-item-name">
-                ⚙️ ${m.name}
-                <span class="badge badge-yellow">${m.capacity} kg</span>
-              </div>
-            </div>
-            <div class="list-item-actions">
-              <button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>
-              <button class="btn-danger" onclick="window._deleteMachine(${m.id})">🗑️</button>
+      list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { client, items }], idx) => {
+        const groupId = `mach-group-${idx}`;
+        return `
+        <div class="proc-client-group">
+          <div class="client-group-separator" onclick="(function(el){const b=document.getElementById('${groupId}');const open=b.classList.toggle('collapsed');el.querySelector('.cg-chevron').style.transform=open?'rotate(-90deg)':'rotate(0deg)'})(this)" style="cursor:pointer;user-select:none">
+            <span>👤 ${clientName}</span>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <span class="badge">${items.length} máquina(s)</span>
+              <span class="cg-chevron" style="font-size:0.75rem;transition:transform 0.2s;display:inline-block">▼</span>
             </div>
           </div>
-        `).join('')}
-      `).join('');
+          <div id="${groupId}">
+            ${items.map(m => `
+              <div class="list-item" data-machine-id="${m.id}">
+                <div class="list-item-content">
+                  <div class="list-item-name">
+                    ⚙️ ${m.name}
+                    <span class="badge badge-yellow">${m.capacity} kg</span>
+                  </div>
+                </div>
+                <div class="list-item-actions">
+                  <button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>
+                  <button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>
+                  <button class="btn-danger" onclick="window._deleteMachine(${m.id})">🗑️</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `}).join('');
     }
 
     document.getElementById('search-machines').addEventListener('input', e => renderMachinesList(e.target.value));
@@ -1204,33 +1729,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         byClient[clientName].items.push({ p, machine });
       }
 
-      list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { items }]) => `
-        <div class="client-group-separator">
-          <span>👤 ${clientName}</span>
-          <span class="badge">${items.length} processo(s)</span>
-        </div>
-        ${items.map(({ p, machine }) => {
-          const capStr = p.capacity ? `${p.capacity} kg` : `${machine?.capacity || 0} kg (da máquina)`;
-          return `
-            <div class="list-item">
-              <div class="list-item-content">
-                <div class="list-item-name">
-                  🔄 ${p.name}
-                  <span class="badge badge-yellow">${capStr}</span>
-                </div>
-                <div class="list-item-details">
-                  <span class="detail-chip">⚙️ ${machine?.name || 'Máquina não encontrada'}</span>
-                  ${p.capacity ? '' : '<span class="badge badge-gray">Cap. herdada</span>'}
-                </div>
-              </div>
-              <div class="list-item-actions">
-                <button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>
-                <button class="btn-danger" onclick="window._deleteProcess(${p.id})">🗑️</button>
-              </div>
+      list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { items }], idx) => {
+        const groupId = `proc-group-${idx}`;
+        return `
+        <div class="proc-client-group">
+          <div class="client-group-separator" onclick="(function(el){const b=document.getElementById('${groupId}');const open=b.classList.toggle('collapsed');el.querySelector('.cg-chevron').style.transform=open?'rotate(-90deg)':'rotate(0deg)'})(this)" style="cursor:pointer;user-select:none">
+            <span>👤 ${clientName}</span>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <span class="badge">${items.length} processo(s)</span>
+              <span class="cg-chevron" style="font-size:0.75rem;transition:transform 0.2s;display:inline-block">▼</span>
             </div>
-          `;
-        }).join('')}
-      `).join('');
+          </div>
+          <div id="${groupId}">
+            ${items.map(({ p, machine }) => {
+              const capStr = p.capacity ? `${p.capacity} kg` : `${machine?.capacity || 0} kg (da máquina)`;
+              return `
+                <div class="list-item">
+                  <div class="list-item-content">
+                    <div class="list-item-name">
+                      🔄 ${p.name}
+                      <span class="badge badge-yellow">${capStr}</span>
+                    </div>
+                    <div class="list-item-details">
+                      <span class="detail-chip">⚙️ ${machine?.name || 'Máquina não encontrada'}</span>
+                      ${p.capacity ? '' : '<span class="badge badge-gray">Cap. herdada</span>'}
+                    </div>
+                  </div>
+                  <div class="list-item-actions">
+                    <button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>
+                    <button class="btn-danger" onclick="window._deleteProcess(${p.id})">🗑️</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `}).join('');
     }
 
     document.getElementById('search-processes').addEventListener('input', e => renderProcessesList(e.target.value));
@@ -1267,10 +1801,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           tableRows += `
             <tr class="process-row" data-process-id="${p.id}">
               <td><strong>${p.name}</strong></td>
-              <td><input name="executed" type="number" min="0" step="1" value="0" /></td>
-              <td><input name="canceled" type="number" min="0" step="1" value="0" /></td>
+              <td><input name="executed" type="number" min="0" step="1" /></td>
+              <td><input name="canceled" type="number" min="0" step="1" /></td>
               <td><input name="capacity" type="number" step="0.01" value="${cap}" /></td>
-              <td><input name="total" type="number" step="0.01" readonly value="0" /></td>
+              <td><input name="total" type="number" step="0.01" readonly /></td>
             </tr>
           `;
         }
@@ -1279,10 +1813,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           tableRows = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem">Nenhum processo cadastrado para esta máquina</td></tr>`;
         }
 
+        const machTotalId = `mach-total-${m.id}`;
         block.innerHTML = `
           <div class="machine-block-header">
             <span>⚙️</span>
             <h4>${m.name} — ${m.capacity} kg</h4>
+            <span class="mach-total-badge" id="${machTotalId}" style="margin-left:auto;font-size:0.8rem;font-weight:700;color:var(--success-dark);background:#d1fae5;border:1px solid #6ee7b7;border-radius:20px;padding:2px 10px;display:none">0,00 kg</span>
           </div>
           <div class="machine-block-body">
             <table class="proc-table">
@@ -1302,14 +1838,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         container.appendChild(block);
 
-        // Auto-calcular total
+        // Auto-calcular total da linha e somatório da máquina
+        const updateMachTotal = () => {
+          let sum = 0;
+          block.querySelectorAll('.process-row').forEach(r => {
+            sum += parseFloat(r.querySelector('[name="total"]').value || 0);
+          });
+          const badge = document.getElementById(machTotalId);
+          if (badge) {
+            if (sum > 0) {
+              badge.textContent = `Total: ${sum.toFixed(2).replace('.', ',')} kg`;
+              badge.style.display = '';
+            } else {
+              badge.style.display = 'none';
+            }
+          }
+        };
+
         block.querySelectorAll('.process-row').forEach(row => {
           ['executed', 'canceled', 'capacity'].forEach(name => {
             row.querySelector(`[name="${name}"]`).addEventListener('input', () => {
               const ex = parseFloat(row.querySelector('[name="executed"]').value || 0);
               const ca = parseFloat(row.querySelector('[name="canceled"]').value || 0);
               const cp = parseFloat(row.querySelector('[name="capacity"]').value || 0);
-              row.querySelector('[name="total"]').value = ((ex + ca) * cp).toFixed(2);
+              const result = (ex + ca) * cp;
+              row.querySelector('[name="total"]').value = result > 0 ? result.toFixed(2) : '';
+              updateMachTotal();
             });
           });
         });
@@ -1319,9 +1873,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('save-production').addEventListener('click', async () => {
       const clientId = Number(prodClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
-      const dateStart = document.getElementById('prod-date-start').value;
-      const dateEnd   = document.getElementById('prod-date-end').value;
+      let dateStart = document.getElementById('prod-date-start').value;
+      const dateEnd = document.getElementById('prod-date-end').value;
       if (!dateStart || !dateEnd) return toast('Preencha as datas do período', 'warning');
+
+      // Auto-corrigir sobreposição: se date_start bate com o date_end do último
+      // lote salvo para este cliente, avança 1 dia automaticamente
+      {
+        const prev = (await dbGetAll_raw('records'))
+          .filter(r => Number(r.client_id) === clientId && r.date_end);
+        if (prev.length) {
+          const maxEnd = prev.reduce((m, r) => r.date_end > m ? r.date_end : m, '');
+          if (maxEnd && maxEnd === dateStart) {
+            const d = new Date(dateStart + 'T00:00:00');
+            d.setDate(d.getDate() + 1);
+            dateStart = d.toISOString().slice(0, 10);
+            document.getElementById('prod-date-start').value = dateStart;
+            toast(`Início ajustado para ${fmtDate(dateStart)} — evitando sobreposição com o período anterior`, 'info', 5000);
+          }
+        }
+      }
 
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
         return toast('Configure a URL do Google Apps Script no Painel Admin!', 'warning');
@@ -1343,14 +1914,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!rows.length) return toast('Nenhum dado preenchido para salvar', 'warning');
+      if (_saving) return;
 
-      const btn = document.getElementById('save-production');
-      btn.disabled = true;
-      btn.textContent = '⏳ Enviando...';
+      const btn        = document.getElementById('save-production');
+      const progressEl = document.getElementById('save-progress');
+      const logEl      = document.getElementById('save-progress-log');
+
+      // Busca nomes para exibir no log
+      const allMachines  = await dbGetAll_raw('machines');
+      const allProcesses = await dbGetAll_raw('processes');
+
+      const logLine = (icon, msg) => {
+        const line = document.createElement('div');
+        line.textContent = `${icon} ${msg}`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+
+      setSaving(true, btn, '⏳ Enviando...');
+      logEl.innerHTML = '';
+      progressEl.classList.remove('hidden');
+      logLine('📋', `${rows.length} linha(s) a enviar...`);
 
       try {
         let synced = 0;
         for (const r of rows) {
+          const machine = allMachines.find(m => Number(m.id) === Number(r.machine_id));
+          const process = allProcesses.find(p => Number(p.id) === Number(r.process_id));
+          const label   = `${machine?.name || 'Máq.'} › ${process?.name || 'Proc.'} (exec: ${r.executed}, cancel: ${r.canceled})`;
+
+          logLine('⏳', `Enviando: ${label}`);
+
           const newId   = await dbAdd('records', r);
           const rWithId = { ...r, id: newId };
           await dbPut('records', rWithId);
@@ -1358,12 +1952,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           const ok = await callGAS('insert', SHEETS.RECORDS, rWithId);
           if (ok) {
             synced++;
+            // Substitui a última linha pelo check
+            logEl.lastChild.textContent = `✅ ${label}`;
           } else {
             await dbDelete('records', newId);
-            toast(`Erro ao enviar registro ${synced + 1}. Verifique a conexão e tente novamente.`, 'error', 7000);
+            logEl.lastChild.textContent = `❌ Falhou: ${label}`;
+            logLine('🛑', 'Envio interrompido — verifique a conexão e tente novamente.');
+            toast('Erro ao enviar. Verifique a conexão.', 'error', 7000);
             return;
           }
         }
+
+        logLine('🎉', `Concluído! ${synced} linha(s) registradas com sucesso.`);
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
         await updateSyncStatus();
@@ -1371,21 +1971,60 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const allClients = await dbGetAll_raw('clients');
         const c = allClients.find(c => Number(c.id) === clientId);
-        notifyEmail('novo_relatorio', { clientName: c?.name || `#${clientId}`, period: `${dateStart} → ${dateEnd}` });
+        const clientName = c?.name || `#${clientId}`;
 
-        toast(`✅ ${synced} registro(s) enviados para o Google Sheets com sucesso!`, 'success', 5000);
+        toast(`✅ ${synced} registro(s) enviados com sucesso!`, 'success', 5000);
+
+        // Notificação ao vendedor — opt-in via toast (WhatsApp + E-mail)
+        const sellerEmail = c?.email_seller || localStorage.getItem('hygicare_cfg_notify_email') || '';
+        const waText = [
+          `📋 *Relatório Hygicare*`,
+          ``,
+          `👥 Cliente: ${clientName}`,
+          `📅 Período: ${dateStart} a ${dateEnd}`,
+          `👤 Gerado por: ${currentUser?.name || 'Sistema'}`,
+          `🗓️ Data: ${new Date().toLocaleString('pt-BR')}`,
+          ``,
+          `Acesse o sistema para visualizar e salvar o PDF.`,
+        ].join('\n');
+        setTimeout(() => toast('Notificar via WhatsApp?', 'info', 9000, {
+          label: '💬 Zap',
+          fn: () => window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank')
+        }), 800);
+        if (sellerEmail) {
+          const subject = `[Hygicare] Relatório disponível — ${clientName}`;
+          const body = [
+            'Olá,',
+            '',
+            'Um novo relatório operacional foi elaborado no sistema.',
+            '',
+            `Cliente: ${clientName}`,
+            `Período: ${dateStart} a ${dateEnd}`,
+            `Gerado por: ${currentUser?.name || 'Sistema'}`,
+            `Data: ${new Date().toLocaleString('pt-BR')}`,
+            '',
+            'Acesse o sistema para visualizar e salvar o PDF.',
+            '',
+            'Hygicare Lavanderia — Sistema de Gestão',
+          ].join('\n');
+          const mailto = `mailto:${sellerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          setTimeout(() => toast('Notificar vendedor por e-mail?', 'info', 9000, {
+            label: '📧 Enviar',
+            fn: () => window.open(mailto, '_blank')
+          }), 1800);
+        }
 
         document.getElementById('prod-client-select').value = '';
         document.getElementById('prod-date-start').value = '';
         document.getElementById('prod-date-end').value = '';
         document.getElementById('machines-list').innerHTML = '';
+        setTimeout(() => { progressEl.classList.add('hidden'); logEl.innerHTML = ''; }, 4000);
 
       } catch (err) {
         console.error('❌ Erro ao salvar produção:', err);
         toast('❌ Sem conexão com a internet. Estabeleça conexão e tente novamente.', 'error', 7000);
       } finally {
-        btn.disabled = false;
-        btn.textContent = '💾 Salvar';
+        setSaving(false, btn);
       }
     });
 
@@ -1478,14 +2117,1287 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.dbDelete = dbDelete;
 
     // =====================================================
+    // TELA VAZÃO
+    // =====================================================
+    async function syncVazaoData() {
+      const pull = async (sheet, store) => {
+        try {
+          const r = await fetch(`${gasApiUrl()}?sheet=${sheet}`);
+          if (r.ok) {
+            const items = (await r.json()).data || [];
+            await clearStore(store);
+            for (const v of items) { if (v.id) await dbPut(store, normalizeItem(v)); }
+          }
+        } catch(e) {}
+      };
+      // Máquinas e clientes são necessários para os dropdowns da tela
+      await pull(SHEETS.CLIENTS,       'clients');
+      await pull(SHEETS.MACHINES,      'machines');
+      await pull(SHEETS.VAZOES,        'vazoes');
+      await pull(SHEETS.VAZAO_RECORDS, 'vazao_records');
+    }
+
+    async function initHomeScreen() {
+      // Saudação
+      const now = new Date();
+      const h = now.getHours();
+      const greeting = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+      const firstName = (currentUser?.name || currentUser?.username || '').split(' ')[0];
+      const greetEl = document.getElementById('home-greeting');
+      if (greetEl) greetEl.textContent = `${greeting}${firstName ? ', ' + firstName : ''}! 👋`;
+      const dateEl = document.getElementById('home-date');
+      if (dateEl) dateEl.textContent = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+      // KPIs
+      const records  = await dbGetAll_raw('records');
+      const clients  = await dbGetAll_raw('clients');
+      const machines = await dbGetAll_raw('machines');
+      const procs    = await dbGetAll_raw('processes');
+
+      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const thisMonth = records.filter(r => (r.date_start || '').startsWith(ym));
+      const kgMes = thisMonth.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+
+      const kgEl = document.getElementById('home-kg-mes');
+      if (kgEl) kgEl.textContent = kgMes >= 1000 ? (kgMes / 1000).toFixed(1) + ' t' : Math.round(kgMes) + ' kg';
+      const recEl = document.getElementById('home-records-mes');
+      if (recEl) recEl.textContent = thisMonth.length;
+      const cliEl = document.getElementById('home-clients-count');
+      if (cliEl) cliEl.textContent = clients.length;
+
+      const pending = (await dbGetAll_raw('recipes')).filter(r => r.status === 'pending').length;
+      const kpiPend = document.getElementById('home-kpi-pending');
+      if (kpiPend) kpiPend.style.display = pending ? '' : 'none';
+      const pendEl = document.getElementById('home-pending-count');
+      if (pendEl) pendEl.textContent = pending;
+
+      // Últimos 5 registros
+      const recent = [...records]
+        .sort((a, b) => (b.synced_at || b.created_at || b.date_start || '').localeCompare(a.synced_at || a.created_at || a.date_start || ''))
+        .slice(0, 5);
+      const recentEl = document.getElementById('home-recent-records');
+      if (!recentEl) return;
+      if (!recent.length) {
+        recentEl.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;text-align:center;padding:0.75rem">Nenhum registro ainda.</div>';
+        return;
+      }
+      recentEl.innerHTML = recent.map(r => {
+        const c = clients.find(cl => Number(cl.id) === Number(r.client_id));
+        const m = machines.find(mc => Number(mc.id) === Number(r.machine_id));
+        const p = procs.find(pr => Number(pr.id) === Number(r.process_id));
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+            <div style="min-width:0">
+              <div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c?.name || '—'}</div>
+              <div style="font-size:0.73rem;color:var(--muted)">${m?.name || ''} · ${p?.name || ''}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;margin-left:0.75rem">
+              <div style="font-size:0.9rem;font-weight:700;color:var(--primary)">${Math.round(parseFloat(r.total || 0))} kg</div>
+              <div style="font-size:0.72rem;color:var(--muted)">${fmtDate(r.date_start)}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function initVazaoScreen() {
+      const dateEl   = document.getElementById('vazao-date');
+      const clientSel = document.getElementById('vazao-client');
+
+      // 1. Data padrão = hoje (imediato, sem esperar rede)
+      if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+
+      // 2. Popular clientes do cache local imediatamente
+      const fillClients = async () => {
+        const clients = await window.getAll('clients');
+        const cur = clientSel.value;
+        clientSel.innerHTML = '<option value="">-- Selecione --</option>';
+        clients.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+               .forEach(c => { clientSel.innerHTML += `<option value="${c.id}">${c.name}</option>`; });
+        if (cur) { clientSel.value = cur; }
+      };
+      await fillClients();
+
+      // Restaurar seleção anterior
+      if (clientSel.value) await loadVazaoMachines(clientSel.value);
+
+      // 3. Sincronizar em background e atualizar lista silenciosamente
+      syncVazaoData().then(() => fillClients()).catch(() => {});
+    }
+
+    async function loadVazaoMachines(clientId) {
+      const area     = document.getElementById('vazao-machines-area');
+      const emptyMsg = document.getElementById('vazao-empty-msg');
+
+      area.style.display = 'none';
+      area.innerHTML = '';
+
+      if (!clientId) {
+        emptyMsg.textContent = 'Selecione um cliente para ver as máquinas.';
+        emptyMsg.style.display = '';
+        await renderVazaoLocalHistory(0);
+        return;
+      }
+      emptyMsg.style.display = 'none';
+
+      const allMachines = await window.getAll('machines');
+      const machines    = allMachines.filter(m => Number(m.client_id) === Number(clientId));
+
+      if (!machines.length) {
+        emptyMsg.textContent = 'Este cliente não possui máquinas cadastradas.';
+        emptyMsg.style.display = '';
+        await renderVazaoLocalHistory(clientId);
+        return;
+      }
+
+      const allVazoes = await dbGetAll_raw('vazoes');
+
+      area.innerHTML = machines.map(m => {
+        const mv  = allVazoes.filter(v => Number(v.machine_id) === Number(m.id));
+        const has = mv.length > 0;
+        const rows = has ? mv.map(v => `
+          <tr>
+            <td style="padding:0.45rem 0.5rem;font-weight:600">${v.name}</td>
+            <td style="padding:0.45rem 0.5rem;color:var(--muted);font-size:0.82rem">${v.unit || '—'}</td>
+            <td style="padding:0.3rem 0.5rem">
+              <input type="number" step="any" min="0"
+                class="form-input vazao-result-input"
+                data-machine-id="${m.id}"
+                data-vazao-id="${v.id}"
+                data-vazao-name="${v.name}"
+                data-vazao-unit="${v.unit || ''}"
+                placeholder="0"
+                style="width:100%;max-width:160px;padding:0.4rem 0.7rem" />
+            </td>
+          </tr>`).join('') : '';
+
+        return `
+          <div class="vazao-mach-block${has ? '' : ' vazao-mach-block--empty'}" style="margin-bottom:0.75rem">
+            <div class="vazao-mach-block-hdr">
+              <span>⚙️ ${m.name}</span>
+              ${has ? `<span style="font-size:0.75rem;color:var(--primary);font-weight:600">💧 ${mv.length} vazão(ões)</span>` : '<span style="font-size:0.75rem;color:#b45309;font-weight:600">⚠️ Sem vazões</span>'}
+            </div>
+            ${has
+              ? `<table class="proc-table" style="width:100%">
+                  <thead><tr>
+                    <th style="text-align:left">Vazão</th>
+                    <th style="text-align:left">Unidade</th>
+                    <th style="text-align:left;min-width:130px">Resultado</th>
+                  </tr></thead>
+                  <tbody>${rows}</tbody>
+                </table>`
+              : `<div style="padding:0.6rem 0.5rem;color:#92400e;font-size:0.85rem">Configure as vazões desta máquina em <strong>⚙️ Máquinas</strong>.</div>`
+            }
+          </div>`;
+      }).join('');
+
+      // Botão salvar ao final das máquinas
+      area.innerHTML += `<div style="display:flex;justify-content:flex-end;margin-top:0.5rem">
+        <button id="btn-save-vazao" class="btn-primary" style="min-width:160px">💾 Salvar Leituras</button>
+      </div>`;
+      area.style.display = '';
+
+      // Re-bind do botão (foi recriado no innerHTML)
+      document.getElementById('btn-save-vazao')?.addEventListener('click', saveVazaoReadings);
+
+      await renderVazaoLocalHistory(clientId);
+    }
+
+    async function saveVazaoReadings() {
+      const date     = document.getElementById('vazao-date')?.value;
+      const clientId = Number(document.getElementById('vazao-client')?.value);
+      if (!date || !clientId) return toast('Preencha a data e selecione um cliente', 'warning');
+
+      const inputs = document.querySelectorAll('.vazao-result-input');
+      const rows = [];
+      inputs.forEach(inp => {
+        const val = inp.value.trim();
+        if (val !== '') rows.push({
+          machine_id: Number(inp.dataset.machineId),
+          vazao_id:   Number(inp.dataset.vazaoId),
+          vazao_name: inp.dataset.vazaoName,
+          vazao_unit: inp.dataset.vazaoUnit,
+          value:      parseFloat(val)
+        });
+      });
+
+      if (!rows.length) return toast('Informe pelo menos um resultado', 'warning');
+      if (_saving) return;
+
+      const btn = document.getElementById('btn-save-vazao');
+      setSaving(true, btn || null, '⏳ Salvando...');
+
+      try {
+        let saved = 0;
+        for (const r of rows) {
+          const record = {
+            date, client_id: clientId, machine_id: r.machine_id,
+            vazao_id: r.vazao_id, vazao_name: r.vazao_name,
+            vazao_unit: r.vazao_unit, value: r.value,
+            user: currentUser?.name || currentUser?.username || '',
+            created_at: new Date().toISOString()
+          };
+          const id = await dbAdd('vazao_records', record);
+          record.id = id;
+          await postToSheetDB(SHEETS.VAZAO_RECORDS, record);
+          saved++;
+        }
+        toast(`✅ ${saved} leitura(s) salva(s)!`, 'success');
+        inputs.forEach(inp => inp.value = '');
+        await renderVazaoHistory();
+        await renderVazaoLocalHistory(clientId);
+      } catch(e) {
+        toast('Erro ao salvar leituras', 'error');
+      } finally {
+        setSaving(false, btn || null);
+      }
+    }
+
+    document.getElementById('vazao-client')?.addEventListener('change', async e => {
+      await loadVazaoMachines(e.target.value);
+    });
+    document.getElementById('vazao-hist-machine')?.addEventListener('change', async () => {
+      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+      await renderVazaoLocalHistory(clientId);
+    });
+    document.getElementById('vazao-hist-period')?.addEventListener('change', async () => {
+      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+      await renderVazaoLocalHistory(clientId);
+    });
+
+    function _getVazaoMainFilters() {
+      const filterClient = document.getElementById('chart-filter-client')?.value || '';
+      const filterSeller = document.getElementById('chart-filter-seller')?.value || '';
+      const dateStart    = document.getElementById('chart-date-start')?.value || '';
+      const dateEnd      = document.getElementById('chart-date-end')?.value   || '';
+      const now  = new Date();
+      const yyyy = now.getFullYear();
+      const mm   = String(now.getMonth() + 1).padStart(2, '0');
+      let filterStart = '', filterEnd = '';
+      if (dateStart || dateEnd) {
+        filterStart = dateStart; filterEnd = dateEnd;
+      } else {
+        const preset = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
+        if      (preset === 'month') { filterStart = filterEnd = `${yyyy}-${mm}`; }
+        else if (preset === '3m')    { const d = new Date(now); d.setMonth(d.getMonth()-2); filterStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; filterEnd = `${yyyy}-${mm}`; }
+        else if (preset === '6m')    { const d = new Date(now); d.setMonth(d.getMonth()-5); filterStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; filterEnd = `${yyyy}-${mm}`; }
+        else if (preset === 'year')  { filterStart = `${yyyy}-01`; filterEnd = `${yyyy}-12`; }
+      }
+      return { filterClient, filterSeller, filterStart, filterEnd };
+    }
+
+    async function _getFilteredVazaoRecords() {
+      const clients  = await dbGetAll_raw('clients');
+      const machines = await dbGetAll_raw('machines');
+      let records    = await dbGetAll_raw('vazao_records');
+
+      // Filtrar por papel
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        const myClientIds = new Set(clients.filter(c => managed.has((c.seller||'').toLowerCase())).map(c=>Number(c.id)));
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName||'').toLowerCase();
+        const myClientIds = new Set(clients.filter(c=>(c.seller||'').toLowerCase()===sellerName).map(c=>Number(c.id)));
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      }
+
+      // Aplicar filtros principais da tela de gráficos
+      const { filterClient, filterSeller, filterStart, filterEnd } = _getVazaoMainFilters();
+      if (filterClient) records = records.filter(r => Number(r.client_id) === Number(filterClient));
+      if (filterSeller) records = records.filter(r => {
+        const c = clients.find(c => Number(c.id) === Number(r.client_id));
+        return (c?.seller || '') === filterSeller;
+      });
+      if (filterStart || filterEnd) {
+        records = records.filter(r => {
+          const m = (r.date || '').slice(0, 7);
+          if (!m) return false;
+          if (filterStart && m < filterStart) return false;
+          if (filterEnd   && m > filterEnd)   return false;
+          return true;
+        });
+      }
+
+      return { records, clients, machines };
+    }
+
+    async function renderVazaoHistory() {
+      const list = document.getElementById('vazao-history-list');
+      if (!list) return;
+      const { records, clients, machines } = await _getFilteredVazaoRecords();
+
+      if (!records.length) {
+        list.innerHTML = '<div class="empty-state">💧 Nenhuma leitura registrada.</div>';
+        return;
+      }
+
+      const groups = {};
+      for (const r of records) {
+        const key = `${r.date}|${r.client_id}|${r.machine_id}`;
+        if (!groups[key]) {
+          const client  = clients.find(c => Number(c.id) === Number(r.client_id));
+          const machine = machines.find(m => Number(m.id) === Number(r.machine_id));
+          groups[key] = { date: r.date, clientName: client?.name || `#${r.client_id}`, machineName: machine?.name || `#${r.machine_id}`, readings: [] };
+        }
+        groups[key].readings.push(r);
+      }
+
+      const sorted = Object.values(groups).sort((a, b) => b.date.localeCompare(a.date));
+      list.innerHTML = sorted.map(g => `
+        <div class="list-item" style="flex-direction:column;align-items:stretch;gap:0.4rem;padding:0.85rem 1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">
+            <div style="font-weight:700;font-size:0.95rem">${g.clientName}</div>
+            <div style="font-size:0.8rem;color:var(--muted)">${fmtDate(g.date)} · ⚙️ ${g.machineName}</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:0.4rem 1rem;margin-top:0.2rem">
+            ${g.readings.map(r => `
+              <span style="font-size:0.82rem;background:#f1f5f9;border-radius:6px;padding:3px 10px;border:1px solid var(--border)">
+                <strong>${r.vazao_name}</strong>: ${r.value} ${r.vazao_unit || ''}
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function renderVazaoLocalHistory(clientId) {
+      const card  = document.getElementById('vazao-history-card');
+      const listEl = document.getElementById('vazao-local-history');
+      if (!card || !listEl) return;
+
+      if (!clientId) { card.style.display = 'none'; return; }
+      card.style.display = '';
+
+      // Popular filtro de máquinas do cliente
+      const machines = await dbGetAll_raw('machines');
+      const clientMachines = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const machSel = document.getElementById('vazao-hist-machine');
+      if (machSel) {
+        const prev = machSel.value;
+        machSel.innerHTML = '<option value="">⚙️ Todas as máquinas</option>' +
+          clientMachines.map(m => `<option value="${m.id}">⚙️ ${m.name}</option>`).join('');
+        if (prev) machSel.value = prev;
+      }
+
+      const allRecords = await dbGetAll_raw('vazao_records');
+      let records = allRecords.filter(r => Number(r.client_id) === Number(clientId));
+
+      const machFilter = Number(machSel?.value || 0);
+      if (machFilter) records = records.filter(r => Number(r.machine_id) === machFilter);
+
+      const periodFilter = document.getElementById('vazao-hist-period')?.value || '30';
+      if (periodFilter !== 'all') {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - Number(periodFilter));
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+        records = records.filter(r => (r.date || '') >= cutoffStr);
+      }
+
+      if (!records.length) {
+        listEl.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;text-align:center;padding:1rem">Nenhuma leitura no período selecionado.</div>';
+        return;
+      }
+
+      // Agrupar por máquina + tipo de vazão
+      const byMachVazao = {};
+      for (const r of records) {
+        const m = machines.find(mm => Number(mm.id) === Number(r.machine_id));
+        const mName = m?.name || `Máquina #${r.machine_id}`;
+        const key = `${r.machine_id}|||${r.vazao_name}`;
+        if (!byMachVazao[key]) byMachVazao[key] = { machineName: mName, vazaoName: r.vazao_name || '', unit: r.vazao_unit || '', readings: [] };
+        byMachVazao[key].readings.push(r);
+      }
+      for (const item of Object.values(byMachVazao)) {
+        item.readings.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      }
+
+      // Agrupar por máquina
+      const byMachine = {};
+      for (const item of Object.values(byMachVazao)) {
+        if (!byMachine[item.machineName]) byMachine[item.machineName] = [];
+        byMachine[item.machineName].push(item);
+      }
+
+      listEl.innerHTML = Object.entries(byMachine).map(([machineName, items]) => `
+        <div class="vazao-hist-mach-label">⚙️ ${machineName}</div>
+        ${items.map(item => {
+          const latest = item.readings[0];
+          const prev   = item.readings[1];
+          let delta = '';
+          if (prev && Number(prev.value) !== 0) {
+            const pct  = ((Number(latest.value) - Number(prev.value)) / Math.abs(Number(prev.value))) * 100;
+            const sign = pct >= 0 ? '▲' : '▼';
+            const col  = pct >= 0 ? '#ef4444' : '#10b981';
+            delta = `<span style="font-size:0.72rem;color:${col};font-weight:700;white-space:nowrap">${sign} ${Math.abs(pct).toFixed(1)}% vs anterior</span>`;
+          }
+          return `
+            <div class="vazao-hist-item">
+              <div>
+                <div style="font-size:0.88rem;font-weight:600">${item.vazaoName}</div>
+                <div style="font-size:0.73rem;color:var(--muted)">${fmtDate(latest.date)}${item.readings.length > 1 ? ` · ${item.readings.length} leituras` : ''}</div>
+              </div>
+              <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+                <div style="font-size:1rem;font-weight:700">${latest.value} <span style="font-size:0.73rem;color:var(--muted);font-weight:500">${item.unit}</span></div>
+                ${delta}
+              </div>
+            </div>`;
+        }).join('')}
+      `).join('');
+    }
+
+    async function renderVazaoChart() {
+      const { records } = await _getFilteredVazaoRecords();
+
+      // Rebuild canvas para destruir chart anterior
+      const old = document.getElementById('chart-vazao-evolucao');
+      if (!old) return;
+      const nc = document.createElement('canvas');
+      nc.id = 'chart-vazao-evolucao';
+      nc.height = 180;
+      old.replaceWith(nc);
+      if (_charts['chart-vazao-evolucao']) { try { _charts['chart-vazao-evolucao'].destroy(); } catch(e){} delete _charts['chart-vazao-evolucao']; }
+
+      if (!records.length) return;
+
+      const dates      = [...new Set(records.map(r => r.date))].sort();
+      const vazaoNames = [...new Set(records.map(r => r.vazao_name).filter(Boolean))].sort();
+
+      const datasets = vazaoNames.map((name, i) => ({
+        label: name,
+        data: dates.map(d => {
+          const recs = records.filter(r => r.date === d && r.vazao_name === name);
+          if (!recs.length) return null;
+          return Math.round(recs.reduce((s, r) => s + Number(r.value), 0) / recs.length * 100) / 100;
+        }),
+        borderColor: CHART_COLORS[i % CHART_COLORS.length],
+        backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '22',
+        tension: 0.3,
+        fill: false,
+        spanGaps: true,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+      }));
+
+      _charts['chart-vazao-evolucao'] = new Chart(nc, {
+        type: 'line',
+        data: { labels: dates.map(d => fmtDate(d)), datasets },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: { mode: 'index', intersect: false }
+          },
+          scales: {
+            y: { beginAtZero: false, grid: { color: '#e2e8f0' }, ticks: { font: { size: 11 } } },
+            x: { grid: { color: '#e2e8f0' }, ticks: { font: { size: 11 } } }
+          }
+        }
+      });
+
+      await renderVazaoHistory();
+    }
+
+    // =====================================================
+    // GERENCIAR VAZÕES POR MÁQUINA (painel inline)
+    // =====================================================
+    window._manageVazoes = async function(machineId, machineName) {
+      // Cria/exibe um painel de gestão inline
+      const existing = document.getElementById(`vazao-mgr-${machineId}`);
+      if (existing) { existing.remove(); return; }
+
+      const vazoes = (await dbGetAll_raw('vazoes')).filter(v => Number(v.machine_id) === Number(machineId));
+      const panel = document.createElement('div');
+      panel.id = `vazao-mgr-${machineId}`;
+      panel.className = 'vazao-mgr-panel';
+      panel.innerHTML = `
+        <div class="vazao-mgr-hdr">
+          <span>💧 Vazões de "${machineName}"</span>
+          <button class="btn-close" onclick="document.getElementById('vazao-mgr-${machineId}').remove()">✕</button>
+        </div>
+        <div id="vazao-mgr-list-${machineId}">
+          ${vazoes.length ? vazoes.map(v => _vazaoItem(v)).join('') : '<p style="color:var(--muted);font-size:0.85rem;margin:0.5rem 0">Nenhuma vazão cadastrada.</p>'}
+        </div>
+        <form id="vazao-add-form-${machineId}" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem">
+          <input name="name" placeholder="Nome (ex: Vazão 1)" required class="form-input" style="flex:2;min-width:120px;padding:0.4rem 0.7rem" />
+          <input name="unit" placeholder="Unidade (ex: L/s)" class="form-input" style="flex:1;min-width:80px;padding:0.4rem 0.7rem" />
+          <button type="submit" class="btn-primary" style="padding:0.4rem 0.9rem;font-size:0.85rem">+ Adicionar</button>
+        </form>
+      `;
+
+      // Inserir após o card da máquina
+      const machCard = document.querySelector(`[data-machine-id="${machineId}"]`);
+      if (machCard) machCard.after(panel);
+      else document.getElementById('machines-list-cad').appendChild(panel);
+
+      document.getElementById(`vazao-add-form-${machineId}`)?.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (_saving) return;
+        const fd = new FormData(e.target);
+        const data = { machine_id: Number(machineId), name: fd.get('name').trim(), unit: fd.get('unit').trim(), created_at: new Date().toISOString() };
+        if (!data.name) return;
+        const addBtn = e.target.querySelector('button[type="submit"]');
+        setSaving(true, addBtn, '⏳...');
+        try {
+          const id = await dbAdd('vazoes', data);
+          data.id = id;
+          await postToSheetDB(SHEETS.VAZOES, data);
+          e.target.reset();
+          const listEl = document.getElementById(`vazao-mgr-list-${machineId}`);
+          if (listEl) listEl.innerHTML += _vazaoItem(data);
+          toast('Vazão adicionada!', 'success');
+        } catch(err) {
+          toast('Erro ao adicionar vazão', 'error');
+        } finally {
+          setSaving(false, addBtn);
+        }
+      });
+    };
+
+    function _vazaoItem(v) {
+      return `
+        <div id="vazao-item-${v.id}" style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--border)">
+          <span style="flex:1;font-size:0.88rem"><strong>${v.name}</strong>${v.unit ? ` <span style="color:var(--muted);font-size:0.78rem">(${v.unit})</span>` : ''}</span>
+          <button onclick="window._deleteVazao(${v.id})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem;padding:2px 6px" title="Excluir">🗑️</button>
+        </div>`;
+    }
+
+    window._deleteVazao = async function(id) {
+      if (!await confirmAction('Excluir esta vazão? Os registros históricos não serão apagados.', 'Excluir', true)) return;
+      await dbDelete('vazoes', id);
+      await deleteSheetDB(SHEETS.VAZOES, id);
+      document.getElementById(`vazao-item-${id}`)?.remove();
+      toast('Vazão removida', 'success');
+    };
+
+
+    // =====================================================
+    // TELA RECEITAS
+    // =====================================================
+    let _editingRecipeId = null; // null = novo, number = editando
+
+    const RECIPE_OPS = ['Enxágue','Pré Lavagem','Lavagem','Alvejamento','Neutralização','Amaciamento'];
+    const RECIPE_LEVELS = ['Alto','Médio','Baixo'];
+
+    function _stepRowHtml(step = {}, products = [], idx = 0) {
+      const n = step.n || (idx + 1);
+      const opOpts  = RECIPE_OPS.map(o    => `<option${step.operation===o?' selected':''}>${o}</option>`).join('');
+      const lvlOpts = RECIPE_LEVELS.map(l => `<option${step.level===l?' selected':''}>${l}</option>`).join('');
+      const temp = step.temp || 'Fria';
+      const isCustom = temp !== 'Fria' && temp !== 'Quente';
+      const stepProds = Array.isArray(step.products) ? step.products.filter(v => v) : [];
+
+      const buildProdOpts = (selected = '') =>
+        `<option value="">-- Produto --</option>` +
+        products.map(p => `<option value="${p.name}"${p.name===selected?' selected':''}>${p.name}</option>`).join('');
+
+      const buildProdLine = (selected = '') =>
+        `<div class="step-prod-line" style="display:flex;gap:4px;margin-bottom:4px">
+          <select class="form-input step-prod-sel" style="flex:1;font-size:0.85rem">${buildProdOpts(selected)}</select>
+          <button type="button" class="step-prod-del" style="padding:0 10px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:0.85rem;flex-shrink:0">×</button>
+        </div>`;
+
+      const prodLinesHtml = stepProds.length
+        ? stepProds.map(sel => buildProdLine(sel)).join('')
+        : buildProdLine('');
+
+      const prodsHtml = products.length
+        ? `<div class="step-prods-wrap">
+            <div class="step-prod-lines">${prodLinesHtml}</div>
+            <button type="button" class="step-prod-add" style="font-size:0.78rem;padding:3px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer;color:#16a34a;margin-top:2px">+ Produto</button>
+           </div>`
+        : '<span style="font-size:0.82rem;color:#94a3b8">Sem produtos cadastrados</span>';
+
+      return `
+        <div class="step-card">
+          <div class="step-card-hdr">
+            <span class="step-num">Etapa <strong class="step-num-val">${n}</strong></span>
+            <button type="button" class="btn-danger btn-sm step-del-btn">🗑️ Remover</button>
+          </div>
+          <div class="step-card-body">
+            <div class="step-row-fields">
+              <div class="form-field" style="flex:2;min-width:140px">
+                <label>Operação</label>
+                <select class="form-input step-op">${opOpts}</select>
+              </div>
+              <div class="form-field" style="flex:1;min-width:85px">
+                <label>Tempo (min)</label>
+                <input type="number" class="form-input step-time" min="0" value="${step.time||''}" placeholder="min"/>
+              </div>
+              <div class="form-field" style="flex:1;min-width:90px">
+                <label>Nível</label>
+                <select class="form-input step-level">${lvlOpts}</select>
+              </div>
+            </div>
+            <div class="step-row-fields">
+              <div class="form-field" style="flex:1;min-width:130px">
+                <label>Temperatura</label>
+                <select class="form-input step-temp-sel">
+                  <option ${!isCustom&&temp==='Fria'?'selected':''}>Fria</option>
+                  <option ${!isCustom&&temp==='Quente'?'selected':''}>Quente</option>
+                  <option value="__custom" ${isCustom?'selected':''}>Personalizado °C</option>
+                </select>
+                <input type="number" class="form-input step-temp-val" value="${isCustom?temp:''}" placeholder="Ex: 45" style="margin-top:4px;display:${isCustom?'':'none'}"/>
+              </div>
+              <div class="form-field" style="flex:2;min-width:160px">
+                <label>Produto(s)</label>
+                ${prodsHtml}
+              </div>
+              <div class="form-field" style="flex:1;min-width:110px">
+                <label>Dosagem</label>
+                <input type="text" class="form-input step-dosage" value="${step.dosage||''}" placeholder="Ex: 50ml/kg"/>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function _collectSteps() {
+      return [...document.querySelectorAll('#recipe-steps-body .step-card')].map((card, i) => {
+        const tempSel = card.querySelector('.step-temp-sel')?.value;
+        const tempVal = card.querySelector('.step-temp-val')?.value;
+        const temp = tempSel === '__custom' ? (tempVal || 'Fria') : (tempSel || 'Fria');
+        return {
+          n: i + 1,
+          operation: card.querySelector('.step-op')?.value || '',
+          time: parseFloat(card.querySelector('.step-time')?.value) || 0,
+          temp,
+          level: card.querySelector('.step-level')?.value || 'Alto',
+          products: [...card.querySelectorAll('.step-prod-sel')].map(sel => sel.value).filter(v => v),
+          dosage: card.querySelector('.step-dosage')?.value || '',
+        };
+      });
+    }
+
+    // Delegação de eventos para os cards de etapas
+    document.getElementById('recipe-steps-body')?.addEventListener('click', e => {
+      if (e.target.classList.contains('step-del-btn')) {
+        e.target.closest('.step-card').remove();
+        _renumberStepRows();
+      }
+      if (e.target.classList.contains('step-prod-del')) {
+        e.target.closest('.step-prod-line').remove();
+      }
+      if (e.target.classList.contains('step-prod-add')) {
+        const linesDiv = e.target.previousElementSibling;
+        if (!linesDiv) return;
+        const firstSel = linesDiv.querySelector('.step-prod-sel');
+        const opts = firstSel ? firstSel.innerHTML : '<option value="">-- Produto --</option>';
+        const line = document.createElement('div');
+        line.className = 'step-prod-line';
+        line.style.cssText = 'display:flex;gap:4px;margin-bottom:4px';
+        line.innerHTML = `<select class="form-input step-prod-sel" style="flex:1;font-size:0.85rem">${opts}</select><button type="button" class="step-prod-del" style="padding:0 10px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:0.85rem;flex-shrink:0">×</button>`;
+        line.querySelector('.step-prod-sel').value = '';
+        linesDiv.appendChild(line);
+      }
+    });
+    document.getElementById('recipe-steps-body')?.addEventListener('change', e => {
+      if (e.target.classList.contains('step-temp-sel')) {
+        const valEl = e.target.nextElementSibling;
+        if (valEl) valEl.style.display = e.target.value === '__custom' ? '' : 'none';
+      }
+    });
+
+    function _renumberStepRows() {
+      document.querySelectorAll('#recipe-steps-body .step-num-val').forEach((el, i) => {
+        el.textContent = i + 1;
+      });
+    }
+
+    async function _openRecipeForm(recipeId = null) {
+      _editingRecipeId = recipeId;
+      const isEdit = recipeId !== null;
+      document.getElementById('modal-recipe-title').textContent = isEdit ? '✏️ Editar Receita' : '📝 Nova Receita';
+      document.getElementById('recipe-edit-notes-row').style.display = isEdit ? '' : 'none';
+      document.getElementById('recipe-edit-notes').value = '';
+
+      // Preencher cliente select
+      const clients = await window.getAll('clients');
+      const clientSel = document.getElementById('recipe-client');
+      clientSel.innerHTML = '<option value="">-- Selecione --</option>';
+      clients.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+             .forEach(c => clientSel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
+
+      document.getElementById('recipe-machine').innerHTML = '<option value="">-- Selecione --</option>';
+      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+      document.getElementById('recipe-machine-info').style.display = 'none';
+      document.getElementById('recipe-date').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('recipe-steps-body').innerHTML = '';
+
+      if (isEdit) {
+        const recipe = (await dbGetAll_raw('recipes')).find(r => r.id === recipeId);
+        if (!recipe) return toast('Receita não encontrada', 'error');
+        clientSel.value = recipe.client_id;
+        await _loadRecipeMachines(recipe.client_id, recipe.machine_id);
+        await _loadRecipeProcesses(recipe.machine_id, recipe.process_id);
+        document.getElementById('recipe-date').value = recipe.date || '';
+        const steps = JSON.parse(recipe.steps || '[]');
+        const products = await dbGetAll_raw('recipe_products');
+        const stepsContainer = document.getElementById('recipe-steps-body');
+        steps.forEach((s, i) => { stepsContainer.insertAdjacentHTML('beforeend', _stepRowHtml(s, products, i)); });
+      } else {
+        // Carregar uma etapa inicial em branco
+        const products = await dbGetAll_raw('recipe_products');
+        document.getElementById('recipe-steps-body').innerHTML = _stepRowHtml({}, products, 0);
+      }
+
+      document.getElementById('modal-recipe').classList.remove('hidden');
+    }
+
+    async function _loadRecipeMachines(clientId, selectId = null) {
+      const machineSel = document.getElementById('recipe-machine');
+      const infoEl     = document.getElementById('recipe-machine-info');
+      machineSel.innerHTML = '<option value="">-- Selecione --</option>';
+      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+      infoEl.style.display = 'none';
+      if (!clientId) return;
+      const machines = (await dbGetAll_raw('machines')).filter(m => Number(m.client_id) === Number(clientId));
+      machines.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+              .forEach(m => machineSel.innerHTML += `<option value="${m.id}" data-cap="${m.capacity||0}">${m.name}</option>`);
+      if (selectId) {
+        machineSel.value = selectId;
+        _showMachineCap(machineSel);
+      }
+    }
+
+    function _showMachineCap(sel) {
+      const opt = sel.options[sel.selectedIndex];
+      const cap = opt?.dataset?.cap;
+      const infoEl = document.getElementById('recipe-machine-info');
+      if (cap && cap !== '0') {
+        document.getElementById('recipe-machine-cap').textContent = cap;
+        infoEl.style.display = '';
+      } else {
+        infoEl.style.display = 'none';
+      }
+    }
+
+    async function _loadRecipeProcesses(machineId, selectId = null) {
+      const processSel = document.getElementById('recipe-process');
+      if (!processSel) return;
+      processSel.innerHTML = '<option value="">-- Selecione --</option>';
+      if (!machineId) return;
+
+      const procs      = (await dbGetAll_raw('processes')).filter(p => Number(p.machine_id) === Number(machineId));
+      const allRecipes = await dbGetAll_raw('recipes');
+
+      // IDs de processos que já têm receita ativa nesta máquina
+      const takenIds = new Set(
+        allRecipes
+          .filter(r => r.status === 'active' && Number(r.machine_id) === Number(machineId))
+          .map(r => Number(r.process_id))
+      );
+
+      // Ao editar, o processo da própria receita não é bloqueado
+      let ownProcId = 0;
+      if (_editingRecipeId !== null) {
+        const cur = allRecipes.find(r => r.id === _editingRecipeId);
+        if (cur) ownProcId = Number(cur.process_id);
+      }
+
+      procs.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+           .forEach(p => {
+             const taken = takenIds.has(Number(p.id)) && Number(p.id) !== ownProcId;
+             const opt = document.createElement('option');
+             opt.value = p.id;
+             opt.textContent = p.name + (taken ? ' — já tem receita' : '');
+             opt.disabled = taken;
+             processSel.appendChild(opt);
+           });
+
+      if (selectId) processSel.value = selectId;
+    }
+
+    document.getElementById('recipe-client')?.addEventListener('change', e => {
+      _loadRecipeMachines(e.target.value);
+    });
+    document.getElementById('recipe-machine')?.addEventListener('change', e => {
+      _showMachineCap(e.target);
+      _loadRecipeProcesses(e.target.value);
+    });
+
+    document.getElementById('btn-add-step')?.addEventListener('click', async () => {
+      const products = await dbGetAll_raw('recipe_products');
+      const container = document.getElementById('recipe-steps-body');
+      const count = container.querySelectorAll('.step-card').length;
+      container.insertAdjacentHTML('beforeend', _stepRowHtml({}, products, count));
+    });
+
+    document.getElementById('btn-new-recipe')?.addEventListener('click', () => _openRecipeForm(null));
+    document.getElementById('modal-recipe-close')?.addEventListener('click',  () => document.getElementById('modal-recipe').classList.add('hidden'));
+    document.getElementById('modal-recipe-cancel')?.addEventListener('click', () => document.getElementById('modal-recipe').classList.add('hidden'));
+
+    document.getElementById('btn-save-recipe')?.addEventListener('click', async () => {
+      if (_saving) return;
+      const clientId  = Number(document.getElementById('recipe-client')?.value);
+      const machineId = Number(document.getElementById('recipe-machine')?.value);
+      const processId = Number(document.getElementById('recipe-process')?.value);
+      const date      = document.getElementById('recipe-date')?.value;
+      if (!clientId || !machineId || !processId) return toast('Selecione cliente, máquina e processo', 'warning');
+      const steps = _collectSteps();
+      if (!steps.length) return toast('Adicione pelo menos uma etapa', 'warning');
+
+      const btn = document.getElementById('btn-save-recipe');
+      setSaving(true, btn);
+      try {
+        const now = new Date().toISOString();
+        const creator = currentUser?.name || currentUser?.username || '';
+
+        if (_editingRecipeId === null) {
+          // Nova receita — vai direto ativa
+          const recipe = { client_id: clientId, machine_id: machineId, process_id: processId, date, created_by: creator,
+            status: 'active', version: 1, original_id: 0,
+            edit_notes: '', rejection_notes: '', approved_by: '', approved_at: '',
+            steps: JSON.stringify(steps), created_at: now };
+          const id = await dbAdd('recipes', recipe);
+          recipe.id = id;
+          recipe.original_id = id; // self-reference
+          await dbPut('recipes', recipe);
+          await postToSheetDB(SHEETS.RECIPES, recipe);
+          toast('✅ Receita criada!', 'success');
+        } else {
+          // Edição — cria versão pendente para aprovação
+          const current = (await dbGetAll_raw('recipes')).find(r => r.id === _editingRecipeId);
+          if (!current) return toast('Receita original não encontrada', 'error');
+          const editNotes = document.getElementById('recipe-edit-notes')?.value.trim() || '';
+          const pending = { client_id: clientId, machine_id: machineId, process_id: processId, date, created_by: creator,
+            status: 'pending', version: (current.version || 1) + 1,
+            original_id: current.original_id || current.id,
+            edit_notes: editNotes, rejection_notes: '', approved_by: '', approved_at: '',
+            steps: JSON.stringify(steps), created_at: now };
+          const pid = await dbAdd('recipes', pending);
+          pending.id = pid;
+          await postToSheetDB(SHEETS.RECIPES, pending);
+          toast('⏳ Edição enviada para aprovação do administrador!', 'info', 5000);
+        }
+
+        document.getElementById('modal-recipe').classList.add('hidden');
+        await renderRecipesList();
+      } catch(err) {
+        toast('Erro ao salvar receita: ' + err.message, 'error');
+      } finally {
+        setSaving(false, btn);
+      }
+    });
+
+    async function renderRecipesList() {
+      const list = document.getElementById('recipes-list');
+      if (!list) return;
+
+      const filterClientId  = Number(document.getElementById('recipe-filter-client')?.value  || 0);
+      const filterMachineId = Number(document.getElementById('recipe-filter-machine')?.value || 0);
+
+      const clients   = await dbGetAll_raw('clients');
+      const machines  = await dbGetAll_raw('machines');
+      const processes = await dbGetAll_raw('processes');
+      let allRecipes = await dbGetAll_raw('recipes');
+
+      // Filtrar por papel (vendedor vê só clientes seus)
+      if (currentUser?.role === 'vendedor') {
+        const sn = (currentUser.sellerName||'').toLowerCase();
+        const myIds = new Set(clients.filter(c=>(c.seller||'').toLowerCase()===sn).map(c=>Number(c.id)));
+        allRecipes = allRecipes.filter(r => myIds.has(Number(r.client_id)));
+      } else if (currentUser?.role === 'gerente' || currentUser?.role === 'consultor') {
+        const managed = getManagedSellerNames();
+        const myIds = new Set(clients.filter(c=>managed.has((c.seller||'').toLowerCase())).map(c=>Number(c.id)));
+        allRecipes = allRecipes.filter(r => myIds.has(Number(r.client_id)));
+      }
+
+      // Mostrar aprovações pendentes (só admin)
+      const isPendingAdmin = currentUser?.role === 'admin';
+      const pendingSec = document.getElementById('recipes-pending-section');
+      if (isPendingAdmin) {
+        const pendings = allRecipes.filter(r => r.status === 'pending');
+        pendingSec.style.display = pendings.length ? '' : 'none';
+        document.getElementById('recipes-pending-count').textContent = pendings.length;
+        document.getElementById('recipes-pending-list').innerHTML = pendings.map(r => {
+          const c = clients.find(c => Number(c.id) === Number(r.client_id));
+          const m = machines.find(m => Number(m.id) === Number(r.machine_id));
+          const p = processes.find(p => Number(p.id) === Number(r.process_id));
+          return `<div class="list-item" style="flex-direction:column;gap:0.4rem;padding:0.7rem 1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">
+              <div>
+                <strong>${c?.name||'?'}</strong> · ⚙️ ${m?.name||'?'}${p ? ' · 🔄 '+p.name : ''}
+                <span style="font-size:0.78rem;color:var(--muted)"> — v${r.version} · por ${r.created_by}</span>
+              </div>
+              <div style="display:flex;gap:0.4rem">
+                <button class="btn-secondary btn-sm" onclick="window._viewRecipe(${r.id})">👁️ Ver</button>
+                <button class="btn-danger btn-sm" onclick="window._rejectRecipe(${r.id})">✕ Recusar</button>
+                <button class="btn-primary btn-sm" style="background:#16a34a" onclick="window._approveRecipe(${r.id})">✅ Aprovar</button>
+              </div>
+            </div>
+            ${r.edit_notes ? `<div style="font-size:0.8rem;color:#64748b">📝 ${r.edit_notes}</div>` : ''}
+          </div>`;
+        }).join('') || '<div class="empty-state" style="padding:0.5rem">Nenhuma aprovação pendente.</div>';
+      } else {
+        if (pendingSec) pendingSec.style.display = 'none';
+      }
+
+      // Mostrar apenas receitas ativas (uma por original_id) + pendings do usuário atual
+      const activeRecipes = allRecipes.filter(r => r.status === 'active');
+      let displayed = activeRecipes;
+      if (filterClientId)  displayed = displayed.filter(r => Number(r.client_id)  === filterClientId);
+      if (filterMachineId) displayed = displayed.filter(r => Number(r.machine_id) === filterMachineId);
+      displayed.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+
+      document.getElementById('recipes-count').textContent = displayed.length;
+
+      if (!displayed.length) {
+        list.innerHTML = '<div class="empty-state">📝 Nenhuma receita cadastrada. Clique em <strong>+ Nova Receita</strong> para começar.</div>';
+        return;
+      }
+
+      list.innerHTML = displayed.map(r => {
+        const c = clients.find(c => Number(c.id) === Number(r.client_id));
+        const m = machines.find(m => Number(m.id) === Number(r.machine_id));
+        const p = processes.find(p => Number(p.id) === Number(r.process_id));
+        const steps = (() => { try { return JSON.parse(r.steps||'[]'); } catch(e){ return []; } })();
+        const hasPending = allRecipes.some(p => p.status === 'pending' && (p.original_id === r.original_id || p.original_id === r.id));
+        return `
+          <div class="list-item" style="flex-direction:column;gap:0.4rem;padding:0.85rem 1rem;margin-bottom:0.5rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
+              <div>
+                <span style="font-weight:700;font-size:0.95rem">${c?.name||'?'}</span>
+                <span style="color:var(--muted);font-size:0.82rem"> · ⚙️ ${m?.name||'?'}</span>
+                ${m?.capacity ? `<span style="color:var(--muted);font-size:0.78rem"> (${m.capacity} kg)</span>` : ''}
+                ${p ? `<span style="color:var(--muted);font-size:0.82rem"> · 🔄 ${p.name}</span>` : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
+                ${hasPending ? '<span style="font-size:0.75rem;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:999px;font-weight:600">⏳ Edição pendente</span>' : ''}
+                <span style="font-size:0.75rem;color:var(--muted)">v${r.version} · ${fmtDate(r.date||r.created_at?.slice(0,10))}</span>
+                <button class="btn-secondary btn-sm" onclick="window._viewRecipe(${r.id})">👁️ Ver</button>
+                ${!hasPending ? `<button class="btn-edit" onclick="window._editRecipeOpen(${r.id})">✏️ Editar</button>` : ''}
+              </div>
+            </div>
+            <div style="font-size:0.8rem;color:var(--muted)">${steps.length} etapa(s) · por ${r.created_by||'—'}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:0.3rem 0.6rem">
+              ${steps.slice(0,4).map(s => `<span style="font-size:0.75rem;background:#f1f5f9;border-radius:6px;padding:2px 8px;border:1px solid var(--border)">${s.n}. ${s.operation||'—'}</span>`).join('')}
+              ${steps.length > 4 ? `<span style="font-size:0.75rem;color:var(--muted)">+${steps.length-4} mais</span>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    window._editRecipeOpen = (id) => _openRecipeForm(id);
+
+    window._viewRecipe = async function(recipeId) {
+      const allRecipes = await dbGetAll_raw('recipes');
+      const recipe = allRecipes.find(r => r.id === recipeId);
+      if (!recipe) return;
+      const clients   = await dbGetAll_raw('clients');
+      const machines  = await dbGetAll_raw('machines');
+      const processes = await dbGetAll_raw('processes');
+      const c = clients.find(c => Number(c.id) === Number(recipe.client_id));
+      const m = machines.find(m => Number(m.id) === Number(recipe.machine_id));
+      const p = processes.find(p => Number(p.id) === Number(recipe.process_id));
+      const steps = (() => { try { return JSON.parse(recipe.steps||'[]'); } catch(e){ return []; } })();
+
+      const statusLabel = { active:'✅ Ativa', pending:'⏳ Pendente', archived:'📦 Arquivada', rejected:'❌ Recusada' }[recipe.status] || recipe.status;
+      const stepsHtml = steps.map(s => `
+        <tr>
+          <td style="text-align:center">${s.n}</td>
+          <td>${s.operation||'—'}</td>
+          <td>${s.time ? s.time+' min' : '—'}</td>
+          <td>${s.temp||'—'}</td>
+          <td>${s.level||'—'}</td>
+          <td>${Array.isArray(s.products)?s.products.join(', '):(s.products||'—')}</td>
+          <td>${s.dosage||'—'}</td>
+        </tr>`).join('');
+
+      // Versões arquivadas
+      const archived = allRecipes.filter(r => (r.original_id === recipe.original_id || r.original_id === recipe.id) && r.status === 'archived')
+                                  .sort((a,b) => b.version - a.version);
+      const archivedHtml = archived.length
+        ? `<div style="margin-top:1rem"><strong style="font-size:0.85rem">📜 Versões anteriores</strong>
+           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem">
+             ${archived.map(v => `<button class="btn-secondary btn-sm" onclick="window._viewRecipe(${v.id})">v${v.version} — ${fmtDate(v.date||v.created_at?.slice(0,10))}</button>`).join('')}
+           </div></div>` : '';
+
+      // Link para versão ativa (quando visualizando uma versão arquivada/recusada)
+      const activeVersion = recipe.status !== 'active'
+        ? allRecipes.find(r => r.status === 'active' && (r.original_id === recipe.original_id || r.id === recipe.original_id || r.original_id === recipe.id))
+        : null;
+      const activeVersionHtml = activeVersion
+        ? `<div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+            <span style="font-size:0.85rem;color:#15803d">📋 Existe uma versão ativa desta receita</span>
+            <button class="btn-primary btn-sm" style="background:#16a34a" onclick="window._viewRecipe(${activeVersion.id})">Ver v${activeVersion.version} atual</button>
+           </div>` : '';
+
+      document.getElementById('modal-recipe-view-title').textContent = `📝 Receita — ${c?.name||'?'} / ${m?.name||'?'}${p ? ' / '+p.name : ''}`;
+      document.getElementById('modal-recipe-view-body').innerHTML = `
+        <div style="display:flex;flex-wrap:wrap;gap:0.75rem 1.5rem;margin-bottom:0.75rem;font-size:0.88rem">
+          <span>👥 <strong>${c?.name||'?'}</strong></span>
+          <span>⚙️ <strong>${m?.name||'?'}</strong>${m?.capacity?' ('+m.capacity+' kg)':''}</span>
+          ${p ? `<span>🔄 <strong>${p.name}</strong></span>` : ''}
+          <span>📅 <strong>${fmtDate(recipe.date||recipe.created_at?.slice(0,10))}</strong></span>
+          <span>Versão: <strong>v${recipe.version}</strong></span>
+          <span>Status: <strong>${statusLabel}</strong></span>
+          <span>Por: <strong>${recipe.created_by||'—'}</strong></span>
+          ${recipe.edit_notes?`<span style="color:#b45309">📝 ${recipe.edit_notes}</span>`:''}
+          ${recipe.rejection_notes?`<span style="color:#dc2626">❌ Motivo recusa: ${recipe.rejection_notes}</span>`:''}
+        </div>
+        <div style="overflow-x:auto">
+          <table class="proc-table" style="min-width:600px;width:100%">
+            <thead><tr>
+              <th>N.</th><th>Operação</th><th>Tempo</th><th>Temp °C</th><th>Nível</th><th>Produto(s)</th><th>Dosagem</th>
+            </tr></thead>
+            <tbody>${stepsHtml}</tbody>
+          </table>
+        </div>
+        ${activeVersionHtml}
+        ${archivedHtml}`;
+
+      const isAdmin = currentUser?.role === 'admin';
+      document.getElementById('btn-edit-recipe').style.display    = recipe.status === 'active' ? '' : 'none';
+      document.getElementById('btn-approve-recipe').style.display  = isAdmin && recipe.status === 'pending' ? '' : 'none';
+      document.getElementById('btn-reject-recipe').style.display   = isAdmin && recipe.status === 'pending' ? '' : 'none';
+      document.getElementById('btn-edit-recipe').dataset.recipeId  = recipe.id;
+      document.getElementById('btn-approve-recipe').dataset.recipeId = recipe.id;
+      document.getElementById('btn-reject-recipe').dataset.recipeId  = recipe.id;
+      const pdfBtn = document.getElementById('btn-recipe-pdf');
+      if (pdfBtn) { pdfBtn.style.display = ''; pdfBtn.dataset.recipeId = recipe.id; }
+
+      document.getElementById('modal-recipe-view').classList.remove('hidden');
+    };
+
+    document.getElementById('btn-edit-recipe')?.addEventListener('click', function() {
+      document.getElementById('modal-recipe-view').classList.add('hidden');
+      _openRecipeForm(Number(this.dataset.recipeId));
+    });
+    document.getElementById('btn-approve-recipe')?.addEventListener('click', async function() {
+      await window._approveRecipe(Number(this.dataset.recipeId));
+      document.getElementById('modal-recipe-view').classList.add('hidden');
+    });
+    document.getElementById('btn-reject-recipe')?.addEventListener('click', async function() {
+      await window._rejectRecipe(Number(this.dataset.recipeId));
+      document.getElementById('modal-recipe-view').classList.add('hidden');
+    });
+    document.getElementById('btn-recipe-pdf')?.addEventListener('click', function() {
+      _shareRecipePdf(Number(this.dataset.recipeId));
+    });
+    document.getElementById('modal-recipe-view-close')?.addEventListener('click',  () => document.getElementById('modal-recipe-view').classList.add('hidden'));
+    document.getElementById('modal-recipe-view-close2')?.addEventListener('click', () => document.getElementById('modal-recipe-view').classList.add('hidden'));
+
+    async function _shareRecipePdf(recipeId) {
+      const allRecipes = await dbGetAll_raw('recipes');
+      const recipe = allRecipes.find(r => r.id === recipeId);
+      if (!recipe) return toast('Receita não encontrada', 'error');
+      const clients   = await dbGetAll_raw('clients');
+      const machines  = await dbGetAll_raw('machines');
+      const processes = await dbGetAll_raw('processes');
+      const c = clients.find(c => Number(c.id) === Number(recipe.client_id));
+      const m = machines.find(m => Number(m.id) === Number(recipe.machine_id));
+      const p = processes.find(p => Number(p.id) === Number(recipe.process_id));
+      const steps = (() => { try { return JSON.parse(recipe.steps||'[]'); } catch(e){ return []; } })();
+      const dateStr = fmtDate(recipe.date || recipe.created_at?.slice(0,10));
+      const stepsRows = steps.map(s => `
+        <tr>
+          <td style="text-align:center;font-weight:700;background:#f1f5f9">${s.n}</td>
+          <td>${s.operation||'—'}</td>
+          <td style="text-align:center">${s.time ? s.time+' min' : '—'}</td>
+          <td style="text-align:center">${s.temp||'—'}</td>
+          <td style="text-align:center">${s.level||'—'}</td>
+          <td>${Array.isArray(s.products) ? s.products.join('<br>') : (s.products||'—')}</td>
+          <td>${s.dosage||'—'}</td>
+        </tr>`).join('');
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Receita — ${c?.name||'?'}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
+.hdr{background:#1e3a8a;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0}
+.hdr h1{font-size:1.1rem;margin-bottom:2px}
+.hdr p{font-size:0.75rem;color:#93c5fd;margin:0}
+.info-block{background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:14px 18px 16px;margin-bottom:16px}
+.info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;margin-top:10px}
+.info-item label{font-size:0.68rem;color:#64748b;font-weight:700;text-transform:uppercase;display:block;margin-bottom:1px}
+.info-item span{font-size:0.9rem;font-weight:600}
+h2{font-size:0.88rem;font-weight:700;color:#1e3a8a;margin-bottom:8px;border-bottom:2px solid #dbeafe;padding-bottom:4px}
+table{width:100%;border-collapse:collapse}
+thead th{background:#1e3a8a;color:#fff;padding:7px 9px;text-align:left;font-size:0.75rem}
+tbody tr:nth-child(even){background:#f8fafc}
+tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical-align:top}
+.footer{margin-top:20px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
+.tip{background:#fff3cd;border:1px solid #ffc107;padding:7px 14px;border-radius:6px;margin-bottom:14px;font-size:12px}
+@media print{.tip{display:none}body{padding:10px}}
+</style></head><body>
+<div class="tip">🖨️ <strong>Imprimir → Salvar como PDF</strong>. No celular: <strong>Compartilhar → Imprimir</strong>.</div>
+<div class="hdr"><h1>📝 Receita de Lavagem</h1><p>Hygicare Lavanderia</p></div>
+<div class="info-block">
+  <div class="info-grid">
+    <div class="info-item"><label>Cliente</label><span>${c?.name||'?'}</span></div>
+    <div class="info-item"><label>Máquina</label><span>${m?.name||'?'}${m?.capacity?' ('+m.capacity+' kg)':''}</span></div>
+    <div class="info-item"><label>Processo</label><span>${p?.name||'?'}</span></div>
+    <div class="info-item"><label>Data</label><span>${dateStr}</span></div>
+    <div class="info-item"><label>Versão</label><span>v${recipe.version}</span></div>
+    <div class="info-item"><label>Criado por</label><span>${recipe.created_by||'—'}</span></div>
+  </div>
+</div>
+<h2>📋 Etapas (${steps.length})</h2>
+<table>
+  <thead><tr><th style="width:34px">N.</th><th>Operação</th><th style="text-align:center">Tempo</th><th style="text-align:center">Temp.</th><th style="text-align:center">Nível</th><th>Produto(s)</th><th>Dosagem</th></tr></thead>
+  <tbody>${stepsRows}</tbody>
+</table>
+<div class="footer">Hygicare Lavanderia — Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+</body></html>`;
+      const win = window.open('', '_blank', 'width=900,height=700');
+      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
+      win.document.write(html);
+      win.document.close();
+    }
+
+    window._approveRecipe = async function(pendingId) {
+      const all = await dbGetAll_raw('recipes');
+      const pending = all.find(r => r.id === pendingId);
+      if (!pending || pending.status !== 'pending') return toast('Receita não encontrada ou não está pendente', 'error');
+
+      // Arquivar versão ativa atual
+      const currentActive = all.find(r => r.status === 'active' && (r.original_id === pending.original_id || r.id === pending.original_id));
+      if (currentActive) {
+        const archived = { ...currentActive, status: 'archived' };
+        await dbPut('recipes', archived);
+        await patchSheetDB(SHEETS.RECIPES, archived.id, archived);
+      }
+
+      // Ativar a versão pendente
+      const approved = { ...pending, status: 'active', approved_by: currentUser?.name||'', approved_at: new Date().toISOString() };
+      await dbPut('recipes', approved);
+      await patchSheetDB(SHEETS.RECIPES, approved.id, approved);
+
+      toast('✅ Receita aprovada e publicada!', 'success');
+      await renderRecipesList();
+      await updateRecipeBadge();
+    };
+
+    window._rejectRecipe = async function(pendingId) {
+      const notes = window.prompt('Motivo da recusa (opcional):') ?? null;
+      if (notes === null) return; // usuário cancelou o prompt
+      const all = await dbGetAll_raw('recipes');
+      const pending = all.find(r => r.id === pendingId);
+      if (!pending) return;
+      const rejected = { ...pending, status: 'rejected', rejection_notes: notes || '' };
+      await dbPut('recipes', rejected);
+      await patchSheetDB(SHEETS.RECIPES, rejected.id, rejected);
+      toast('Edição recusada.', 'info');
+      await renderRecipesList();
+      await updateRecipeBadge();
+    };
+
+    // Filtros da lista
+    document.getElementById('recipe-filter-client')?.addEventListener('change', async e => {
+      const sel = document.getElementById('recipe-filter-machine');
+      sel.innerHTML = '<option value="">⚙️ Todas as máquinas</option>';
+      if (e.target.value) {
+        const mach = (await dbGetAll_raw('machines')).filter(m => Number(m.client_id) === Number(e.target.value));
+        mach.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(m => sel.innerHTML += `<option value="${m.id}">${m.name}</option>`);
+      }
+      await renderRecipesList();
+    });
+    document.getElementById('recipe-filter-machine')?.addEventListener('change', async () => await renderRecipesList());
+
+    // Produtos de receita
+    document.getElementById('btn-recipe-products')?.addEventListener('click', async () => {
+      await _renderRecipeProductsList();
+      document.getElementById('modal-recipe-products').classList.remove('hidden');
+    });
+    document.getElementById('modal-recipe-products-close')?.addEventListener('click', () => document.getElementById('modal-recipe-products').classList.add('hidden'));
+
+    async function _renderRecipeProductsList() {
+      const products = await dbGetAll_raw('recipe_products');
+      const listEl = document.getElementById('recipe-products-list');
+      if (!products.length) {
+        listEl.innerHTML = '<div class="empty-state" style="padding:0.5rem">Nenhum produto cadastrado ainda.</div>';
+        return;
+      }
+      listEl.innerHTML = products.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(p => `
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--border)">
+          <span style="flex:1;font-size:0.88rem"><strong>${p.name}</strong>${p.category?` <span style="color:var(--muted);font-size:0.78rem">(${p.category})</span>`:''}</span>
+          <button onclick="window._deleteRecipeProduct(${p.id})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem;padding:2px 6px" title="Excluir">🗑️</button>
+        </div>`).join('');
+    }
+
+    document.getElementById('form-recipe-product')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (_saving) return;
+      const fd   = new FormData(e.target);
+      const name = fd.get('name').trim();
+      if (!name) return;
+      const addBtn = e.target.querySelector('button[type="submit"]');
+      setSaving(true, addBtn, '⏳...');
+      try {
+        const data = { name, category: fd.get('category').trim(), created_at: new Date().toISOString() };
+        const id = await dbAdd('recipe_products', data);
+        data.id = id;
+        await postToSheetDB(SHEETS.RECIPE_PRODUCTS, data);
+        e.target.reset();
+        await _renderRecipeProductsList();
+        toast('Produto adicionado!', 'success');
+      } catch(err) {
+        toast('Erro ao salvar produto', 'error');
+      } finally {
+        setSaving(false, addBtn);
+      }
+    });
+
+    window._deleteRecipeProduct = async function(id) {
+      if (!await confirmAction('Excluir este produto?', 'Excluir', true)) return;
+      await dbDelete('recipe_products', id);
+      await deleteSheetDB(SHEETS.RECIPE_PRODUCTS, id);
+      await _renderRecipeProductsList();
+      toast('Produto removido', 'success');
+    };
+
+    async function initRecipesScreen() {
+      const clients = await window.getAll('clients');
+      const sel = document.getElementById('recipe-filter-client');
+      const cur = sel?.value;
+      if (sel) {
+        sel.innerHTML = '<option value="">👥 Todos os clientes</option>';
+        clients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(c => sel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
+        if (cur) sel.value = cur;
+      }
+      await renderRecipesList();
+      await updateRecipeBadge();
+    }
+
+    async function updateRecipeBadge() {
+      const count = (await dbGetAll_raw('recipes')).filter(r => r.status === 'pending').length;
+      ['recipe-pending-badge', 'drawer-recipe-badge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = count;
+        el.classList.toggle('hidden', count === 0);
+      });
+    }
+
+    // =====================================================
     // RELATÓRIO — FILTROS
     // =====================================================
     function getReportFilters() {
+      const activeQf = document.querySelector('#records-quick-filters .qf-btn.active')?.dataset?.qf || 'all';
+      const now = new Date();
+      let dateStart = document.getElementById('filter-date-start')?.value || '';
+      let dateEnd   = document.getElementById('filter-date-end')?.value   || '';
+      if (activeQf !== 'all' && !dateStart && !dateEnd) {
+        if (activeQf === 'week') {
+          const d = new Date(now); d.setDate(d.getDate() - 7);
+          dateStart = d.toISOString().slice(0, 10);
+          dateEnd   = now.toISOString().slice(0, 10);
+        } else if (activeQf === 'month') {
+          dateStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+          dateEnd   = now.toISOString().slice(0, 10);
+        } else if (activeQf === 'lastmonth') {
+          const d1 = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const d2 = new Date(now.getFullYear(), now.getMonth(), 0);
+          dateStart = d1.toISOString().slice(0, 10);
+          dateEnd   = d2.toISOString().slice(0, 10);
+        }
+      }
       return {
         text:      (document.getElementById('search-records')?.value      || '').toLowerCase(),
         clientId:  Number(document.getElementById('filter-client-records')?.value || 0),
-        dateStart: document.getElementById('filter-date-start')?.value || '',
-        dateEnd:   document.getElementById('filter-date-end')?.value   || '',
+        seller:    document.getElementById('filter-seller-records')?.value || '',
+        dateStart,
+        dateEnd,
       };
     }
 
@@ -1493,19 +3405,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('search-records')     .addEventListener('input',  applyFilters);
     document.getElementById('filter-client-records').addEventListener('change', applyFilters);
+    document.getElementById('filter-seller-records')?.addEventListener('change', applyFilters);
     document.getElementById('filter-date-start')  .addEventListener('change', applyFilters);
     document.getElementById('filter-date-end')    .addEventListener('change', applyFilters);
+    document.getElementById('records-quick-filters')?.querySelectorAll('.qf-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.getElementById('records-quick-filters').querySelectorAll('.qf-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        applyFilters();
+      });
+    });
     document.getElementById('btn-clear-filters').addEventListener('click', () => {
       document.getElementById('search-records').value = '';
       document.getElementById('filter-client-records').value = '';
+      const sellerSel = document.getElementById('filter-seller-records');
+      if (sellerSel) sellerSel.value = '';
       document.getElementById('filter-date-start').value = '';
       document.getElementById('filter-date-end').value = '';
+      document.getElementById('records-quick-filters')?.querySelectorAll('.qf-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('#records-quick-filters .qf-btn[data-qf="all"]')?.classList.add('active');
       renderRecordsList({});
     });
 
     // Popular select de clientes nos filtros
     async function refreshReportClientFilter() {
-      const clients = await dbGetAll_raw('clients');
+      const clients = await window.getAll('clients');
       const sel = document.getElementById('filter-client-records');
       const val = sel.value;
       sel.innerHTML = '<option value="">Todos os clientes</option>';
@@ -1522,16 +3446,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     // RENDER — HISTÓRICO DE REGISTROS
     // =====================================================
     async function renderRecordsList(filters = {}) {
-      const { text = '', clientId = 0, dateStart = '', dateEnd = '' } =
+      const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '' } =
         typeof filters === 'string' ? { text: filters } : filters;
 
-      const records   = await dbGetAll_raw('records');
+      let records     = await dbGetAll_raw('records');
       const clients   = await dbGetAll_raw('clients');
       const machines  = await dbGetAll_raw('machines');
       const processes = await dbGetAll_raw('processes');
 
-      const countEl = document.getElementById('records-count');
-      if (countEl) countEl.textContent = records.length;
+      // Filtrar registros por papel do usuário
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        const myClientIds = new Set(
+          clients.filter(c => managed.has((c.seller || '').toLowerCase())).map(c => Number(c.id))
+        );
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName || '').toLowerCase();
+        const myClientIds = new Set(
+          clients.filter(c => (c.seller || '').toLowerCase() === sellerName).map(c => Number(c.id))
+        );
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      }
+
+      // Popular dropdown de vendedores e aplicar filtro
+      const sellerSel = document.getElementById('filter-seller-records');
+      if (sellerSel) {
+        const sellers = [...new Set(clients.map(c => c.seller).filter(Boolean))].sort();
+        const prevSel = sellerSel.value;
+        sellerSel.innerHTML = '<option value="">👤 Todos os vendedores</option>' +
+          sellers.map(s => `<option value="${s}">${s}</option>`).join('');
+        if (prevSel) sellerSel.value = prevSel;
+      }
+      if (seller) {
+        const sellerClientIds = new Set(
+          clients.filter(c => (c.seller || '') === seller).map(c => Number(c.id))
+        );
+        records = records.filter(r => sellerClientIds.has(Number(r.client_id)));
+      }
 
       const list = document.getElementById('records-list');
       if (!list) return;
@@ -1568,10 +3520,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, createdMonth, monthSortKey, rows: [], totalKg: 0 };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(client?.price_kg || 0) || null };
         grouped[key].rows.push({ machineName, procName, executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
+
+      // Atualizar badge com número de grupos (não registros brutos)
+      const countEl = document.getElementById('records-count');
+      if (countEl) countEl.textContent = Object.keys(grouped).length;
 
       // Filtrar
       let entries = Object.entries(grouped);
@@ -1605,7 +3561,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       entries.sort((a, b) => b[1].monthSortKey.localeCompare(a[1].monthSortKey) || b[1].period.localeCompare(a[1].period));
 
       // Guardar dados para uso nos botões PDF/Imprimir
-      window._recordGroups = {};
+      _recordGroups = {};
 
       // Agrupar entradas por mês de criação
       const byMonth = {};
@@ -1621,7 +3577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       list.innerHTML = monthEntries.map(([month, { items }]) => {
         const groupsHtml = items.map(([key, g]) => {
           const safeKey = btoa(unescape(encodeURIComponent(key))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
-          window._recordGroups[safeKey] = g;
+          _recordGroups[safeKey] = g;
 
         const rowsHtml = g.rows.map(row => `
           <tr>
@@ -1679,126 +3635,70 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // ---- Imprimir um grupo ----
       window._printGroup = function(safeKey) {
-        const g = window._recordGroups[safeKey];
+        const g = _recordGroups[safeKey];
         if (!g) return;
-        const html = buildGroupHtml(g);
-        const win = window.open('', '_blank', 'width=900,height=700');
+        const win = window.open('', '_blank', 'width=1000,height=750');
         if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
-        win.document.write(`
-          <!DOCTYPE html><html lang="pt-BR"><head>
-          <meta charset="utf-8"/>
-          <title>Relatório — ${g.clientName}</title>
-          <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 2rem; color: #0f172a; }
-            h1 { color: #1e40af; font-size: 1.4rem; margin-bottom: 0.3rem; }
-            .meta { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
-            table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-            th { background: #eff6ff; padding: 0.5rem 0.8rem; text-align: left; font-size: 0.78rem; text-transform: uppercase; border-bottom: 2px solid #bfdbfe; }
-            td { padding: 0.5rem 0.8rem; border-bottom: 1px solid #f1f5f9; font-size: 0.88rem; }
-            .total-row td { font-weight: 700; background: #f0fdf4; color: #065f46; border-top: 2px solid #a7f3d0; }
-            .right { text-align: right; }
-            .center { text-align: center; }
-            @media print { body { padding: 0; } }
-          </style></head><body>
-          ${html}
-          <script>window.onload=()=>{window.print();}<\/script>
-          </body></html>
-        `);
+        win.document.write(buildReportHtml(g, true));
         win.document.close();
       };
 
-      // ---- Gerar PDF de um grupo ----
+      // ---- Gerar PDF de um grupo (abre janela de impressão) ----
       window._pdfGroup = function(safeKey) {
-        const g = window._recordGroups[safeKey];
+        const g = _recordGroups[safeKey];
         if (!g) return;
-        try {
-          const doc = new jspdf.jsPDF('p', 'mm', 'a4');
-          const W = 210, margin = 15;
-
-          // Header
-          doc.setFillColor(37, 99, 235);
-          doc.rect(0, 0, W, 20, 'F');
-          doc.setTextColor(255, 255, 255);
-          doc.setFontSize(13); doc.setFont(undefined, 'bold');
-          doc.text('HYGICARE LAVANDERIA', margin, 13);
-          doc.setFontSize(9); doc.setFont(undefined, 'normal');
-          doc.text('Relatório de Produção', W - margin, 13, { align: 'right' });
-
-          let y = 30;
-          doc.setTextColor(15, 23, 42);
-          doc.setFontSize(12); doc.setFont(undefined, 'bold');
-          doc.text(`Cliente: ${g.clientName}`, margin, y); y += 7;
-          doc.setFontSize(9); doc.setFont(undefined, 'normal');
-          doc.setTextColor(71, 85, 105);
-          doc.text(`Período: ${g.period}`, margin, y); y += 7;
-          doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, margin, y); y += 10;
-
-          // Cabeçalho tabela
-          doc.setFillColor(239, 246, 255);
-          doc.rect(margin, y - 5, W - margin * 2, 8, 'F');
-          doc.setTextColor(30, 64, 175);
-          doc.setFontSize(8); doc.setFont(undefined, 'bold');
-          const cols = [margin, 60, 100, 125, 150, 172];
-          const headers = ['Máquina', 'Processo', 'Exec.', 'Cancel.', 'Cap.(kg)', 'Total(kg)'];
-          headers.forEach((h, i) => doc.text(h, cols[i], y));
-          y += 7;
-
-          doc.setFont(undefined, 'normal');
-          doc.setTextColor(15, 23, 42);
-          let totalGeral = 0;
-          g.rows.forEach(row => {
-            if (y > 270) { doc.addPage(); y = 20; }
-            doc.setDrawColor(241, 245, 249);
-            doc.line(margin, y + 2, W - margin, y + 2);
-            doc.text(String(row.machineName).substring(0, 22), cols[0], y);
-            doc.text(String(row.procName).substring(0, 20), cols[1], y);
-            doc.text(String(row.executed), cols[2], y);
-            doc.text(String(row.canceled), cols[3], y);
-            doc.text(String(row.capacity), cols[4], y);
-            doc.setFont(undefined, 'bold');
-            doc.setTextColor(5, 150, 105);
-            doc.text(parseFloat(row.total).toFixed(2), cols[5], y);
-            doc.setFont(undefined, 'normal');
-            doc.setTextColor(15, 23, 42);
-            totalGeral += parseFloat(row.total);
-            y += 7;
-          });
-
-          // Total geral
-          y += 3;
-          doc.setFillColor(240, 253, 244);
-          doc.rect(margin, y - 4, W - margin * 2, 9, 'F');
-          doc.setFont(undefined, 'bold');
-          doc.setFontSize(10);
-          doc.setTextColor(5, 150, 105);
-          doc.text(`TOTAL GERAL: ${totalGeral.toFixed(2)} kg`, W - margin, y + 1, { align: 'right' });
-
-          const fileName = `relatorio_${g.clientName.replace(/\s+/g, '_')}_${g.period.replace(/[→\s]/g, '-').replace(/-+/g, '-')}.pdf`;
-          doc.save(fileName);
-          toast('PDF baixado com sucesso!', 'success');
-        } catch(e) {
-          console.error(e);
-          toast('Erro ao gerar PDF: ' + e.message, 'error');
-        }
+        const win = window.open('', '_blank', 'width=1000,height=750');
+        if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
+        win.document.write(buildReportHtml(g, true));
+        win.document.close();
+        toast('Abrindo relatório — use Imprimir → Salvar como PDF', 'info');
       };
 
       // ---- Compartilhar relatório ----
       window._shareGroup = async function(safeKey) {
-        const g = window._recordGroups?.[safeKey];
+        const g = _recordGroups?.[safeKey];
         if (!g) return toast('Relatório não encontrado', 'error');
 
-        window._shareCtx = { g, safeKey };
+        _shareCtx = { g, safeKey };
 
-        // Preenche emails do cliente (busca por id direto para tolerar nome gerado como "Cliente #22")
+        // Preenche e-mail do vendedor (busca por id direto para tolerar nome gerado como "Cliente #22")
         const clients = await dbGetAll_raw('clients');
         const client  = clients.find(c => Number(c.id) === Number(g.clientId)) ||
                         clients.find(c => c.name === g.clientName);
         document.getElementById('share-meta').textContent =
           `${g.clientName} · ${g.period} · ${g.totalKg.toFixed(2)} kg`;
-        document.getElementById('share-email-client').value = client?.email_client || '';
         document.getElementById('share-email-seller').value = client?.email_seller || '';
         document.getElementById('share-status').textContent = '';
         document.getElementById('modal-share').classList.remove('hidden');
+      };
+
+      // ---- Verificar PDFs (status dos relatórios locais) ----
+      window._checkDrivePdfs = async function() {
+        const btn = document.getElementById('btn-check-drive-pdfs');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
+        try {
+          const records  = await dbGetAll_raw('records');
+          const clients  = await dbGetAll_raw('clients');
+          const clientMap = {};
+          clients.forEach(c => { clientMap[c.id] = c.name; });
+          const byClient = {};
+          records.forEach(r => {
+            const name = clientMap[r.clientId] || `#${r.clientId}`;
+            if (!byClient[name]) byClient[name] = { count: 0, last: '' };
+            byClient[name].count++;
+            if (!byClient[name].last || r.dateStart > byClient[name].last) byClient[name].last = r.dateStart;
+          });
+          const entries = Object.entries(byClient).sort((a, b) => a[0].localeCompare(b[0]));
+          if (entries.length === 0) {
+            toast('Nenhum registro encontrado no sistema', 'info');
+          } else {
+            const lines = entries.map(([name, d]) => `${name}: ${d.count} registro(s)`).join(' | ');
+            toast(`📋 ${entries.length} cliente(s) com dados — ${records.length} registros no total`, 'success', 6000);
+          }
+        } catch(e) {
+          toast('Erro ao verificar registros', 'error');
+        }
+        if (btn) { btn.disabled = false; btn.textContent = '📋 Verificar PDFs'; }
       };
 
       function buildGroupHtml(g) {
@@ -1846,9 +3746,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const client = clients.find(c => c.id === clientId);
       if (!client) return toast('Cliente não encontrado', 'error');
 
-      // Filtrar por período
-      if (start) records = records.filter(r => !r.date_start || r.date_start >= start);
-      if (end)   records = records.filter(r => !r.date_end   || r.date_end   <= end);
+      // Filtrar por período — usa date_start nos dois lados para evitar
+      // duplicação quando períodos têm a mesma data de fim/início
+      if (start) records = records.filter(r => r.date_start && r.date_start >= start);
+      if (end)   records = records.filter(r => r.date_start && r.date_start <= end);
       records = records.filter(r => r.client_id === clientId);
 
       const clientMachines = machines.filter(m => Number(m.client_id) === Number(clientId));
@@ -1947,8 +3848,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =====================================================
     // RENDER INICIAL
     // =====================================================
-    await renderClientsList();
+    await initHomeScreen();
     await renderRecordsList();
+    await updateRecipeBadge();
+
+    // Botões de ação rápida na tela Home
+    document.querySelectorAll('.home-action-btn[data-nav-to]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const screenId = btn.dataset.navTo;
+        show(screenId);
+        if (screenId === 'screen-home')      await initHomeScreen();
+        if (screenId === 'screen-clients')   { await renderClientsList(); await refreshSellerSelect(); }
+        if (screenId === 'screen-charts')    { await refreshChartsFilters(); await renderCharts(); }
+        if (screenId === 'screen-vazao')     await initVazaoScreen();
+        if (screenId === 'screen-recipes')   await initRecipesScreen();
+        if (screenId === 'screen-reports')   await renderRecordsList(getReportFilters());
+        if (screenId === 'screen-form') {
+          const today = new Date().toISOString().slice(0, 10);
+          const startEl = document.getElementById('prod-date-start');
+          const endEl   = document.getElementById('prod-date-end');
+          if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
+          if (endEl   && !endEl.value)   endEl.value   = today;
+        }
+      });
+    });
 
     // =====================================================
     // GRAFICOS
@@ -1958,7 +3881,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
 
     async function refreshChartsFilters() {
-      const clients = await dbGetAll_raw('clients');
+      const clients = await window.getAll('clients');
       const sel = document.getElementById('chart-filter-client');
       if (sel) {
         const cur = sel.value;
@@ -1969,15 +3892,48 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       const selS = document.getElementById('chart-filter-seller');
       if (selS) {
-        const cur = selS.value;
-        const users = await _originalGetAll('users');
-        const sellers = [...new Set([
-          ...users.map(u => u.sellerName || u.name).filter(Boolean),
-          ...clients.map(c => c.seller).filter(Boolean)
-        ])].sort();
-        selS.innerHTML = '<option value="">👤 Todos os vendedores</option>';
-        sellers.forEach(s => selS.innerHTML += `<option value="${s}">${s}</option>`);
-        if (cur) selS.value = cur;
+        if (currentUser && currentUser.role === 'vendedor') {
+          selS.style.display = 'none';
+        } else if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+          const managed = getManagedSellerNames();
+          const cur = selS.value;
+          selS.style.display = '';
+          selS.innerHTML = '<option value="">👤 Todos os meus vendedores</option>';
+          [...managed].sort().forEach(s => {
+            const label = s.charAt(0).toUpperCase() + s.slice(1);
+            selS.innerHTML += `<option value="${label}">${label}</option>`;
+          });
+          if (cur) selS.value = cur;
+        } else {
+          const allClients = await dbGetAll_raw('clients');
+          const cur = selS.value;
+          const users = await _originalGetAll('users');
+          const sellers = [...new Set([
+            ...users.map(u => u.sellerName || u.name).filter(Boolean),
+            ...allClients.map(c => c.seller).filter(Boolean)
+          ])].sort();
+          selS.innerHTML = '<option value="">👤 Todos os vendedores</option>';
+          sellers.forEach(s => selS.innerHTML += `<option value="${s}">${s}</option>`);
+          if (cur) selS.value = cur;
+        }
+      }
+
+      // Filtro por gerente — visível apenas para admin
+      const selG = document.getElementById('chart-filter-gerente');
+      if (selG) {
+        if (!currentUser || currentUser.role !== 'admin') {
+          selG.style.display = 'none';
+        } else {
+          const users = await _originalGetAll('users');
+          const gerentes = users.filter(u => u.role === 'gerente');
+          const cur = selG.value;
+          selG.innerHTML = '<option value="">👨‍💼 Todos os gerentes</option>' +
+            gerentes.sort((a, b) => (a.name||'').localeCompare(b.name||''))
+              .map(g => `<option value="${g.id}">${g.name || g.sellerName || g.username}</option>`)
+              .join('');
+          if (cur) selG.value = cur;
+          selG.style.display = '';
+        }
       }
     }
 
@@ -2005,42 +3961,82 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function renderCharts() {
       let records  = await dbGetAll_raw('records');
-      const clients  = await dbGetAll_raw('clients');
-      const machines = await dbGetAll_raw('machines');
+      const clients   = await dbGetAll_raw('clients');
+      const machines  = await dbGetAll_raw('machines');
+      const processes = await dbGetAll_raw('processes');
 
-      // Período ativo (definido pelos preset buttons via dataset.activePeriod)
-      const activePeriod = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
+      // Filtrar por papel do usuário
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        const myClientIds = new Set(
+          clients.filter(c => managed.has((c.seller || '').toLowerCase())).map(c => Number(c.id))
+        );
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName || '').toLowerCase();
+        const myClientIds = new Set(
+          clients.filter(c => (c.seller || '').toLowerCase() === sellerName).map(c => Number(c.id))
+        );
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      }
+
+      // Período — inputs de data têm prioridade sobre os presets
+      const dateStart = document.getElementById('chart-date-start')?.value || '';
+      const dateEnd   = document.getElementById('chart-date-end')?.value || '';
       const now = new Date();
       const yyyy = now.getFullYear();
       const mm   = String(now.getMonth() + 1).padStart(2, '0');
       let filterStart = '', filterEnd = '';
-      if (activePeriod === 'month') {
-        filterStart = filterEnd = `${yyyy}-${mm}`;
-      } else if (activePeriod === '3m') {
-        const d3 = new Date(now); d3.setMonth(d3.getMonth() - 2);
-        filterStart = `${d3.getFullYear()}-${String(d3.getMonth()+1).padStart(2,'0')}`;
-        filterEnd   = `${yyyy}-${mm}`;
-      } else if (activePeriod === '6m') {
-        const d6 = new Date(now); d6.setMonth(d6.getMonth() - 5);
-        filterStart = `${d6.getFullYear()}-${String(d6.getMonth()+1).padStart(2,'0')}`;
-        filterEnd   = `${yyyy}-${mm}`;
-      } else if (activePeriod === 'year') {
-        filterStart = `${yyyy}-01`;
-        filterEnd   = `${yyyy}-12`;
+      if (dateStart || dateEnd) {
+        filterStart = dateStart;
+        filterEnd   = dateEnd;
+      } else {
+        const activePeriod = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
+        if (activePeriod === 'month') {
+          filterStart = filterEnd = `${yyyy}-${mm}`;
+        } else if (activePeriod === '3m') {
+          const d3 = new Date(now); d3.setMonth(d3.getMonth() - 2);
+          filterStart = `${d3.getFullYear()}-${String(d3.getMonth()+1).padStart(2,'0')}`;
+          filterEnd   = `${yyyy}-${mm}`;
+        } else if (activePeriod === '6m') {
+          const d6 = new Date(now); d6.setMonth(d6.getMonth() - 5);
+          filterStart = `${d6.getFullYear()}-${String(d6.getMonth()+1).padStart(2,'0')}`;
+          filterEnd   = `${yyyy}-${mm}`;
+        } else if (activePeriod === 'year') {
+          filterStart = `${yyyy}-01`;
+          filterEnd   = `${yyyy}-12`;
+        }
       }
 
-      const filterClient = document.getElementById('chart-filter-client')?.value || '';
-      const filterSeller = document.getElementById('chart-filter-seller')?.value || '';
+      const filterClient  = document.getElementById('chart-filter-client')?.value  || '';
+      const filterSeller  = document.getElementById('chart-filter-seller')?.value  || '';
+      const filterGerente = document.getElementById('chart-filter-gerente')?.value || '';
 
       // Aplicar filtros
       if (filterClient) records = records.filter(r => Number(r.client_id) === Number(filterClient));
+      if (filterGerente) {
+        const allUsers = await _originalGetAll('users');
+        const gerente  = allUsers.find(u => String(u.id) === filterGerente);
+        if (gerente) {
+          const gerenteName    = (gerente.sellerName || gerente.name || '').toLowerCase();
+          const gerenteSellers = new Set(
+            allUsers.filter(u => (u.manager || '').toLowerCase() === gerenteName)
+              .map(u => (u.sellerName || u.name || '').toLowerCase())
+          );
+          records = records.filter(r => {
+            const c = findClientById(r.client_id, clients);
+            return gerenteSellers.has((c?.seller || '').toLowerCase());
+          });
+        }
+      }
       if (filterSeller) records = records.filter(r => {
-        const c = clients.find(c => Number(c.id) === Number(r.client_id));
+        const c = findClientById(r.client_id, clients);
         return (c?.seller || '') === filterSeller;
       });
       if (filterStart || filterEnd) {
         records = records.filter(r => {
-          const m = (r.date_start || r.created_at || '').slice(0, 7);
+          const m = (r.date_start || '').slice(0, 7);
+          if (!m) return false; // sem date_start = excluir do período
           if (filterStart && m < filterStart) return false;
           if (filterEnd   && m > filterEnd)   return false;
           return true;
@@ -2070,7 +4066,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // ── Gráfico 1: Evolução mensal (linha) ──────────────────
       const porMes = {};
       for (const r of records) {
-        const raw = r.date_start || r.created_at || '';
+        const raw = r.date_start || '';
         const key = raw.slice(0, 7);
         if (!key) continue;
         const label = new Date(key + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
@@ -2101,7 +4097,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // ── Gráfico 2: kg por cliente (barra horizontal) ────────
       const kgCliente = {};
       for (const r of records) {
-        const c = clients.find(c => Number(c.id) === Number(r.client_id));
+        const c = findClientById(r.client_id, clients);
         const name = c?.name || `Cliente #${r.client_id}`;
         kgCliente[name] = (kgCliente[name] || 0) + parseFloat(r.total || 0);
       }
@@ -2123,7 +4119,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // ── Gráfico 3: Execução vs Cancelamento por mês (barra agrupada) ──
       const execCancel = {};
       for (const r of records) {
-        const key = (r.date_start || r.created_at || '').slice(0, 7);
+        const key = (r.date_start || '').slice(0, 7);
         if (!key) continue;
         const label = new Date(key + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
         if (!execCancel[key]) execCancel[key] = { label, exec: 0, cancel: 0 };
@@ -2148,34 +4144,74 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      // ── Gráfico 4: kg por máquina (doughnut) ────────────────
-      const kgMaq = {};
+      // ── Gráfico 4: kg por processo (doughnut %) ─────────────
+      const kgProc = {};
       for (const r of records) {
-        const m = machines.find(m => Number(m.id) === Number(r.machine_id));
-        const name = m?.name || `Máq. #${r.machine_id}`;
-        kgMaq[name] = (kgMaq[name] || 0) + parseFloat(r.total || 0);
+        const p = processes.find(p => Number(p.id) === Number(r.process_id));
+        const name = p?.name || `Proc. #${r.process_id}`;
+        kgProc[name] = (kgProc[name] || 0) + parseFloat(r.total || 0);
       }
-      const sortedMaq = Object.entries(kgMaq).sort((a,b) => b[1]-a[1]).slice(0, 8);
+      const totalKgProc = Object.values(kgProc).reduce((s, v) => s + v, 0);
+      const sortedProc = Object.entries(kgProc).sort((a,b) => b[1]-a[1]).slice(0, 10);
       const ctxMaq = document.getElementById('chart-kg-maquina');
       if (ctxMaq) _charts.kgMaquina = new Chart(ctxMaq, {
         type: 'doughnut',
-        data: { labels: sortedMaq.map(e=>e[0]), datasets: [{ data: sortedMaq.map(e=>+e[1].toFixed(2)), backgroundColor: CHART_COLORS }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+        data: {
+          labels: sortedProc.map(e => e[0]),
+          datasets: [{ data: sortedProc.map(e => +e[1].toFixed(2)), backgroundColor: CHART_COLORS }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom', labels: { font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const val = ctx.parsed;
+                  const pct = totalKgProc > 0 ? ((val / totalKgProc) * 100).toFixed(1) : 0;
+                  return ` ${val.toFixed(2)} kg (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
       });
 
-      // ── Gráfico 5: kg por vendedor (pie) ────────────────────
-      const kgVend = {};
+      // ── Gráfico 5: kg por máquina (pie) ────────────────────
+      const kgMach = {};
       for (const r of records) {
-        const c = clients.find(c => Number(c.id) === Number(r.client_id));
-        const seller = c?.seller || 'Sem vendedor';
-        kgVend[seller] = (kgVend[seller] || 0) + parseFloat(r.total || 0);
+        const m = machines.find(m => Number(m.id) === Number(r.machine_id));
+        const name = m?.name || `Máq. #${r.machine_id}`;
+        kgMach[name] = (kgMach[name] || 0) + parseFloat(r.total || 0);
       }
+      const sortedMach = Object.entries(kgMach).sort((a, b) => b[1] - a[1]);
+      const totalKgMach = sortedMach.reduce((s, [, v]) => s + v, 0);
       const ctxV = document.getElementById('chart-por-vendedor');
       if (ctxV) _charts.porVendedor = new Chart(ctxV, {
         type: 'pie',
-        data: { labels: Object.keys(kgVend), datasets: [{ data: Object.values(kgVend).map(v=>+v.toFixed(2)), backgroundColor: CHART_COLORS }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+        data: {
+          labels: sortedMach.map(([k]) => k),
+          datasets: [{ data: sortedMach.map(([, v]) => +v.toFixed(2)), backgroundColor: CHART_COLORS }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom', labels: { font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const val = ctx.parsed;
+                  const pct = totalKgMach > 0 ? ((val / totalKgMach) * 100).toFixed(1) : 0;
+                  return ` ${val.toLocaleString('pt-BR', {minimumFractionDigits:2})} kg (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
       });
+
+      // Gráfico de Vazão
+      await renderVazaoChart();
     }
 
     // Preset buttons — aplicam o período e re-renderizam
@@ -2183,17 +4219,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        const ds = document.getElementById('chart-date-start');
+        const de = document.getElementById('chart-date-end');
+        if (ds) ds.value = '';
+        if (de) de.value = '';
         renderCharts();
       });
     });
 
-    // Filtros de cliente e vendedor — auto-aplicam
+    // Inputs de data — desativam presets e re-renderizam
+    ['chart-date-start','chart-date-end'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', () => {
+        document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
+        renderCharts();
+      });
+    });
+
+    // Filtros de cliente, gerente e vendedor — auto-aplicam
     document.getElementById('chart-filter-client')?.addEventListener('change', () => renderCharts());
+    document.getElementById('chart-filter-gerente')?.addEventListener('change', () => renderCharts());
     document.getElementById('chart-filter-seller')?.addEventListener('change', () => renderCharts());
 
     // Limpar filtros
     document.getElementById('btn-clear-charts')?.addEventListener('click', () => {
-      ['chart-filter-client','chart-filter-seller'].forEach(id => {
+      ['chart-filter-client','chart-filter-gerente','chart-filter-seller','chart-date-start','chart-date-end'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
       document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
@@ -2222,15 +4271,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         list.innerHTML = '<div class="empty-state">👤 Nenhum usuário encontrado.</div>';
         return;
       }
-      list.innerHTML = filtered.map(u => `
+      const roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' };
+      const roleClass = { admin: 'role-admin', gerente: 'role-gerente', vendedor: 'role-vendedor', consultor: 'role-consultor' };
+      list.innerHTML = filtered.map(u => {
+        const managedBy = u.role === 'vendedor' && u.manager ? `· 👔 ${u.manager}` : '';
+        const managedCount = u.role === 'gerente'
+          ? users.filter(x => (x.manager || '').toLowerCase() === (u.sellerName || u.name || '').toLowerCase()).length
+          : 0;
+        const managerInfo = u.role === 'gerente' && managedCount > 0 ? `· 👥 ${managedCount} vendedor(es)` : '';
+        const consultorInfo = u.role === 'consultor' && u.sellers_access
+          ? `· 👁️ ${u.sellers_access.split(',').filter(Boolean).length} vendedor(es)` : '';
+        return `
         <div class="list-item">
           <div class="list-item-info">
             <div class="list-item-name">
               ${u.name || u.username}
-              <span class="user-chip-role ${u.role === 'admin' ? 'role-admin' : 'role-vendedor'}">${u.role || 'vendedor'}</span>
+              <span class="user-chip-role ${roleClass[u.role] || 'role-vendedor'}">${roleLabel[u.role] || u.role}</span>
             </div>
             <div class="list-item-meta">
-              👤 ${u.username}${u.email ? ` · 📧 ${u.email}` : ''}
+              👤 ${u.username}${u.email ? ` · 📧 ${u.email}` : ''} ${managedBy} ${managerInfo} ${consultorInfo}
             </div>
           </div>
           <div class="list-item-actions">
@@ -2239,19 +4298,61 @@ document.addEventListener('DOMContentLoaded', async () => {
               ? `<button class="btn-delete" onclick="window._deleteUser(${u.id}, '${u.username}')">🗑️</button>`
               : '<span style="font-size:0.75rem;color:#94a3b8">(você)</span>'}
           </div>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     }
 
     document.getElementById('search-users')?.addEventListener('input', e =>
       renderUsersList(e.target.value));
 
+    async function populateManagerSelect(selectedManager = '') {
+      const sel = document.getElementById('user-manager');
+      if (!sel) return;
+      const allUsers = await dbGetAll_raw('users');
+      const managers = allUsers.filter(u => u.role === 'gerente');
+      sel.innerHTML = '<option value="">-- Sem gerente --</option>';
+      managers.forEach(m => {
+        sel.innerHTML += `<option value="${m.sellerName || m.name}" ${(m.sellerName || m.name) === selectedManager ? 'selected' : ''}>${m.name}</option>`;
+      });
+    }
+
+    function toggleManagerRow(role) {
+      const row = document.getElementById('user-manager-row');
+      if (row) row.style.display = role === 'vendedor' ? '' : 'none';
+      const sellersRow = document.getElementById('user-sellers-row');
+      if (sellersRow) {
+        sellersRow.style.display = role === 'consultor' ? '' : 'none';
+        if (role === 'consultor') populateSellersCheckboxes();
+      }
+    }
+
+    async function populateSellersCheckboxes(selectedAccess = '') {
+      const container = document.getElementById('user-sellers-checkboxes');
+      if (!container) return;
+      const allUsers = await dbGetAll_raw('users');
+      const sellers = allUsers.filter(u => u.role === 'vendedor');
+      const selectedSet = new Set(selectedAccess.split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+      if (!sellers.length) {
+        container.innerHTML = '<span style="color:#94a3b8;font-size:0.84rem">Nenhum vendedor cadastrado</span>';
+        return;
+      }
+      container.innerHTML = sellers.map(s => {
+        const name = s.sellerName || s.name || '';
+        const checked = selectedSet.has(name.toLowerCase()) ? 'checked' : '';
+        return `<label class="perm-check"><input type="checkbox" name="seller_access" value="${name}" ${checked} /> ${name}</label>`;
+      }).join('');
+    }
+
+    document.getElementById('user-role')?.addEventListener('change', e => toggleManagerRow(e.target.value));
+
     // Abrir modal novo usuário
-    document.getElementById('btn-new-user')?.addEventListener('click', () => {
+    document.getElementById('btn-new-user')?.addEventListener('click', async () => {
       document.getElementById('edit-user-id').value = '';
       document.getElementById('modal-user-title').textContent = '👤 Novo Usuário';
       document.getElementById('form-user').reset();
       document.getElementById('user-password').required = true;
+      toggleManagerRow(document.getElementById('user-role')?.value || 'vendedor');
+      await populateManagerSelect();
       document.getElementById('modal-user').classList.remove('hidden');
     });
     document.getElementById('modal-user-close')?.addEventListener('click', () =>
@@ -2272,6 +4373,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('user-email').value    = u.email || '';
       document.getElementById('user-password').value = '';
       document.getElementById('user-password').required = false;
+      toggleManagerRow(u.role || 'vendedor');
+      await populateManagerSelect(u.manager || '');
+      if (u.role === 'consultor') await populateSellersCheckboxes(u.sellers_access || '');
+      // Restaurar checkboxes de permissão
+      const savedPerms = new Set((u.permissions || '').split(',').map(s => s.trim()).filter(Boolean));
+      ['clients','machines','processes','form','reports','charts','users','vazao'].forEach(k => {
+        const el = document.querySelector(`input[name="perm_${k}"]`);
+        if (el) el.checked = !u.permissions || savedPerms.has(k);
+      });
       document.getElementById('modal-user').classList.remove('hidden');
     };
 
@@ -2288,12 +4398,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Salvar usuário (criar/editar)
     document.getElementById('form-user')?.addEventListener('submit', async e => {
       e.preventDefault();
+      if (_saving) return;
       const editId = document.getElementById('edit-user-id').value;
       const name     = document.getElementById('user-name').value.trim();
       const username = document.getElementById('user-username').value.trim().toLowerCase();
       const role     = document.getElementById('user-role').value;
       const email    = document.getElementById('user-email').value.trim();
       const password = document.getElementById('user-password').value;
+      const manager  = role === 'vendedor' ? (document.getElementById('user-manager')?.value || '') : '';
+      const sellers_access = role === 'consultor'
+        ? Array.from(document.querySelectorAll('input[name="seller_access"]:checked')).map(el => el.value).join(',')
+        : '';
+      const permKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes'];
+      const permissions = role === 'admin' ? '' :
+        permKeys.filter(k => document.querySelector(`input[name="perm_${k}"]`)?.checked).join(',');
 
       if (!name || !username) return toast('Preencha nome e usuário', 'warning');
 
@@ -2302,44 +4420,51 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dup = allUsers.find(u => u.username === username && Number(u.id) !== Number(editId));
       if (dup) return toast(`Usuário "${username}" já existe`, 'error');
 
-      if (editId) {
-        const existing = allUsers.find(u => Number(u.id) === Number(editId));
-        const updated = { ...existing, name, username, role, email, sellerName: name };
-        if (password) updated.password = password;
-        await dbPut('users', updated);
-        // PATCH no SheetDB (atualiza a linha pelo id)
-        const ok = await patchSheetDB(SHEETS.USERS, updated.id, updated);
-        toast(ok ? 'Usuário atualizado e sincronizado!' : 'Usuário atualizado localmente', ok ? 'success' : 'warning');
-      } else {
-        if (!password) return toast('Informe uma senha', 'warning');
-        const data = { name, username, password, role, email, active: 'TRUE', sellerName: name, created_at: new Date().toISOString() };
-        const id = await dbAdd('users', data);
-        data.id = id;
-        await postToSheetDB(SHEETS.USERS, data);
-        toast('Usuário criado!', 'success');
-      }
+      const submitBtnUser = document.getElementById('form-user')?.querySelector('button[type="submit"]');
+      setSaving(true, submitBtnUser);
+      try {
+        if (editId) {
+          const existing = allUsers.find(u => Number(u.id) === Number(editId));
+          const updated = { ...existing, name, username, role, email, sellerName: name, manager, permissions, sellers_access };
+          if (password) updated.password = password;
+          await dbPut('users', updated);
+          const ok = await patchSheetDB(SHEETS.USERS, updated.id, updated);
+          toast(ok ? 'Usuário atualizado e sincronizado!' : 'Usuário atualizado localmente', ok ? 'success' : 'warning');
+        } else {
+          if (!password) { setSaving(false, submitBtnUser); return toast('Informe uma senha', 'warning'); }
+          const data = { name, username, password, role, email, active: 'TRUE', sellerName: name, manager, permissions, sellers_access, created_at: new Date().toISOString() };
+          const id = await dbAdd('users', data);
+          data.id = id;
+          await postToSheetDB(SHEETS.USERS, data);
+          toast('Usuário criado!', 'success');
+        }
 
-      document.getElementById('modal-user').classList.add('hidden');
-      await renderUsersList();
-      refreshSellerSelect();
-      // Atualiza cache local de usuários
-      const updatedList = await dbGetAll_raw('users');
-      localStorage.setItem('hygicare_users', JSON.stringify(updatedList));
-      // Sincroniza window.USERS para login offline imediato
-      updatedList.forEach(du => {
-        if (!du.username) return;
-        const idx = window.USERS.findIndex(u => u.username === du.username);
-        const mapped = { username: du.username, password: du.password,
-          role: du.role || 'vendedor', name: du.name, sellerName: du.name };
-        if (idx >= 0) window.USERS[idx] = mapped; else window.USERS.push(mapped);
-      });
+        document.getElementById('modal-user').classList.add('hidden');
+        await renderUsersList();
+        refreshSellerSelect();
+        const updatedList = await dbGetAll_raw('users');
+        localStorage.setItem('hygicare_users', JSON.stringify(updatedList));
+        updatedList.forEach(du => {
+          if (!du.username) return;
+          const idx = window.USERS.findIndex(u => u.username === du.username);
+          const mapped = { username: du.username, password: du.password,
+            role: du.role || 'vendedor', name: du.name, sellerName: du.name,
+            manager: du.manager || '', permissions: du.permissions || '',
+            sellers_access: du.sellers_access || '' };
+          if (idx >= 0) window.USERS[idx] = mapped; else window.USERS.push(mapped);
+        });
+      } catch(err) {
+        toast('Erro ao salvar usuário: ' + err.message, 'error');
+      } finally {
+        setSaving(false, submitBtnUser);
+      }
     });
 
     // =====================================================
     // EDITAR / EXCLUIR REGISTROS
     // =====================================================
     window._editRecord = async function(safeKey) {
-      const g = window._recordGroups?.[safeKey];
+      const g = _recordGroups?.[safeKey];
       if (!g) return toast('Registro não encontrado', 'error');
       document.getElementById('edit-record-key').value = safeKey;
       const [ds, de] = (g.period || '').split(' → ');
@@ -2360,7 +4485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window._deleteRecord = async function(safeKey) {
       if (currentUser?.role !== 'admin') return toast('Apenas administradores podem excluir registros', 'warning');
       if (!confirm('Excluir este grupo de registros? Esta ação não pode ser desfeita.')) return;
-      const g = window._recordGroups?.[safeKey];
+      const g = _recordGroups?.[safeKey];
       if (!g) return;
       const all = await dbGetAll_raw('records');
       const [ds, de] = (g.period || '').split(' → ');
@@ -2393,8 +4518,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Salvar edição
     document.getElementById('form-edit-record').addEventListener('submit', async e => {
       e.preventDefault();
+      if (_saving) return;
       const safeKey = document.getElementById('edit-record-key').value;
-      const g = window._recordGroups?.[safeKey];
+      const g = _recordGroups?.[safeKey];
       if (!g) return;
       const newDs = document.getElementById('edit-record-date-start').value;
       const newDe = document.getElementById('edit-record-date-end').value;
@@ -2402,7 +4528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const [ds, de] = (g.period || '').split(' → ');
 
       const btn = document.getElementById('form-edit-record').querySelector('button[type="submit"]');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+      setSaving(true, btn, '⏳ Salvando...');
 
       let i = 0;
       let patchOk = 0;
@@ -2412,27 +4538,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         fmtDate(r.date_end)   === de
       );
 
-      for (const r of toEdit) {
-        const exec  = parseFloat(document.getElementById(`edit-row-exec-${i}`)?.value ?? r.executed);
-        const canc  = parseFloat(document.getElementById(`edit-row-canc-${i}`)?.value ?? r.canceled);
-        const cap   = parseFloat(r.capacity || 0);
-        const total = (exec + canc) * cap;   // mesma fórmula do save-production
-        const updated = { ...r, date_start: newDs, date_end: newDe, executed: exec, canceled: canc, total };
-        await dbPut('records', updated);
-        const ok = await patchSheetDB(SHEETS.RECORDS, r.id, updated);
-        if (ok) patchOk++;
-        i++;
+      try {
+        for (const r of toEdit) {
+          const exec  = parseFloat(document.getElementById(`edit-row-exec-${i}`)?.value ?? r.executed);
+          const canc  = parseFloat(document.getElementById(`edit-row-canc-${i}`)?.value ?? r.canceled);
+          const cap   = parseFloat(r.capacity || 0);
+          const total = (exec + canc) * cap;
+          const updated = { ...r, date_start: newDs, date_end: newDe, executed: exec, canceled: canc, total };
+          await dbPut('records', updated);
+          const ok = await patchSheetDB(SHEETS.RECORDS, r.id, updated);
+          if (ok) patchOk++;
+          i++;
+        }
+
+        const syncMsg = patchOk === toEdit.length
+          ? '✅ Registro atualizado e sincronizado!'
+          : `⚠️ Atualizado localmente (${patchOk}/${toEdit.length} sincronizados na planilha)`;
+        document.getElementById('modal-edit-record').classList.add('hidden');
+        toast(syncMsg, patchOk === toEdit.length ? 'success' : 'warning', 5000);
+        await renderRecordsList();
+        notifyEmail('edicao_registro', { clientName: g.clientName, period: `${newDs} → ${newDe}` });
+      } catch(err) {
+        toast('Erro ao salvar edição: ' + err.message, 'error');
+      } finally {
+        setSaving(false, btn);
       }
-
-      if (btn) { btn.disabled = false; btn.textContent = '💾 Salvar Edição'; }
-
-      const syncMsg = patchOk === toEdit.length
-        ? '✅ Registro atualizado e sincronizado!'
-        : `⚠️ Atualizado localmente (${patchOk}/${toEdit.length} sincronizados na planilha)`;
-      document.getElementById('modal-edit-record').classList.add('hidden');
-      toast(syncMsg, patchOk === toEdit.length ? 'success' : 'warning', 5000);
-      await renderRecordsList();
-      notifyEmail('edicao_registro', { clientName: g.clientName, period: `${newDs} → ${newDe}` });
     });
 
     // =====================================================

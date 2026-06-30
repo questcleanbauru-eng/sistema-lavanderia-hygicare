@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// HYGICARE LAVANDERIA — Google Apps Script API  v4
+// HYGICARE LAVANDERIA — Google Apps Script API  v5
 // ============================================================
 // INSTRUÇÕES DE INSTALAÇÃO:
 //   1. Abra sua planilha Google Sheets
@@ -22,16 +22,23 @@
 // Se uma aba já existe mas está faltando alguma coluna,
 // a função ensureHeaders() adiciona automaticamente ao final.
 const HEADERS = {
-  Clientes:  ['id','name','city','seller','email_client','send_client',
-               'email_seller','send_seller','price_kg','created_at'],
-  Maquinas:  ['id','name','client_id','capacity','created_at'],
-  Processos: ['id','name','machine_id','capacity','created_at'],
-  Registros: ['id','client_id','machine_id','process_id','executed',
-               'canceled','capacity','total','date_start','date_end',
-               'created_at','synced_at'],
-  Usuarios:  ['id','name','username','password','role','email',
-               'active','sellerName','permissions','created_at'],
-  Config:    ['chave','valor'],
+  Clientes:       ['id','name','city','seller','email_client','send_client',
+                   'email_seller','send_seller','price_kg','created_at'],
+  Maquinas:       ['id','name','client_id','capacity','created_at'],
+  Processos:      ['id','name','machine_id','capacity','created_at'],
+  Registros:      ['id','client_id','machine_id','process_id','executed',
+                   'canceled','capacity','total','date_start','date_end',
+                   'created_at','synced_at'],
+  Usuarios:       ['id','name','username','password','role','email',
+                   'active','sellerName','manager','permissions','sellers_access','created_at'],
+  Vazoes:         ['id','machine_id','name','unit','created_at'],
+  VazaoRegistros:  ['id','date','client_id','machine_id','vazao_id',
+                    'vazao_name','vazao_unit','value','user','created_at'],
+  Receitas:        ['id','client_id','machine_id','process_id','date','created_by','status',
+                    'version','original_id','edit_notes','rejection_notes',
+                    'approved_by','approved_at','steps','created_at'],
+  ReceitaProdutos: ['id','name','category','created_at'],
+  Config:          ['chave','valor'],
 };
 
 // ── Resposta padrão ──────────────────────────────────────────
@@ -209,12 +216,16 @@ function getConfig(key) {
 
 // ── Rótulos amigáveis para as abas ──────────────────────────
 const SHEET_LABELS = {
-  Clientes:  'Cliente',
-  Maquinas:  'Máquina',
-  Processos: 'Processo',
-  Registros: 'Registro de Lavagem',
-  Usuarios:  'Usuário',
-  Config:    'Configuração',
+  Clientes:       'Cliente',
+  Maquinas:       'Máquina',
+  Processos:      'Processo',
+  Registros:      'Registro de Lavagem',
+  Usuarios:       'Usuário',
+  Vazoes:         'Vazão',
+  VazaoRegistros:  'Leitura de Vazão',
+  Receitas:        'Receita',
+  ReceitaProdutos: 'Produto de Receita',
+  Config:          'Configuração',
 };
 
 // ── Enviar e-mail de notificação ─────────────────────────────

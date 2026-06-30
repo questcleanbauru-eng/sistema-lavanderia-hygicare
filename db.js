@@ -1,6 +1,6 @@
 // db.js - simples wrapper IndexedDB usando idb-like minimal
 const DB_NAME = 'lavanderia_db_v1';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 let dbPromise;
 
 function openDB(){
@@ -14,7 +14,11 @@ function openDB(){
       if(!db.objectStoreNames.contains('processes')) db.createObjectStore('processes', {keyPath: 'id', autoIncrement: true});
       if(!db.objectStoreNames.contains('records'))   db.createObjectStore('records',   {keyPath: 'id', autoIncrement: true});
       if(!db.objectStoreNames.contains('outbox'))    db.createObjectStore('outbox',    {keyPath: 'id', autoIncrement: true});
-      if(!db.objectStoreNames.contains('users'))     db.createObjectStore('users',     {keyPath: 'id', autoIncrement: true});
+      if(!db.objectStoreNames.contains('users'))        db.createObjectStore('users',        {keyPath: 'id', autoIncrement: true});
+      if(!db.objectStoreNames.contains('vazoes'))          db.createObjectStore('vazoes',          {keyPath: 'id', autoIncrement: true});
+      if(!db.objectStoreNames.contains('vazao_records'))   db.createObjectStore('vazao_records',   {keyPath: 'id', autoIncrement: true});
+      if(!db.objectStoreNames.contains('recipes'))         db.createObjectStore('recipes',         {keyPath: 'id', autoIncrement: true});
+      if(!db.objectStoreNames.contains('recipe_products')) db.createObjectStore('recipe_products', {keyPath: 'id', autoIncrement: true});
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror = e => reject(e.target.error);

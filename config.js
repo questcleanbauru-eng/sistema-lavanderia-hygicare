@@ -13,7 +13,11 @@ const SHEETS = {
   MACHINES: "Maquinas",
   PROCESSES: "Processos",
   RECORDS: "Registros",
-  USERS: "Usuarios"
+  USERS: "Usuarios",
+  VAZOES: "Vazoes",
+  VAZAO_RECORDS: "VazaoRegistros",
+  RECIPES: "Receitas",
+  RECIPE_PRODUCTS: "ReceitaProdutos"
 };
 
 // Modo de debug

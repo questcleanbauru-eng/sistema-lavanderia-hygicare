@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <meta name="theme-color" content="#1e3a8a" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Hygicare" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='72' font-size='62' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>H</text></svg>" />
@@ -81,8 +81,25 @@
               <select id="user-role" name="role">
                 <option value="vendedor">Vendedor</option>
                 <option value="gerente">Gerente</option>
+                <option value="consultor">Consultor Lavanderia</option>
                 <option value="admin">Administrador</option>
               </select>
+            </div>
+          </div>
+          <div class="form-row" id="user-manager-row" style="display:none">
+            <div class="form-field">
+              <label>Gerente responsável</label>
+              <select id="user-manager" name="manager">
+                <option value="">-- Sem gerente --</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" id="user-sellers-row" style="display:none">
+            <div class="form-field" style="flex:1">
+              <label>👁️ Vendedores que pode ver</label>
+              <div id="user-sellers-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;max-height:140px;overflow-y:auto;min-height:40px">
+                <span style="color:#94a3b8;font-size:0.84rem">Carregando vendedores...</span>
+              </div>
             </div>
           </div>
           <div class="form-row">
@@ -107,6 +124,8 @@
               <label class="perm-check"><input type="checkbox" name="perm_form"      checked /> 📋 Produção</label>
               <label class="perm-check"><input type="checkbox" name="perm_reports"   checked /> 📊 Relatórios</label>
               <label class="perm-check"><input type="checkbox" name="perm_charts"    checked /> 📈 Gráficos</label>
+              <label class="perm-check"><input type="checkbox" name="perm_vazao"     checked /> 💧 Vazão</label>
+              <label class="perm-check"><input type="checkbox" name="perm_recipes"  checked /> 📝 Receitas</label>
               <label class="perm-check"><input type="checkbox" name="perm_users"              /> 👥 Usuários</label>
               <label class="perm-check perm-only-admin" style="opacity:0.4;pointer-events:none"><input type="checkbox" disabled /> 🛠️ Admin (só admin)</label>
             </div>
@@ -148,12 +167,14 @@
                 <button id="btn-refresh-arrow" class="hdr-btn hdr-btn-green refresh-arrow" title="Escolher aba">▾</button>
                 <div id="refresh-dropdown" class="refresh-dropdown hidden">
                   <div class="refresh-dropdown-title">Atualizar apenas:</div>
-                  <button class="refresh-opt" data-sheet="all">🔄 Tudo (5 abas)</button>
+                  <button class="refresh-opt" data-sheet="all">🔄 Tudo (7 abas)</button>
                   <button class="refresh-opt" data-sheet="clients">👥 Clientes</button>
                   <button class="refresh-opt" data-sheet="machines">⚙️ Maquinas</button>
                   <button class="refresh-opt" data-sheet="processes">📋 Processos</button>
                   <button class="refresh-opt" data-sheet="records">📝 Registros</button>
                   <button class="refresh-opt" data-sheet="users">👤 Usuarios</button>
+                  <button class="refresh-opt" data-sheet="vazoes">💧 Vazões</button>
+                  <button class="refresh-opt" data-sheet="vazao_records">📊 Leituras Vazão</button>
                 </div>
               </div>
             </div>
@@ -162,10 +183,13 @@
           </div>
         </div>
         <nav>
+          <button class="nav-btn" id="nav-home">🏠 Início</button>
           <button class="nav-btn" id="nav-clients">👥 Clientes</button>
           <button class="nav-btn" id="nav-machines">⚙️ Maquinas</button>
           <button class="nav-btn" id="nav-processes">📋 Processos</button>
           <button class="nav-btn" id="nav-charts">📊 Graficos</button>
+          <button class="nav-btn" id="nav-vazao">💧 Vazão</button>
+          <button class="nav-btn" id="nav-recipes">📝 Receitas<span id="recipe-pending-badge" class="nav-badge hidden">0</span></button>
           <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio</button>
           <button class="nav-btn" id="nav-form">📝 Gerar Relatório</button>
           <button class="nav-btn admin-only hidden" id="nav-users">👤 Usuarios</button>
@@ -173,7 +197,64 @@
         </nav>
       </header>
       <main>
-        <section id="screen-clients" class="screen">
+        <!-- ===== TELA HOME ===== -->
+        <section id="screen-home" class="screen">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+            <div>
+              <h2 id="home-greeting" style="font-size:1.15rem;font-weight:800;margin:0;color:var(--text)">Olá! 👋</h2>
+              <p id="home-date" style="color:var(--muted);font-size:0.82rem;margin:2px 0 0"></p>
+            </div>
+            <span style="font-size:1.8rem">🏠</span>
+          </div>
+
+          <!-- KPIs -->
+          <div class="home-kpis">
+            <div class="home-kpi">
+              <div class="home-kpi-value" id="home-kg-mes">—</div>
+              <div class="home-kpi-label">kg este mês</div>
+            </div>
+            <div class="home-kpi">
+              <div class="home-kpi-value" id="home-records-mes">—</div>
+              <div class="home-kpi-label">registros</div>
+            </div>
+            <div class="home-kpi" id="home-kpi-pending" style="display:none">
+              <div class="home-kpi-value" id="home-pending-count" style="color:#ef4444">0</div>
+              <div class="home-kpi-label">📋 aprovar</div>
+            </div>
+            <div class="home-kpi">
+              <div class="home-kpi-value" id="home-clients-count">—</div>
+              <div class="home-kpi-label">clientes</div>
+            </div>
+          </div>
+
+          <!-- Ações rápidas -->
+          <div class="home-actions">
+            <button class="home-action-btn" data-nav-to="screen-form">
+              <span style="font-size:1.6rem;line-height:1">📝</span>
+              <span>Registrar</span>
+            </button>
+            <button class="home-action-btn" data-nav-to="screen-vazao">
+              <span style="font-size:1.6rem;line-height:1">💧</span>
+              <span>Vazão</span>
+            </button>
+            <button class="home-action-btn" data-nav-to="screen-reports">
+              <span style="font-size:1.6rem;line-height:1">📄</span>
+              <span>Relatórios</span>
+            </button>
+            <button class="home-action-btn" data-nav-to="screen-charts">
+              <span style="font-size:1.6rem;line-height:1">📊</span>
+              <span>Gráficos</span>
+            </button>
+          </div>
+
+          <!-- Últimos registros -->
+          <div class="card">
+            <h3 style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">📋 Últimos registros</h3>
+            <div id="home-recent-records"></div>
+          </div>
+        </section>
+
+        <section id="screen-clients" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title"><h2>👥 Clientes</h2><span class="count-badge" id="clients-count">0</span></div>
             <button id="btn-new-client" class="btn-primary">+ Novo Cliente</button>
@@ -207,6 +288,10 @@
             </form>
           </div>
           <div class="search-bar"><span>🔍</span><input type="text" id="search-clients" placeholder="Buscar por nome, cidade ou vendedor..." /></div>
+          <div id="clients-view-toggle" class="quick-filters">
+            <button class="qf-btn active" data-cv="list">📋 Lista</button>
+            <button class="qf-btn" data-cv="group">👨‍💼 Por Vendedor</button>
+          </div>
           <div id="clients-list" class="items-list"></div>
         </section>
         <section id="screen-machines" class="screen hidden">
@@ -264,16 +349,21 @@
         <section id="screen-form" class="screen hidden">
           <div class="screen-header"><div class="screen-title"><h2>📝 Gerar Relatório</h2></div></div>
           <div class="card prod-setup">
+            <p class="prod-card-title">Novo Registro</p>
             <div class="form-row" style="grid-template-columns:1fr">
               <div class="form-field"><label>Cliente *</label><select id="prod-client-select"><option value="">-- Selecione um cliente --</option></select></div>
             </div>
-            <div class="form-row" style="grid-template-columns:1fr 1fr">
+            <div class="form-row form-row-2col">
               <div class="form-field"><label>📅 Data Início</label><input type="date" id="prod-date-start" /></div>
               <div class="form-field"><label>📅 Data Fim</label><input type="date" id="prod-date-end" /></div>
             </div>
             <div id="machines-list"></div>
             <div class="prod-btn-row" style="margin-top:0.5rem">
               <button id="save-production" class="btn-primary btn-lg">💾 Salvar</button>
+            </div>
+            <div id="save-progress" class="hidden" style="margin-top:1rem;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+              <div style="background:#f9fafb;padding:0.5rem 0.85rem;font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">📤 Progresso do envio</div>
+              <div id="save-progress-log" style="padding:0.6rem 0.85rem;font-size:0.88rem;line-height:1.8;max-height:220px;overflow-y:auto;font-family:monospace"></div>
             </div>
             <p id="last-sync-time" class="sync-time-info" style="text-align:center;margin-top:0.5rem">Última sincronização: Nunca</p>
           </div>
@@ -319,9 +409,18 @@
             <select id="chart-filter-client" class="filter-select" style="min-width:180px">
               <option value="">👥 Todos os clientes</option>
             </select>
+            <select id="chart-filter-gerente" class="filter-select" style="min-width:180px;display:none">
+              <option value="">👨‍💼 Todos os gerentes</option>
+            </select>
             <select id="chart-filter-seller" class="filter-select" style="min-width:180px">
               <option value="">👤 Todos os vendedores</option>
             </select>
+            <div class="chart-date-range">
+              <label class="chart-date-label">De</label>
+              <input type="month" id="chart-date-start" class="filter-select" />
+              <label class="chart-date-label">Até</label>
+              <input type="month" id="chart-date-end" class="filter-select" />
+            </div>
             <button type="button" class="btn-secondary btn-sm" id="btn-clear-charts">🗑️ Limpar filtros</button>
           </div>
 
@@ -340,13 +439,24 @@
               <canvas id="chart-exec-cancel" height="220"></canvas>
             </div>
             <div class="card chart-card">
-              <h3 class="chart-title">⚙️ kg por Máquina</h3>
+              <h3 class="chart-title">📋 kg por Processo (%)</h3>
               <canvas id="chart-kg-maquina" height="220"></canvas>
             </div>
             <div class="card chart-card">
-              <h3 class="chart-title">👤 kg por Vendedor</h3>
+              <h3 class="chart-title">⚙️ kg por Máquina</h3>
               <canvas id="chart-por-vendedor" height="220"></canvas>
             </div>
+          </div>
+
+          <!-- Seção Vazão -->
+          <div class="card chart-card" style="margin-top:1rem">
+            <h3 class="chart-title">💧 Evolução de Vazão</h3>
+            <canvas id="chart-vazao-evolucao" height="180"></canvas>
+          </div>
+
+          <div class="card" style="margin-top:0.75rem">
+            <h3 style="font-size:0.95rem;font-weight:700;margin:0 0 0.75rem;color:var(--text)">📜 Histórico de Leituras</h3>
+            <div id="vazao-history-list" class="items-list" style="max-height:420px;overflow-y:auto"></div>
           </div>
         </section>
 
@@ -461,6 +571,93 @@
           </div>
         </section>
 
+        <!-- ===== TELA VAZÃO ===== -->
+        <section id="screen-vazao" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>💧 Vazão</h2></div>
+          </div>
+
+          <!-- Formulário de registro -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="font-size:0.95rem;font-weight:700;margin:0 0 1rem;color:var(--text)">📋 Registrar Leituras</h3>
+            <div class="form-row" style="margin-bottom:0.75rem">
+              <div class="form-field">
+                <label>📅 Data</label>
+                <input type="date" id="vazao-date" class="form-input" />
+              </div>
+              <div class="form-field">
+                <label>👥 Cliente</label>
+                <select id="vazao-client" class="form-input">
+                  <option value="">-- Selecione --</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Máquinas e leituras expandidas (preenchidas dinamicamente) -->
+            <div id="vazao-machines-area" style="display:none"></div>
+
+            <div id="vazao-empty-msg" style="color:var(--muted);font-size:0.88rem;margin-top:0.5rem;display:none">Selecione um cliente para ver as máquinas.</div>
+          </div>
+
+          <!-- Histórico de leituras -->
+          <div class="card" id="vazao-history-card" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
+              <h3 style="font-size:0.92rem;font-weight:700;margin:0">📜 Histórico de Leituras</h3>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <select id="vazao-hist-machine" class="form-input" style="font-size:0.82rem;padding:0.3rem 0.5rem;min-width:0">
+                  <option value="">⚙️ Todas as máquinas</option>
+                </select>
+                <select id="vazao-hist-period" class="form-input" style="font-size:0.82rem;padding:0.3rem 0.5rem;min-width:0">
+                  <option value="30">Últ. 30 dias</option>
+                  <option value="90">Últ. 90 dias</option>
+                  <option value="365">Este ano</option>
+                  <option value="all">Todos</option>
+                </select>
+              </div>
+            </div>
+            <div id="vazao-local-history"></div>
+          </div>
+
+        </section>
+
+        <!-- ===== TELA RECEITAS ===== -->
+        <section id="screen-recipes" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title">
+              <h2>📝 Receitas</h2>
+              <span class="count-badge" id="recipes-count">0</span>
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <button id="btn-recipe-products" class="btn-secondary btn-sm">🧪 Produtos</button>
+              <button id="btn-new-recipe" class="btn-primary btn-sm">+ Nova Receita</button>
+            </div>
+          </div>
+
+          <!-- Aprovações pendentes (só admin) -->
+          <div id="recipes-pending-section" style="display:none">
+            <div class="card" style="border-left:4px solid #f59e0b;margin-bottom:1rem">
+              <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+                <span style="font-weight:700;font-size:0.9rem;color:#b45309">⏳ Aguardando Aprovação</span>
+                <span class="count-badge" id="recipes-pending-count" style="background:#f59e0b;color:#fff">0</span>
+              </div>
+              <div id="recipes-pending-list"></div>
+            </div>
+          </div>
+
+          <!-- Filtros -->
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
+            <select id="recipe-filter-client" class="filter-select" style="min-width:180px">
+              <option value="">👥 Todos os clientes</option>
+            </select>
+            <select id="recipe-filter-machine" class="filter-select" style="min-width:180px">
+              <option value="">⚙️ Todas as máquinas</option>
+            </select>
+          </div>
+
+          <!-- Lista de receitas -->
+          <div id="recipes-list"></div>
+        </section>
+
         <section id="screen-reports" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title">
@@ -471,7 +668,17 @@
           <div class="search-bar">
             <span>🔍</span>
             <input type="text" id="search-records" placeholder="Buscar por cliente, maquina ou processo..." />
-            <button id="btn-check-drive-pdfs" class="admin-only hidden" onclick="window._checkDrivePdfs()" title="Verificar PDFs salvos no Drive e liberar botões de e-mail" style="flex-shrink:0;background:rgba(59,130,246,0.1);color:#1d4ed8;border:1px solid rgba(59,130,246,0.3);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;white-space:nowrap">� Verificar PDFs</button>
+          </div>
+          <div id="records-quick-filters" class="quick-filters">
+            <button class="qf-btn active" data-qf="all">Todos</button>
+            <button class="qf-btn" data-qf="week">Esta semana</button>
+            <button class="qf-btn" data-qf="month">Este mês</button>
+            <button class="qf-btn" data-qf="lastmonth">Mês passado</button>
+          </div>
+          <div style="margin-bottom:0.65rem">
+            <select id="filter-seller-records" class="form-input" style="font-size:0.85rem;padding:0.4rem 0.6rem;width:100%;max-width:280px">
+              <option value="">👤 Todos os vendedores</option>
+            </select>
           </div>
           <!-- inputs ocultos mantidos para o JS funcionar -->
           <select id="filter-client-records" style="display:none"><option value="">Todos os clientes</option></select>
@@ -482,57 +689,178 @@
         </section>
       </main>
       <footer><small>Hygicare Lavanderia — Offline-first PWA · Google Apps Script</small></footer>
+
+      <!-- ===== BOTTOM NAV (mobile only) ===== -->
+      <nav class="bottom-nav" id="bottom-nav">
+        <button class="bnav-btn" data-target="screen-reports">
+          <span class="bnav-icon">📋</span>
+          <span class="bnav-label">Relatórios</span>
+        </button>
+        <button class="bnav-btn" data-target="screen-vazao">
+          <span class="bnav-icon">💧</span>
+          <span class="bnav-label">Vazão</span>
+        </button>
+        <button class="bnav-btn bnav-fab" data-target="screen-form">
+          <span class="bnav-icon">➕</span>
+          <span class="bnav-label">Registrar</span>
+        </button>
+        <button class="bnav-btn" data-target="screen-charts">
+          <span class="bnav-icon">📊</span>
+          <span class="bnav-label">Gráficos</span>
+        </button>
+        <button class="bnav-btn" id="bnav-more">
+          <span class="bnav-icon">☰</span>
+          <span class="bnav-label">Menu</span>
+        </button>
+      </nav>
+
+      <!-- ===== DRAWER ===== -->
+      <div class="drawer-overlay hidden" id="drawer-overlay"></div>
+      <div class="drawer hidden" id="drawer-more">
+        <div class="drawer-handle"></div>
+        <p class="drawer-title">Menu</p>
+        <button class="drawer-item" data-target="screen-home">🏠 Início</button>
+        <button class="drawer-item" data-target="screen-clients">👥 Clientes</button>
+        <button class="drawer-item" data-target="screen-machines">⚙️ Máquinas</button>
+        <button class="drawer-item" data-target="screen-processes">📋 Processos</button>
+        <button class="drawer-item" data-target="screen-vazao">💧 Vazão</button>
+        <button class="drawer-item" data-target="screen-recipes">📝 Receitas<span id="drawer-recipe-badge" class="nav-badge hidden">0</span></button>
+        <button class="drawer-item admin-only hidden" data-target="screen-users">👤 Usuários</button>
+        <button class="drawer-item admin-only hidden" data-target="screen-admin">🛠️ Admin</button>
+        <div class="drawer-divider"></div>
+        <button class="drawer-item drawer-item-danger" id="drawer-logout">👋 Sair do Sistema</button>
+      </div>
     </div>
     <!-- Modal Compartilhar Relatório -->
     <div id="modal-share" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:460px">
+      <div class="modal-box" style="max-width:440px">
         <div class="modal-hdr">
           <div>
-            <h3>📤 Compartilhar Relatório</h3>
-            <p class="modal-hdr-sub" id="share-meta" style="margin-top:2px"></p>
+            <h3>📋 Emitir Relatório</h3>
+            <p class="modal-hdr-sub" id="share-meta" style="margin-top:2px;font-size:0.78rem;color:#64748b"></p>
           </div>
           <button class="btn-close" id="share-close">✕</button>
         </div>
 
-        <!-- E-mail Cliente -->
-        <div style="margin-bottom:0.85rem">
-          <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:4px">📧 E-mail do Cliente</label>
-          <div style="display:flex;gap:8px">
-            <input type="email" id="share-email-client" class="form-input" placeholder="cliente@email.com" style="flex:1;font-size:0.88rem;padding:0.5rem 0.7rem" />
-            <button id="share-btn-client" class="btn-primary" style="white-space:nowrap;padding:0.5rem 1rem;font-size:0.85rem">Enviar</button>
-          </div>
-        </div>
-
-        <!-- E-mail Vendedor -->
+        <!-- Notificar Vendedor -->
         <div style="margin-bottom:1.2rem">
-          <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:4px">👨‍💼 E-mail do Vendedor</label>
-          <div style="display:flex;gap:8px">
-            <input type="email" id="share-email-seller" class="form-input" placeholder="vendedor@email.com" style="flex:1;font-size:0.88rem;padding:0.5rem 0.7rem" />
-            <button id="share-btn-seller" class="btn-primary" style="white-space:nowrap;padding:0.5rem 1rem;font-size:0.85rem">Enviar</button>
+          <label style="font-size:0.92rem;font-weight:700;color:#374151;display:block;margin-bottom:6px">📲 Notificar Vendedor</label>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input type="email" id="share-email-seller" class="form-input" placeholder="vendedor@empresa.com" style="flex:1;font-size:0.95rem;padding:0.6rem 0.8rem;min-height:48px" />
+            <button id="share-btn-seller" class="btn-primary" style="white-space:nowrap;padding:0.6rem 1rem;font-size:0.9rem;min-height:48px">📧 E-mail</button>
+          </div>
+          <button id="share-btn-whatsapp" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:0.75rem 1rem;background:#25d366;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:0.95rem;font-weight:700;min-height:48px">
+            <span style="font-size:1.2rem">💬</span> Compartilhar via WhatsApp
+          </button>
+        </div>
+
+        <div style="border-top:1px solid #e2e8f0;margin-bottom:1rem"></div>
+
+        <!-- Botão Imprimir -->
+        <button id="share-btn-print" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:0.9rem 1rem;background:#1e3a8a;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:1rem;font-weight:700;letter-spacing:0.3px;min-height:52px">
+          <span style="font-size:1.3rem">🖨️</span> Imprimir / Salvar PDF
+        </button>
+        <p style="font-size:0.78rem;color:#64748b;text-align:center;margin-top:6px">No diálogo de impressão, escolha <strong>Salvar como PDF</strong></p>
+
+        <p id="share-status" style="font-size:0.82rem;color:#1d4ed8;text-align:center;min-height:1.2em;margin-top:0.5rem;font-weight:500"></p>
+      </div>
+    </div>
+
+    <!-- Modal Receita (criar / editar) -->
+    <div id="modal-recipe" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:960px;width:96vw;max-height:92vh;overflow-y:auto">
+        <div class="modal-hdr">
+          <h3 id="modal-recipe-title">📝 Nova Receita</h3>
+          <button class="btn-close" id="modal-recipe-close">✕</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem;margin-bottom:0.75rem">
+          <div class="form-field">
+            <label>👥 Cliente *</label>
+            <select id="recipe-client" class="form-input" required>
+              <option value="">-- Selecione --</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>⚙️ Máquina *</label>
+            <select id="recipe-machine" class="form-input" required>
+              <option value="">-- Selecione --</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>🔄 Processo *</label>
+            <select id="recipe-process" class="form-input" required>
+              <option value="">-- Selecione --</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>📅 Data de Elaboração</label>
+            <input type="date" id="recipe-date" class="form-input" />
           </div>
         </div>
 
-        <!-- Divisor -->
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem">
-          <div style="flex:1;height:1px;background:#e2e8f0"></div>
-          <span style="font-size:0.75rem;color:#94a3b8">ou</span>
-          <div style="flex:1;height:1px;background:#e2e8f0"></div>
+        <div id="recipe-machine-info" style="display:none;margin-bottom:0.75rem;padding:0.45rem 0.75rem;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd;font-size:0.85rem;color:#0369a1">
+          ⚙️ Capacidade: <strong id="recipe-machine-cap">—</strong> kg
         </div>
 
-        <!-- Ações rápidas -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:1rem">
-          <button id="share-btn-wap" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:0.7rem 0.5rem;background:#dcfce7;border:1px solid #86efac;border-radius:10px;cursor:pointer;font-size:0.78rem;font-weight:600;color:#15803d">
-            <span style="font-size:1.4rem">📱</span>WhatsApp
-          </button>
-          <button id="share-btn-download" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:0.7rem 0.5rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;cursor:pointer;font-size:0.78rem;font-weight:600;color:#1d4ed8">
-            <span style="font-size:1.4rem">💾</span>Baixar PDF
-          </button>
-          <button id="share-btn-print" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:0.7rem 0.5rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;font-size:0.78rem;font-weight:600;color:#374151">
-            <span style="font-size:1.4rem">🖨️</span>Imprimir
-          </button>
+        <div style="margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between">
+          <h4 style="margin:0;font-size:0.9rem;font-weight:700">📋 Etapas</h4>
+          <button type="button" id="btn-add-step" class="btn-secondary btn-sm">+ Etapa</button>
         </div>
 
-        <p id="share-status" style="font-size:0.8rem;color:#64748b;text-align:center;min-height:1.2em;margin:0"></p>
+        <div id="recipe-steps-body" style="margin-bottom:0.75rem"></div>
+
+        <div id="recipe-edit-notes-row" style="display:none;margin-bottom:0.75rem">
+          <div class="form-field">
+            <label>📝 Motivo da edição</label>
+            <textarea id="recipe-edit-notes" class="form-input" rows="2" placeholder="Descreva o motivo da alteração..."></textarea>
+          </div>
+        </div>
+
+        <div class="form-footer" style="margin-top:1rem">
+          <button type="button" class="btn-secondary" id="modal-recipe-cancel">Cancelar</button>
+          <button type="button" id="btn-save-recipe" class="btn-primary">💾 Salvar Receita</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Produtos de Receita -->
+    <div id="modal-recipe-products" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:480px">
+        <div class="modal-hdr">
+          <h3>🧪 Produtos Cadastrados</h3>
+          <button class="btn-close" id="modal-recipe-products-close">✕</button>
+        </div>
+        <div id="recipe-products-list" style="max-height:280px;overflow-y:auto;margin-bottom:1rem"></div>
+        <form id="form-recipe-product" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-field" style="flex:2;min-width:120px;margin-bottom:0">
+            <label>Nome do produto</label>
+            <input name="name" class="form-input" placeholder="Ex: Cloro" required />
+          </div>
+          <div class="form-field" style="flex:1;min-width:100px;margin-bottom:0">
+            <label>Categoria</label>
+            <input name="category" class="form-input" placeholder="Ex: Alvejante" />
+          </div>
+          <button type="submit" class="btn-primary btn-sm" style="height:40px;white-space:nowrap">+ Adicionar</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Visualizar Receita -->
+    <div id="modal-recipe-view" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:960px;width:96vw;max-height:92vh;overflow-y:auto">
+        <div class="modal-hdr">
+          <h3 id="modal-recipe-view-title">📝 Receita</h3>
+          <button class="btn-close" id="modal-recipe-view-close">✕</button>
+        </div>
+        <div id="modal-recipe-view-body"></div>
+        <div class="form-footer" style="margin-top:1rem" id="modal-recipe-view-footer">
+          <button type="button" class="btn-secondary" id="modal-recipe-view-close2">Fechar</button>
+          <button type="button" id="btn-recipe-pdf" class="btn-secondary" style="display:none">📄 PDF</button>
+          <button type="button" id="btn-edit-recipe" class="btn-primary" style="display:none">✏️ Editar</button>
+          <button type="button" id="btn-reject-recipe" class="btn-danger" style="display:none">✕ Recusar</button>
+          <button type="button" id="btn-approve-recipe" class="btn-primary" style="display:none;background:#16a34a">✅ Aprovar</button>
+        </div>
       </div>
     </div>
 
