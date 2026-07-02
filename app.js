@@ -3228,6 +3228,7 @@ ${printScript}
             process_id: processId, process_name: processName, date, created_by: creator,
             status: 'pending', version: (current.version || 1) + 1,
             original_id: current.original_id || current.id,
+            replaces_id: current.id,
             edit_notes: editNotes, rejection_notes: '', approved_by: '', approved_at: '',
             steps: JSON.stringify(steps), created_at: now
           };
@@ -3810,7 +3811,11 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       const pending = all.find(r => r.id === pendingId);
       if (!pending || pending.status !== 'pending') return toast('Receita não encontrada ou não está pendente', 'error');
 
-      const currentActive = all.find(r => r.status === 'active' && (r.original_id === pending.original_id || r.id === pending.original_id));
+      // Usa replaces_id (preciso) se disponível, senão fallback pelo original_id
+      const currentActive = (pending.replaces_id
+        ? all.find(r => r.status === 'active' && r.id === pending.replaces_id)
+        : null)
+        || all.find(r => r.status === 'active' && (r.original_id === pending.original_id || r.id === pending.original_id));
       if (currentActive) {
         const pendingMachSet = new Set(parseMachineIds(pending).map(Number));
         const activeMachIds  = parseMachineIds(currentActive).map(Number);
