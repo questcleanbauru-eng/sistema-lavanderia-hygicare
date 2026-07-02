@@ -3028,7 +3028,7 @@ ${printScript}
         clientSel.appendChild(opt);
       });
 
-      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione as máquinas primeiro --</option>';
       document.getElementById('recipe-date').value = new Date().toISOString().slice(0, 10);
       document.getElementById('recipe-steps-body').innerHTML = '';
 
@@ -3060,7 +3060,7 @@ ${printScript}
     async function _loadRecipeMachines(clientId, selectedIds = []) {
       const container = document.getElementById('recipe-machines-checkboxes');
       if (!container) return;
-      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione as máquinas primeiro --</option>';
 
       if (!clientId) {
         container.innerHTML = '<span style="font-size:0.83rem;color:var(--muted)">Selecione um cliente primeiro</span>';

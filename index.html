@@ -805,16 +805,10 @@
           <button class="btn-close" id="modal-recipe-close">✕</button>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.6rem 0.75rem;margin-bottom:0.75rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.6rem 0.75rem;margin-bottom:0.75rem">
           <div class="form-field">
             <label>👥 Cliente *</label>
             <select id="recipe-client" class="form-input" required>
-              <option value="">-- Selecione --</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label>🔄 Processo *</label>
-            <select id="recipe-process" class="form-input" required>
               <option value="">-- Selecione --</option>
             </select>
           </div>
@@ -829,6 +823,13 @@
           <div id="recipe-machines-checkboxes" style="border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.75rem;background:#fff;max-height:150px;overflow-y:auto;min-height:44px;display:flex;flex-direction:column;gap:0.1rem">
             <span style="font-size:0.83rem;color:var(--muted)">Selecione um cliente primeiro</span>
           </div>
+        </div>
+
+        <div class="form-field" style="margin-bottom:0.75rem">
+          <label>🔄 Processo *</label>
+          <select id="recipe-process" class="form-input" required>
+            <option value="">-- Selecione as máquinas primeiro --</option>
+          </select>
         </div>
 
         <div style="margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between">
