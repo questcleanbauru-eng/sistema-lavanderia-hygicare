@@ -28,6 +28,12 @@ function findClientById(id, clients) {
   return clients.find(c => Number(c.id) === Number(id));
 }
 
+function escHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // ---------- TOAST SYSTEM ----------
 function toast(msg, type = 'info', duration = 3500, action = null) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
@@ -114,7 +120,15 @@ function updateApiDisplay(count) {
 let currentUser = null;
 const savedSession = localStorage.getItem('lavanderia_session');
 if (savedSession) {
-  try { currentUser = JSON.parse(savedSession); } catch (e) { localStorage.removeItem('lavanderia_session'); }
+  try {
+    const parsed = JSON.parse(savedSession);
+    // Sessão expira em 8 horas
+    if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
+      localStorage.removeItem('lavanderia_session');
+    } else {
+      currentUser = parsed;
+    }
+  } catch (e) { localStorage.removeItem('lavanderia_session'); }
 }
 
 // Migração: garante que a chave de mês v2 existe no formato correto
@@ -133,6 +147,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     try {
       await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      // Avisa o usuário quando uma nova versão estiver disponível
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        toast('Nova versão disponível!', 'info', 12000, {
+          label: 'Atualizar',
+          fn: () => window.location.reload()
+        });
+      });
     } catch (e) { console.warn('SW falhou:', e); }
   }
 
@@ -221,7 +242,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (user) {
       currentUser = { username: user.username, role: user.role, name: user.name,
         sellerName: user.sellerName, manager: user.manager || '',
-        permissions: user.permissions || '', sellers_access: user.sellers_access || '' };
+        permissions: user.permissions || '', sellers_access: user.sellers_access || '',
+        expiresAt: Date.now() + 8 * 60 * 60 * 1000 };
       localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
       // Salvar lista de usuários para o select de vendedor
       localStorage.setItem('hygicare_users', JSON.stringify(users));
@@ -291,15 +313,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   function buildReportHtml(g, autoPrint = false) {
     const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    // Paleta fixa por processo
-    const PROC_COLORS = {
+    // Paleta padrão por processo (pode ser sobrescrita pelo Admin)
+    const PROC_COLORS_DEFAULT = {
       'PESADO':'#1565c0','LEVE':'#42a5f5','PANO DE CHÃO':'#66bb6a',
       'COMPRESSAS':'#ef5350','DESENGOMA':'#ab47bc','COBERTORES':'#ff7043',
       'RETORNO':'#26c6da','AXILAS':'#d4e157','COMPRESSAS 30KG':'#ec407a',
       'PULVERIZAÇÃO':'#8d6e63','LEVE 70KG':'#29b6f6','PESADO 70KG':'#0d47a1'
     };
+    const savedProcColors = JSON.parse(localStorage.getItem('hygicare_proc_colors') || '{}');
+    const PROC_COLORS = { ...PROC_COLORS_DEFAULT, ...savedProcColors };
     const FALLBACK = ['#546e7a','#78909c','#90a4ae','#607d8b','#455a64','#37474f'];
-    const getClr = (name, fi) => PROC_COLORS[(name||'').toUpperCase().trim()] || FALLBACK[fi % FALLBACK.length];
+    const savedGroups = (JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}').groups) || [];
+    const getClr = (name, fi) => {
+      const upper = (name||'').toUpperCase().trim();
+      for (const grp of savedGroups) {
+        if ((grp.processes||[]).some(p => p.toUpperCase() === upper)) return grp.color;
+      }
+      return PROC_COLORS[upper] || FALLBACK[fi % FALLBACK.length];
+    };
 
     // Agrupar linhas por máquina
     const byMachine = {};
@@ -431,7 +462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relatório — ${esc(g.clientName)}</title>
+<title>RELATÓRIO DE LAVANDERIA - ${esc(g.clientName)}${g.period ? ' - ' + esc(g.period.replace(/ → /g, ' a ')) : ''}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -607,13 +638,9 @@ ${printScript}
     drawerOverlay?.addEventListener('click', closeDrawer);
 
     // FAB — atalho para registrar
-    document.getElementById('fab-btn')?.addEventListener('click', () => {
+    document.getElementById('fab-btn')?.addEventListener('click', async () => {
       show('screen-form');
-      const today = new Date().toISOString().slice(0, 10);
-      const startEl = document.getElementById('prod-date-start');
-      const endEl   = document.getElementById('prod-date-end');
-      if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
-      if (endEl   && !endEl.value)   endEl.value   = today;
+      await _initFormScreen();
     });
 
     // Bottom nav buttons (screen-targets)
@@ -628,17 +655,10 @@ ${printScript}
         if (screenId === 'screen-charts')    { await refreshChartsFilters(); await renderCharts(); }
         if (screenId === 'screen-vazao')     await initVazaoScreen();
         if (screenId === 'screen-recipes')   await initRecipesScreen();
-        if (screenId === 'screen-form') {
-          const today = new Date().toISOString().slice(0, 10);
-          const firstOfMonth = today.slice(0, 7) + '-01';
-          const startEl = document.getElementById('prod-date-start');
-          const endEl   = document.getElementById('prod-date-end');
-          if (startEl && !startEl.value) startEl.value = firstOfMonth;
-          if (endEl   && !endEl.value)   endEl.value   = today;
-        }
+        if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
-        if (screenId === 'screen-admin')   { refreshAdminPanel(); testApis(); }
+        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
       });
     });
 
@@ -654,7 +674,7 @@ ${printScript}
         if (screenId === 'screen-vazao')     await initVazaoScreen();
         if (screenId === 'screen-recipes')   await initRecipesScreen();
         if (screenId === 'screen-users')     await renderUsersList();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); testApis(); }
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
       });
     });
 
@@ -756,17 +776,10 @@ ${printScript}
         if (screenId === 'screen-charts')    { await refreshChartsFilters(); await renderCharts(); }
         if (screenId === 'screen-vazao')     await initVazaoScreen();
         if (screenId === 'screen-recipes')   await initRecipesScreen();
-        if (screenId === 'screen-form') {
-          const today = new Date().toISOString().slice(0, 10);
-          const firstOfMonth = today.slice(0, 7) + '-01';
-          const startEl = document.getElementById('prod-date-start');
-          const endEl   = document.getElementById('prod-date-end');
-          if (startEl && !startEl.value) startEl.value = firstOfMonth;
-          if (endEl   && !endEl.value)   endEl.value   = today;
-        }
+        if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')     await renderUsersList();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); testApis(); }
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
       });
     });
 
@@ -787,6 +800,8 @@ ${printScript}
       set('cfg-sync-interval', cfgSync);
       set('cfg-sheets-url',   cfgSheets);
       set('cfg-notify-email', cfgEmail);
+      const periodoCb = document.getElementById('cfg-periodo-habilitado');
+      if (periodoCb) periodoCb.checked = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
 
       // ID do script no card de sistema
       const gasIdEl = document.getElementById('admin-gas-id');
@@ -886,6 +901,162 @@ ${printScript}
       refreshAdminPanel();
       testApis();
       toast('Configuracoes salvas!', 'success');
+    });
+
+    // ---- Cores dos Processos (Admin) — grupos com drag-and-drop ----
+    let _pcaListenersSet = false;
+
+    window._pcaDragStart = function(event) {
+      event.dataTransfer.setData('text/plain', event.currentTarget.dataset.proc || '');
+      event.currentTarget.style.opacity = '0.4';
+      event.currentTarget.addEventListener('dragend', function() { this.style.opacity = ''; }, { once: true });
+    };
+
+    window._pcaDrop = async function(event, groupIdx) {
+      event.preventDefault();
+      event.currentTarget.style.background = '';
+      event.currentTarget.style.borderColor = '';
+      const procName = event.dataTransfer.getData('text/plain');
+      if (!procName) return;
+      const d = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+      d.groups = d.groups || [];
+      d.groups.forEach(g => { g.processes = (g.processes || []).filter(p => p !== procName); });
+      if (groupIdx !== null && d.groups[groupIdx]) {
+        if (!d.groups[groupIdx].processes) d.groups[groupIdx].processes = [];
+        if (!d.groups[groupIdx].processes.includes(procName)) d.groups[groupIdx].processes.push(procName);
+      }
+      localStorage.setItem('hygicare_proc_groups', JSON.stringify(d));
+      await renderProcColorsAdmin();
+    };
+
+    async function renderProcColorsAdmin() {
+      const container = document.getElementById('admin-proc-colors');
+      if (!container) return;
+      const processes = await dbGetAll_raw('processes');
+      const d = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+      const groups = d.groups || [];
+      const assignedSet = new Set(groups.flatMap(g => g.processes || []));
+      const allNames = [...new Set(processes.map(p => (p.name || '').toUpperCase().trim()).filter(Boolean))].sort();
+      const ungrouped = allNames.filter(n => !assignedSet.has(n));
+
+      const ungroupedHtml = ungrouped.length
+        ? ungrouped.map(name => `
+          <div class="pca-proc-item" draggable="true" data-proc="${escHtml(name)}"
+               ondragstart="window._pcaDragStart(event)"
+               style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.6rem;margin-bottom:0.2rem;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:grab;font-size:0.83rem;font-weight:500;color:var(--text);user-select:none">
+            <span style="color:var(--muted);font-size:0.65rem;letter-spacing:-1px">⠿</span>
+            ${escHtml(name)}
+          </div>`).join('')
+        : '<p style="color:var(--muted);font-size:0.78rem;text-align:center;padding:0.75rem 0;margin:0">✓ Todos os processos estão agrupados</p>';
+
+      const groupsHtml = groups.length
+        ? groups.map((g, gi) => `
+          <div class="pca-group" id="pca-grp-${gi}" style="border:1px solid var(--border);border-radius:8px;margin-bottom:0.5rem;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;background:#f1f5f9;border-bottom:1px solid var(--border)">
+              <input type="color" value="${escHtml(g.color || '#607d8b')}" data-gidx="${gi}"
+                     class="pca-grp-color"
+                     style="width:30px;height:30px;border:1.5px solid var(--border);border-radius:6px;cursor:pointer;padding:1px;flex-shrink:0">
+              <span style="font-size:0.88rem;font-weight:700;color:var(--text);flex:1">${escHtml(g.name)}</span>
+              <button class="pca-del-grp" data-gidx="${gi}"
+                      style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:0.85rem;padding:2px 6px;border-radius:4px"
+                      title="Excluir grupo">✕</button>
+            </div>
+            <div class="pca-drop-zone" data-gidx="${gi}"
+                 ondragover="event.preventDefault();event.currentTarget.style.background='#eff6ff'"
+                 ondragleave="event.currentTarget.style.background=''"
+                 ondrop="window._pcaDrop(event,${gi})"
+                 style="min-height:48px;padding:0.35rem 0.5rem;background:#fff">
+              ${(g.processes || []).map((pname, pi) => `
+                <div style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;margin-bottom:0.2rem;background:#f8fafc;border:1px solid var(--border);border-radius:5px;font-size:0.82rem">
+                  <span class="pca-dot-${gi}" style="width:10px;height:10px;border-radius:50%;background:${escHtml(g.color||'#607d8b')};flex-shrink:0;border:1px solid rgba(0,0,0,0.1)"></span>
+                  <span style="flex:1;font-weight:500;color:var(--text)">${escHtml(pname)}</span>
+                  <button class="pca-rm-proc" data-gidx="${gi}" data-pidx="${pi}"
+                          style="color:var(--muted);background:none;border:none;cursor:pointer;font-size:0.75rem;padding:1px 5px;border-radius:3px"
+                          title="Remover do grupo">✕</button>
+                </div>`).join('')}
+              ${!(g.processes||[]).length ? '<p style="color:var(--muted);font-size:0.75rem;text-align:center;padding:0.4rem 0;margin:0">Arraste processos aqui</p>' : ''}
+            </div>
+          </div>`).join('')
+        : '<p style="color:var(--muted);font-size:0.82rem;text-align:center;padding:0.75rem 0;margin:0">Nenhum grupo criado. Clique em "+ Novo" para começar.</p>';
+
+      container.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
+          <div>
+            <div style="font-size:0.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:0.5rem">
+              Sem grupo
+            </div>
+            <div id="pca-ungrouped"
+                 ondragover="event.preventDefault();event.currentTarget.style.borderColor='#2563eb'"
+                 ondragleave="event.currentTarget.style.borderColor=''"
+                 ondrop="window._pcaDrop(event,null)"
+                 style="min-height:80px;border:2px dashed var(--border);border-radius:8px;padding:0.4rem;background:#f9fafb;transition:border-color 0.15s">
+              ${ungroupedHtml}
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+              <span style="font-size:0.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px">Grupos</span>
+              <button class="pca-new-grp" style="font-size:0.78rem;padding:2px 10px;border:1.5px solid var(--primary);border-radius:6px;background:#fff;color:var(--primary);cursor:pointer;font-weight:700">+ Novo</button>
+            </div>
+            <div id="pca-groups">${groupsHtml}</div>
+          </div>
+        </div>`;
+
+      if (!_pcaListenersSet) {
+        _pcaListenersSet = true;
+        container.addEventListener('click', async (e) => {
+          if (e.target.closest('.pca-new-grp')) {
+            const name = prompt('Nome do grupo (ex: Pesado, Leve):');
+            if (!name || !name.trim()) return;
+            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+            (d2.groups = d2.groups || []).push({ name: name.trim(), color: '#2563eb', processes: [] });
+            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            await renderProcColorsAdmin();
+          }
+          const delGrp = e.target.closest('.pca-del-grp');
+          if (delGrp) {
+            const gi = Number(delGrp.dataset.gidx);
+            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+            (d2.groups || []).splice(gi, 1);
+            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            await renderProcColorsAdmin();
+          }
+          const rmProc = e.target.closest('.pca-rm-proc');
+          if (rmProc) {
+            const gi = Number(rmProc.dataset.gidx), pi = Number(rmProc.dataset.pidx);
+            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+            if (d2.groups?.[gi]?.processes) d2.groups[gi].processes.splice(pi, 1);
+            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            await renderProcColorsAdmin();
+          }
+        });
+        container.addEventListener('change', (e) => {
+          if (!e.target.classList.contains('pca-grp-color')) return;
+          const gi = Number(e.target.dataset.gidx);
+          const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+          if (d2.groups?.[gi]) {
+            d2.groups[gi].color = e.target.value;
+            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            document.querySelectorAll(`.pca-dot-${gi}`).forEach(s => s.style.background = e.target.value);
+          }
+        });
+      }
+    }
+
+    document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
+      if (!confirm('Remover todos os grupos e configurações de cor?')) return;
+      localStorage.removeItem('hygicare_proc_groups');
+      localStorage.removeItem('hygicare_proc_colors');
+      renderProcColorsAdmin();
+      toast('Configurações de cores removidas', 'info', 2000);
+    });
+
+    // Toggle período no formulário de registro
+    document.getElementById('cfg-periodo-habilitado')?.addEventListener('change', function() {
+      localStorage.setItem('hygicare_periodo_habilitado', String(this.checked));
+      const endField = document.getElementById('prod-date-end-field');
+      if (endField) endField.style.display = this.checked ? '' : 'none';
+      toast(`Período ${this.checked ? 'habilitado — Data Início e Data Fim' : 'desabilitado — apenas Data de Início'}`, 'success', 3000);
     });
 
     // ---- Share modal ----
@@ -2027,12 +2198,34 @@ ${printScript}
       }
     }
 
+    async function _initFormScreen() {
+      const periodoOn = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
+      const endField  = document.getElementById('prod-date-end-field');
+      if (endField) endField.style.display = periodoOn ? '' : 'none';
+
+      const today    = new Date().toISOString().slice(0, 10);
+      const startEl  = document.getElementById('prod-date-start');
+      const endEl    = document.getElementById('prod-date-end');
+      if (periodoOn) {
+        if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
+        if (endEl   && !endEl.value)   endEl.value   = today;
+      } else {
+        if (startEl && !startEl.value) startEl.value = today;
+        if (endEl) endEl.value = '';
+      }
+
+      const clientId = Number(document.getElementById('prod-client-select')?.value);
+      if (clientId) await renderMachinesAndProcesses(clientId);
+    }
+
     document.getElementById('save-production').addEventListener('click', async () => {
       const clientId = Number(prodClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
+      const periodoOn = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
       let dateStart = document.getElementById('prod-date-start').value;
-      const dateEnd = document.getElementById('prod-date-end').value;
-      if (!dateStart || !dateEnd) return toast('Preencha as datas do período', 'warning');
+      let dateEnd   = periodoOn ? document.getElementById('prod-date-end').value : dateStart;
+      if (!dateStart) return toast('Preencha a data', 'warning');
+      if (periodoOn && !dateEnd) return toast('Preencha a data fim', 'warning');
 
       // Auto-corrigir sobreposição: se date_start bate com o date_end do último
       // lote salvo para este cliente, avança 1 dia automaticamente
@@ -2312,9 +2505,11 @@ ${printScript}
       if (dateEl) dateEl.textContent = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
       // KPIs
-      const records  = await dbGetAll_raw('records');
-      const clients  = await dbGetAll_raw('clients');
-      const machines = await dbGetAll_raw('machines');
+      const [records, clients, machines] = await Promise.all([
+        dbGetAll_raw('records'),
+        dbGetAll_raw('clients'),
+        dbGetAll_raw('machines'),
+      ]);
 
       const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const thisMonth = records.filter(r => (r.date_start || '').startsWith(ym));
@@ -3278,10 +3473,13 @@ ${printScript}
       const filterClientId  = Number(document.getElementById('recipe-filter-client')?.value  || 0);
       const filterMachineId = Number(document.getElementById('recipe-filter-machine')?.value || 0);
 
-      const clients   = await dbGetAll_raw('clients');
-      const machines  = await dbGetAll_raw('machines');
-      const processes = await dbGetAll_raw('processes');
-      let allRecipes = await dbGetAll_raw('recipes');
+      const [clients, machines, processes, allRecipesRaw] = await Promise.all([
+        dbGetAll_raw('clients'),
+        dbGetAll_raw('machines'),
+        dbGetAll_raw('processes'),
+        dbGetAll_raw('recipes'),
+      ]);
+      let allRecipes = allRecipesRaw;
 
       // Filtrar por papel (vendedor vê só clientes seus)
       if (currentUser?.role === 'vendedor') {
@@ -3429,6 +3627,7 @@ ${printScript}
               <span style="font-size:0.95rem">👥</span>
               <span style="font-weight:700;font-size:0.92rem;color:var(--primary-dark)">${c?.name||'?'}</span>
               <span style="font-size:0.72rem;background:#dbeafe;color:var(--primary);padding:2px 9px;border-radius:999px;font-weight:600;margin-left:auto">${totalRecs} receita${totalRecs>1?'s':''}</span>
+              <button onclick="event.stopPropagation();window._shareClientRecipesPdf('${cKey}')" style="flex-shrink:0;padding:2px 10px;border:1.5px solid #93c5fd;border-radius:6px;background:#fff;color:#1d4ed8;font-size:0.72rem;font-weight:700;cursor:pointer;white-space:nowrap">📄 PDF</button>
             </div>
             <div id="${cBodyId}" style="padding:0.6rem 0.75rem;background:#fff">
               ${procsHtml}
@@ -3751,7 +3950,7 @@ ${printScript}
         </tr>`;
       }).join('');
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>Receita — ${c?.name||'?'}</title>
+<title>PROCESSOS DE LAVAGENS - ${c?.name||'?'} - v${recipe.version} - ${dateStr}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
@@ -3805,6 +4004,111 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       win.document.write(html);
       win.document.close();
     }
+
+    async function _shareClientRecipesPdf(clientId) {
+      clientId = Number(clientId);
+      const [allRecipes, clients, machines, processes] = await Promise.all([
+        dbGetAll_raw('recipes'),
+        dbGetAll_raw('clients'),
+        dbGetAll_raw('machines'),
+        dbGetAll_raw('processes'),
+      ]);
+      const c = clients.find(cl => Number(cl.id) === clientId);
+      if (!c) return toast('Cliente não encontrado', 'error');
+
+      const activeRecipes = allRecipes
+        .filter(r => r.status === 'active' && Number(r.client_id) === clientId)
+        .sort((a, b) => (a.process_name || '').localeCompare(b.process_name || ''));
+      if (!activeRecipes.length) return toast('Nenhuma receita ativa para este cliente', 'warning');
+
+      const maxVersion = Math.max(...activeRecipes.map(r => Number(r.version) || 0));
+      const lastIso = activeRecipes.reduce((best, r) => {
+        const d = r.date || r.created_at?.slice(0, 10) || '';
+        return d > best ? d : best;
+      }, '');
+      const lastDateStr = fmtDate(lastIso);
+
+      const recipeSections = activeRecipes.map(r => {
+        const machIds = parseMachineIds(r);
+        const machNames = machIds.map(mid => {
+          const m = machines.find(m => Number(m.id) === mid);
+          return m ? `${m.name}${m.capacity ? ' (' + m.capacity + ' kg)' : ''}` : '?';
+        }).join(', ') || '—';
+        const p = findRecipeProcess(processes, r);
+        const procName = p?.name || r.process_name || '—';
+        const steps = (() => { try { return JSON.parse(r.steps || '[]'); } catch(e) { return []; } })();
+        const stepsRows = steps.map(s => {
+          const prods = Array.isArray(s.products) ? s.products.filter(x => typeof x === 'string' ? x : x?.name) : [];
+          const prodNames = prods.map(x => typeof x === 'string' ? x : x.name).join('<br>') || '—';
+          const dosages   = prods.map(x => typeof x === 'string' ? '—' : (x.dosage || '—')).join('<br>') || '—';
+          return `<tr>
+            <td style="text-align:center;font-weight:700;background:#f1f5f9">${s.n}</td>
+            <td>${s.operation || '—'}</td>
+            <td style="text-align:center">${s.time ? s.time + ' min' : '—'}</td>
+            <td style="text-align:center">${s.temp || '—'}</td>
+            <td style="text-align:center">${s.level || '—'}</td>
+            <td>${prodNames}</td>
+            <td style="text-align:center">${dosages}</td>
+          </tr>`;
+        }).join('');
+        return `
+        <div class="rs">
+          <div class="rs-hdr">
+            <span class="rs-proc">🔄 ${escHtml(procName)}</span>
+            <span class="rs-meta">⚙️ ${escHtml(machNames)} &nbsp;·&nbsp; v${r.version}</span>
+          </div>
+          ${steps.length
+            ? `<table><thead><tr><th style="width:34px">N.</th><th>Operação</th><th>Tempo</th><th>Temp.</th><th>Nível</th><th>Produto(s)</th><th>Dosagem</th></tr></thead><tbody>${stepsRows}</tbody></table>`
+            : '<p style="color:#94a3b8;font-size:0.82rem;padding:8px 14px">Sem etapas cadastradas.</p>'}
+        </div>`;
+      }).join('');
+
+      const titleStr = `PROCESSOS DE LAVAGENS - ${c.name} - v${maxVersion} - ${lastDateStr}`;
+      const htmlDoc = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>${escHtml(titleStr)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
+.doc-hdr{background:#1d4ed8;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:16px}
+.doc-hdr h1{font-size:1.1rem;font-weight:700;margin-bottom:3px}
+.doc-hdr p{font-size:0.75rem;color:#93c5fd}
+.rs{border:1px solid #e2e8f0;border-radius:8px;margin-bottom:14px;overflow:hidden;break-inside:avoid}
+.rs-hdr{background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px}
+.rs-proc{font-weight:700;font-size:0.88rem;color:#1d4ed8}
+.rs-meta{font-size:0.75rem;color:#64748b}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:#1d4ed8;color:#fff;padding:6px 9px;text-align:left;font-size:0.72rem;font-weight:700}
+tbody tr:nth-child(even){background:#f8fafc}
+tbody td{padding:5px 9px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.footer{margin-top:18px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
+@media screen{
+  .abar{position:sticky;top:0;z-index:999;background:#1d4ed8;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .abar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+  .btn-x{background:#fff;color:#1d4ed8}
+  .btn-p{background:#16a34a;color:#fff}
+  .abar-lbl{color:#bfdbfe;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+@media print{.abar{display:none}body{padding:10px}}
+</style></head><body>
+<div class="abar">
+  <button class="btn-x" onclick="window.close()">✕ Fechar</button>
+  <button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+  <span class="abar-lbl">${escHtml(c.name)} · ${activeRecipes.length} processo${activeRecipes.length > 1 ? 's' : ''}</span>
+</div>
+<div class="doc-hdr">
+  <h1>📋 Processos de Lavagens</h1>
+  <p>${escHtml(c.name)} &nbsp;·&nbsp; Hygicare Lavanderia &nbsp;·&nbsp; v${maxVersion} &nbsp;·&nbsp; Última atualização: ${lastDateStr}</p>
+</div>
+${recipeSections}
+<div class="footer">Hygicare Lavanderia — ${escHtml(c.name)} — Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+</body></html>`;
+
+      const win = window.open('', '_blank', 'width=950,height=750');
+      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
+      win.document.write(htmlDoc);
+      win.document.close();
+    }
+    window._shareClientRecipesPdf = _shareClientRecipesPdf;
 
     window._approveRecipe = async function(pendingId) {
       const all = await dbGetAll_raw('recipes');
@@ -4041,10 +4345,13 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '' } =
         typeof filters === 'string' ? { text: filters } : filters;
 
-      let records     = await dbGetAll_raw('records');
-      const clients   = await dbGetAll_raw('clients');
-      const machines  = await dbGetAll_raw('machines');
-      const processes = await dbGetAll_raw('processes');
+      const [recordsRaw, clients, machines, processes] = await Promise.all([
+        dbGetAll_raw('records'),
+        dbGetAll_raw('clients'),
+        dbGetAll_raw('machines'),
+        dbGetAll_raw('processes'),
+      ]);
+      let records = recordsRaw;
 
       // Filtrar registros por papel do usuário
       if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
@@ -4097,15 +4404,17 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         const procName    = process?.name || `Processo #${r.process_id}`;
         const period      = `${fmtDate(r.date_start)} → ${fmtDate(r.date_end)}`;
 
-        // Data de criação: usa synced_at, created_at ou date_start como fallback
-        const rawDate = r.synced_at || r.created_at || r.date_start || '';
+        // Agrupamento pelo mês do período do registro (date_start), não pela data de sync
+        const rawDate = r.date_start || r.synced_at || r.created_at || '';
         let createdMonth = 'Sem data';
         if (rawDate) {
-          const d = new Date(rawDate);
-          if (!isNaN(d)) {
-            createdMonth = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-            // Capitalizar
-            createdMonth = createdMonth.charAt(0).toUpperCase() + createdMonth.slice(1);
+          const parts = rawDate.slice(0, 7).split('-');
+          if (parts.length >= 2) {
+            const d = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+            if (!isNaN(d)) {
+              createdMonth = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+              createdMonth = createdMonth.charAt(0).toUpperCase() + createdMonth.slice(1);
+            }
           }
         }
         // Chave de ordenação para o mês
@@ -4433,7 +4742,11 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         }
       }
 
-      doc.save(`relatorio_${client.name.replace(/\s+/g,'_')}_${start || 'geral'}.pdf`);
+      const _ffd = iso => iso ? fmtDate(iso).replace(/\//g, '-') : '';
+      const _pStart = _ffd(start), _pEnd = _ffd(end);
+      const _period = _pStart && _pEnd && _pStart !== _pEnd ? `${_pStart} a ${_pEnd}` : (_pStart || 'geral');
+      const _safeName = client.name.replace(/[/\\:*?"<>|]/g, '').trim();
+      doc.save(`RELATÓRIO DE LAVANDERIA - ${_safeName} - ${_period}.pdf`);
       toast('PDF gerado com sucesso!', 'success');
     }
 
@@ -4471,13 +4784,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         if (screenId === 'screen-vazao')     await initVazaoScreen();
         if (screenId === 'screen-recipes')   await initRecipesScreen();
         if (screenId === 'screen-reports')   await renderRecordsList(getReportFilters());
-        if (screenId === 'screen-form') {
-          const today = new Date().toISOString().slice(0, 10);
-          const startEl = document.getElementById('prod-date-start');
-          const endEl   = document.getElementById('prod-date-end');
-          if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
-          if (endEl   && !endEl.value)   endEl.value   = today;
-        }
+        if (screenId === 'screen-form') await _initFormScreen();
       });
     });
 
@@ -4677,7 +4984,8 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         const raw = r.date_start || '';
         const key = raw.slice(0, 7);
         if (!key) continue;
-        const label = new Date(key + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        const [_ky, _km] = key.split('-');
+        const label = new Date(Number(_ky), Number(_km) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
         if (!porMes[key]) porMes[key] = { label, kg: 0 };
         porMes[key].kg += parseFloat(r.total || 0);
       }
@@ -4729,7 +5037,8 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       for (const r of records) {
         const key = (r.date_start || '').slice(0, 7);
         if (!key) continue;
-        const label = new Date(key + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        const [_ky, _km] = key.split('-');
+        const label = new Date(Number(_ky), Number(_km) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
         if (!execCancel[key]) execCancel[key] = { label, exec: 0, cancel: 0 };
         execCancel[key].exec   += parseFloat(r.executed || 0) * parseFloat(r.capacity || 0);
         execCancel[key].cancel += parseFloat(r.canceled || 0) * parseFloat(r.capacity || 0);

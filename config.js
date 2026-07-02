@@ -21,4 +21,4 @@ const SHEETS = {
 };
 
 // Modo de debug
-const DEBUG = true;
+const DEBUG = false;

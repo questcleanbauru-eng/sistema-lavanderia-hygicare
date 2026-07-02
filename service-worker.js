@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v146';
+const CACHE = 'lavanderia-cache-v148';
 const ASSETS = [
   '/',
   '/index.html',
@@ -30,16 +30,21 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
-  // Deixa o browser lidar diretamente com APIs externas (GAS, Google, CDN)
   const url = e.request.url;
   if (url.includes('script.google.com')) return;
   if (url.includes('googleusercontent.com')) return;
   if (url.includes('googleapis.com')) return;
   if (url.includes('cdn.jsdelivr.net')) return;
 
+  // Stale-while-revalidate: responde do cache imediatamente e atualiza em background
   e.respondWith(
-    caches.match(e.request)
-      .then(response => response || fetch(e.request))
-      .catch(() => caches.match('/index.html'))
+    caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(e.request);
+      const fetchPromise = fetch(e.request).then(res => {
+        if (res && res.status === 200) cache.put(e.request, res.clone());
+        return res;
+      }).catch(() => null);
+      return cached || fetchPromise || caches.match('/index.html');
+    })
   );
 });

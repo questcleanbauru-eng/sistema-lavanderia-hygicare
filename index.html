@@ -371,7 +371,7 @@
             </div>
             <div class="form-row form-row-2col">
               <div class="form-field"><label>📅 Data Início</label><input type="date" id="prod-date-start" /></div>
-              <div class="form-field"><label>📅 Data Fim</label><input type="date" id="prod-date-end" /></div>
+              <div class="form-field" id="prod-date-end-field"><label>📅 Data Fim</label><input type="date" id="prod-date-end" /></div>
             </div>
             <div id="machines-list"></div>
             <div class="prod-btn-row" style="margin-top:0.5rem">
@@ -560,8 +560,17 @@
             </div>
             <div class="form-row" style="margin-top:0.5rem">
               <div class="form-field">
-                <label>� Intervalo de Sync (horas)</label>
+                <label>🔄 Intervalo de Sync (horas)</label>
                 <input type="number" id="cfg-sync-interval" min="1" max="24" placeholder="6" style="max-width:120px" />
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
+                <label style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                  <span>📅 Habilitar período (Data Início → Data Fim)</span>
+                  <input type="checkbox" id="cfg-periodo-habilitado" style="width:18px;height:18px;cursor:pointer;accent-color:#2563eb;flex-shrink:0">
+                </label>
+                <small>Desabilitado: usa apenas Data de Início para todos os registros. Habilitado: usuário escolhe o período (início e fim).</small>
               </div>
             </div>
             <div class="form-row" style="margin-top:0.5rem">
@@ -584,6 +593,23 @@
               </div>
             </div>
             <p id="config-saved-msg" class="sync-time-info" style="margin-top:8px"></p>
+          </div>
+
+          <!-- Card Cores dos Processos -->
+          <div class="card" style="margin-top:1.2rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+                 onclick="(function(b,a){const o=b.style.display!=='none';b.style.display=o?'none':'block';a.textContent=o?'▶':'▼'})(document.getElementById('pca-body'),this.querySelector('.pca-arr'))">
+              <h3 style="margin:0;font-size:1.05rem;color:#1e40af">🎨 Cores dos Processos</h3>
+              <span class="pca-arr" style="font-size:0.75rem;color:var(--muted);min-width:14px;text-align:right">▼</span>
+            </div>
+            <div id="pca-body">
+              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 1rem">Crie grupos, arraste processos para dentro e defina uma cor — aplicada nos gráficos do relatório PDF. Alterações são salvas automaticamente.</p>
+              <div id="admin-proc-colors"></div>
+              <div style="margin-top:0.75rem">
+                <button id="btn-reset-proc-colors" class="btn-secondary" style="font-size:0.82rem">↺ Remover todos os grupos</button>
+              </div>
+              <p id="proc-colors-msg" style="font-size:0.82rem;margin-top:0.5rem;color:var(--success-dark)"></p>
+            </div>
           </div>
         </section>
 
