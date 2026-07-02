@@ -255,13 +255,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (currentUser) showApp();
 
   // ---------- SYNC STATUS ----------
-  async function updateSyncStatus() {
-    const lastSync = localStorage.getItem('lastSyncTime');
-    const el2 = document.getElementById('last-sync-time');
-    if (el2 && lastSync) {
-      el2.textContent = `Última sincronização: ${new Date(lastSync).toLocaleString('pt-BR')}`;
+  function updateSyncStatus() {
+    const lastSync  = localStorage.getItem('lastSyncTime');
+    const online    = navigator.onLine;
+    const dot       = document.getElementById('sync-dot');
+    const label     = document.getElementById('sync-label');
+    const syncEl    = document.getElementById('header-sync-status');
+    const adminEl   = document.getElementById('last-sync-time');
+
+    function relTime(iso) {
+      const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+      if (diff < 60)  return 'agora mesmo';
+      if (diff < 3600) return `há ${Math.floor(diff/60)} min`;
+      if (diff < 86400) return `há ${Math.floor(diff/3600)}h`;
+      return new Date(iso).toLocaleDateString('pt-BR');
     }
+
+    const syncText = lastSync ? `Sync ${relTime(lastSync)}` : 'Nunca sincronizado';
+    const stale    = !lastSync || (Date.now() - new Date(lastSync)) > 4 * 60 * 60 * 1000;
+
+    if (dot) { dot.className = 'sync-dot' + (!online ? ' offline' : stale ? ' stale' : ''); }
+    if (label) label.textContent = !online ? 'Offline' : syncText;
+    if (syncEl) syncEl.className = 'header-sync' + (!online ? ' offline' : '');
+    if (adminEl && lastSync) adminEl.textContent = `Última sincronização: ${new Date(lastSync).toLocaleString('pt-BR')}`;
   }
+
+  // Atualiza o sync status a cada minuto automaticamente
+  setInterval(updateSyncStatus, 60000);
+  window.addEventListener('online',  updateSyncStatus);
+  window.addEventListener('offline', updateSyncStatus);
 
   // ============================================================
   // REPORT HTML BUILDER  (A4 landscape, 90% zoom, Chart.js)
@@ -561,6 +583,9 @@ ${printScript}
       document.querySelectorAll('.bnav-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.target === id);
       });
+      // FAB: oculto na tela de registro e na home (já tem atalho)
+      const fab = document.getElementById('fab-btn');
+      if (fab) fab.classList.toggle('hidden', id === 'screen-form' || id === 'screen-home');
       // Close drawer if open
       closeDrawer();
     }
@@ -580,6 +605,16 @@ ${printScript}
 
     document.getElementById('bnav-more')?.addEventListener('click', openDrawer);
     drawerOverlay?.addEventListener('click', closeDrawer);
+
+    // FAB — atalho para registrar
+    document.getElementById('fab-btn')?.addEventListener('click', () => {
+      show('screen-form');
+      const today = new Date().toISOString().slice(0, 10);
+      const startEl = document.getElementById('prod-date-start');
+      const endEl   = document.getElementById('prod-date-end');
+      if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
+      if (endEl   && !endEl.value)   endEl.value   = today;
+    });
 
     // Bottom nav buttons (screen-targets)
     document.querySelectorAll('.bnav-btn[data-target]').forEach(btn => {
@@ -758,6 +793,15 @@ ${printScript}
       if (gasIdEl) {
         const match = cfgGasUrl.match(/\/s\/([^/]+)\/exec/);
         gasIdEl.textContent = match ? match[1].slice(0, 20) + '…' : '—';
+      }
+
+      // Versão real do cache do service worker
+      const swVerEl = document.getElementById('admin-sw-version');
+      if (swVerEl && 'caches' in window) {
+        caches.keys().then(keys => {
+          const k = keys.find(k => k.startsWith('lavanderia-cache-'));
+          swVerEl.textContent = k ? k.replace('lavanderia-cache-', '') : 'desconhecido';
+        });
       }
 
       updateApiDisplay(apiUsedWrite);
@@ -972,18 +1016,56 @@ ${printScript}
       formClient.reset();
       formClientCard.classList.remove('hidden');
     };
+    function _machineRowHtml(name = '', capacity = '') {
+      return `<div class="multi-form-row">
+        <div class="form-field" style="flex:2;margin:0"><label>Nome da Máquina *</label><input class="form-input mach-name" placeholder="Ex: Lavadora Industrial 1" value="${name}" required /></div>
+        <div class="form-field" style="flex:0 0 110px;margin:0"><label>Cap. (kg) *</label><input class="form-input mach-cap" type="number" step="0.01" placeholder="50" value="${capacity}" required /></div>
+        <button type="button" class="btn-rm-row" title="Remover">×</button>
+      </div>`;
+    }
+    function _processRowHtml(name = '', capacity = '') {
+      return `<div class="multi-form-row">
+        <div class="form-field" style="flex:2;margin:0"><label>Nome do Processo *</label><input class="form-input proc-name" placeholder="Ex: Lavagem Pesada" value="${name}" required /></div>
+        <div class="form-field" style="flex:0 0 120px;margin:0"><label>Cap. específica (kg)</label><input class="form-input proc-cap" type="number" step="0.01" placeholder="Opcional" value="${capacity}" /></div>
+        <button type="button" class="btn-rm-row" title="Remover">×</button>
+      </div>`;
+    }
+
     document.getElementById('btn-new-machine').onclick = () => {
       editMachineIdField.value = '';
       document.getElementById('form-machine-title').textContent = 'Nova Máquina';
-      formMachine.reset();
+      machineClientSelect.value = '';
+      document.getElementById('machine-rows').innerHTML = _machineRowHtml();
+      document.getElementById('machine-add-row-wrap').style.display = '';
       formMachineCard.classList.remove('hidden');
     };
     document.getElementById('btn-new-process').onclick = () => {
       editProcessIdField.value = '';
       document.getElementById('form-process-title').textContent = 'Novo Processo';
-      formProcess.reset();
+      processMachineSelect.value = '';
+      document.getElementById('process-rows').innerHTML = _processRowHtml();
+      document.getElementById('process-add-row-wrap').style.display = '';
       formProcessCard.classList.remove('hidden');
     };
+
+    document.getElementById('btn-add-machine-row')?.addEventListener('click', () => {
+      document.getElementById('machine-rows').insertAdjacentHTML('beforeend', _machineRowHtml());
+    });
+    document.getElementById('btn-add-process-row')?.addEventListener('click', () => {
+      document.getElementById('process-rows').insertAdjacentHTML('beforeend', _processRowHtml());
+    });
+    document.getElementById('machine-rows')?.addEventListener('click', e => {
+      if (e.target.classList.contains('btn-rm-row')) {
+        const rows = document.querySelectorAll('#machine-rows .multi-form-row');
+        if (rows.length > 1) e.target.closest('.multi-form-row').remove();
+      }
+    });
+    document.getElementById('process-rows')?.addEventListener('click', e => {
+      if (e.target.classList.contains('btn-rm-row')) {
+        const rows = document.querySelectorAll('#process-rows .multi-form-row');
+        if (rows.length > 1) e.target.closest('.multi-form-row').remove();
+      }
+    });
 
     // Fechar formulários
     const closePanel = (panel, form) => { panel.classList.add('hidden'); form.reset(); };
@@ -1135,6 +1217,19 @@ ${printScript}
           refreshSellerSelect();
           await renderUsersList();
         }
+        if (updated.includes('recipes') || updated.includes('recipe_products') || isAll) {
+          // Reparar process_name para receitas que ainda estão sem ele após o sync
+          const allRecipesRepair = await dbGetAll_raw('recipes');
+          const allProcsRepair   = await dbGetAll_raw('processes');
+          for (const r of allRecipesRepair) {
+            if (!r.process_name) {
+              const p = findRecipeProcess(allProcsRepair, r);
+              if (p?.name) await dbPut('recipes', { ...r, process_name: p.name });
+            }
+          }
+          await renderRecipesList();
+          await updateRecipeBadge();
+        }
         await updateSyncStatus();
 
         toast(`✅ "${labelTarget}" atualizado(s)! (${imported} registro(s))`, 'success');
@@ -1191,6 +1286,24 @@ ${printScript}
     }
 
     async function saveToStore(storeName, items) {
+      // Para recipes: preservar campos locais que o GAS não armazena (process_name)
+      if (storeName === 'recipes') {
+        const existing = await dbGetAll_raw('recipes');
+        const snapById = new Map(existing.map(r => [Number(r.id), r]));
+        await clearStore('recipes');
+        let saved = 0;
+        for (const item of items) {
+          try {
+            const n = normalizeItem(item);
+            const old = snapById.get(Number(n.id));
+            if (old?.process_name && !n.process_name) n.process_name = old.process_name;
+            await dbPut('recipes', n);
+            saved++;
+          } catch (err) { console.warn('⚠️ Erro ao salvar recipe:', err, item); }
+        }
+        return saved;
+      }
+
       // Para users: sincronização completa com a planilha
       // — atualiza existentes, adiciona novos e REMOVE os que não estão mais na planilha
       if (storeName === 'users') {
@@ -1304,36 +1417,47 @@ ${printScript}
       const clientId = Number(machineClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
 
-      const data = Object.fromEntries(new FormData(formMachine).entries());
-      data.client_id   = clientId;
-      data.capacity    = parseFloat(data.capacity) || 0;
-
       const editId = editMachineIdField.value ? Number(editMachineIdField.value) : null;
       const submitBtn = formMachine.querySelector('button[type="submit"]');
       setSaving(true, submitBtn);
       try {
         if (editId) {
+          // Edição: usa a linha única (input.mach-name / mach-cap)
+          const row = document.querySelector('#machine-rows .multi-form-row');
+          const data = { id: editId, client_id: clientId,
+            name: row.querySelector('.mach-name').value.trim(),
+            capacity: parseFloat(row.querySelector('.mach-cap').value) || 0 };
           const existing = (await dbGetAll_raw('machines')).find(m => Number(m.id) === editId);
-          data.id = editId;
           data.created_at = existing?.created_at || new Date().toISOString();
           await dbPut('machines', data);
           const ok = await patchSheetDB(SHEETS.MACHINES, editId, data);
           toast(ok ? 'Máquina atualizada e sincronizada!' : 'Máquina atualizada localmente', ok ? 'success' : 'warning');
         } else {
-          data.created_at = new Date().toISOString();
-          const id = await dbAdd('machines', data);
-          data.id = id;
-          const ok = await postToSheetDB(SHEETS.MACHINES, data);
-          toast(ok ? 'Máquina salva e sincronizada!' : 'Máquina salva localmente', ok ? 'success' : 'warning');
+          // Criação: itera todas as linhas
+          const rows = [...document.querySelectorAll('#machine-rows .multi-form-row')];
           const allClients = await dbGetAll_raw('clients');
           const c = allClients.find(c => Number(c.id) === Number(clientId));
-          notifyEmail('nova_maquina', { name: data.name, clientName: c?.name || '' });
+          let saved = 0;
+          for (const row of rows) {
+            const name = row.querySelector('.mach-name').value.trim();
+            if (!name) continue;
+            const data = { client_id: clientId, name,
+              capacity: parseFloat(row.querySelector('.mach-cap').value) || 0,
+              created_at: new Date().toISOString() };
+            const id = await dbAdd('machines', data);
+            data.id = id;
+            await postToSheetDB(SHEETS.MACHINES, data);
+            notifyEmail('nova_maquina', { name, clientName: c?.name || '' });
+            saved++;
+          }
+          toast(saved > 1 ? `${saved} máquinas salvas!` : 'Máquina salva!', 'success');
         }
 
         await refreshMachinesForProcessSelect();
         await renderMachinesList();
         await updateSyncStatus();
         closePanel(formMachineCard, formMachine);
+        document.getElementById('machine-rows').innerHTML = '';
 
       } catch (err) {
         toast('Erro ao salvar máquina: ' + err.message, 'error');
@@ -1351,35 +1475,51 @@ ${printScript}
       const machineId = Number(processMachineSelect.value);
       if (!machineId) return toast('Selecione uma máquina', 'warning');
 
-      const data = Object.fromEntries(new FormData(formProcess).entries());
-      data.machine_id  = machineId;
-      data.capacity    = data.capacity ? parseFloat(data.capacity) : null;
-
       const editId = editProcessIdField.value ? Number(editProcessIdField.value) : null;
       const submitBtn = formProcess.querySelector('button[type="submit"]');
       setSaving(true, submitBtn);
       try {
         if (editId) {
+          const row = document.querySelector('#process-rows .multi-form-row');
+          const capVal = row.querySelector('.proc-cap').value;
+          const data = { id: editId, machine_id: machineId,
+            name: row.querySelector('.proc-name').value.trim(),
+            capacity: capVal ? parseFloat(capVal) : null };
           const existing = (await dbGetAll_raw('processes')).find(p => Number(p.id) === editId);
-          data.id = editId;
           data.created_at = existing?.created_at || new Date().toISOString();
           await dbPut('processes', data);
           const ok = await patchSheetDB(SHEETS.PROCESSES, editId, data);
           toast(ok ? 'Processo atualizado e sincronizado!' : 'Processo atualizado localmente', ok ? 'success' : 'warning');
         } else {
-          data.created_at = new Date().toISOString();
-          const id = await dbAdd('processes', data);
-          data.id = id;
-          const ok = await postToSheetDB(SHEETS.PROCESSES, data);
-          toast(ok ? 'Processo salvo e sincronizado!' : 'Processo salvo localmente', ok ? 'success' : 'warning');
+          const rows = [...document.querySelectorAll('#process-rows .multi-form-row')];
           const allMachines = await dbGetAll_raw('machines');
           const m = allMachines.find(m => Number(m.id) === Number(machineId));
-          notifyEmail('novo_processo', { name: data.name, machineName: m?.name || '' });
+          const existing = (await dbGetAll_raw('processes')).filter(p => Number(p.machine_id) === machineId);
+          const existingNames = new Set(existing.map(p => (p.name || '').toLowerCase().trim()));
+          let saved = 0, skipped = 0;
+          for (const row of rows) {
+            const name = row.querySelector('.proc-name').value.trim();
+            if (!name) continue;
+            if (existingNames.has(name.toLowerCase())) { skipped++; continue; }
+            const capVal = row.querySelector('.proc-cap').value;
+            const data = { machine_id: machineId, name,
+              capacity: capVal ? parseFloat(capVal) : null,
+              created_at: new Date().toISOString() };
+            const id = await dbAdd('processes', data);
+            data.id = id;
+            await postToSheetDB(SHEETS.PROCESSES, data);
+            notifyEmail('novo_processo', { name, machineName: m?.name || '' });
+            saved++;
+          }
+          if (skipped > 0) toast(`⚠️ ${skipped} processo(s) ignorado(s) — já existem nessa máquina`, 'warning', 4000);
+          if (saved > 0) toast(saved > 1 ? `${saved} processos salvos!` : 'Processo salvo!', 'success');
+          else if (skipped === 0) toast('Nenhum processo para salvar', 'warning');
         }
 
         await renderProcessesList();
         await updateSyncStatus();
         closePanel(formProcessCard, formProcess);
+        document.getElementById('process-rows').innerHTML = '';
 
       } catch (err) {
         toast('Erro ao salvar processo: ' + err.message, 'error');
@@ -1445,9 +1585,9 @@ ${printScript}
       if (!m) return;
       editMachineIdField.value = id;
       document.getElementById('form-machine-title').textContent = '✏️ Editar Máquina';
-      machineClientSelect.value    = m.client_id;
-      formMachine.name.value       = m.name || '';
-      formMachine.capacity.value   = m.capacity || '';
+      machineClientSelect.value = m.client_id;
+      document.getElementById('machine-rows').innerHTML = _machineRowHtml(m.name || '', m.capacity || '');
+      document.getElementById('machine-add-row-wrap').style.display = 'none';
       formMachineCard.classList.remove('hidden');
       formMachineCard.scrollIntoView({ behavior: 'smooth' });
     }
@@ -1480,9 +1620,9 @@ ${printScript}
       if (!p) return;
       editProcessIdField.value = id;
       document.getElementById('form-process-title').textContent = '✏️ Editar Processo';
-      processMachineSelect.value   = p.machine_id;
-      formProcess.name.value       = p.name || '';
-      formProcess.capacity.value   = p.capacity || '';
+      processMachineSelect.value = p.machine_id;
+      document.getElementById('process-rows').innerHTML = _processRowHtml(p.name || '', p.capacity || '');
+      document.getElementById('process-add-row-wrap').style.display = 'none';
       formProcessCard.classList.remove('hidden');
       formProcessCard.scrollIntoView({ behavior: 'smooth' });
     }
@@ -1674,6 +1814,7 @@ ${printScript}
     // RENDER — PROCESSOS
     // =====================================================
     async function renderProcessesList(filter = '', machineFilter = 0) {
+      await refreshMachinesForProcessSelect();
       let processes = await getAll('processes');
       const machines = await getAll('machines');
       const clients  = await getAll('clients');
@@ -1774,7 +1915,23 @@ ${printScript}
     // PRODUÇÃO
     // =====================================================
     prodClientSelect.addEventListener('change', async e => {
-      await renderMachinesAndProcesses(Number(e.target.value));
+      const clientId = Number(e.target.value);
+      await renderMachinesAndProcesses(clientId);
+
+      // Mostrar último relatório pelo calendário (date_end mais recente)
+      const infoEl  = document.getElementById('last-report-info');
+      const datesEl = document.getElementById('last-report-dates');
+      if (!infoEl || !datesEl) return;
+      if (!clientId) { infoEl.style.display = 'none'; return; }
+      const records = (await dbGetAll_raw('records')).filter(r => Number(r.client_id) === clientId);
+      if (!records.length) { infoEl.style.display = 'none'; return; }
+      // Ordenar pelo date_end do calendário (mais recente primeiro)
+      records.sort((a, b) => (b.date_end || b.date_start || '').localeCompare(a.date_end || a.date_start || ''));
+      const last = records[0];
+      const start = fmtDate(last.date_start);
+      const end   = fmtDate(last.date_end);
+      datesEl.textContent = start === end ? start : `${start} até ${end}`;
+      infoEl.style.display = '';
     });
 
     async function renderMachinesAndProcesses(clientId) {
@@ -1966,6 +2123,7 @@ ${printScript}
         logLine('🎉', `Concluído! ${synced} linha(s) registradas com sucesso.`);
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
+        localStorage.setItem('hygicare_last_client', String(clientId));
         await updateSyncStatus();
         await renderRecordsList();
 
@@ -2033,6 +2191,7 @@ ${printScript}
     // =====================================================
     async function refreshClientsSelects() {
       const clients = await getAll('clients');
+      const lastClientId = localStorage.getItem('hygicare_last_client') || '';
       [machineClientSelect, prodClientSelect].forEach(sel => {
         const val = sel.value;
         sel.innerHTML = '<option value="">-- Selecione um cliente --</option>';
@@ -2042,7 +2201,11 @@ ${printScript}
           o.textContent = `${c.name} (${c.city || ''})`;
           sel.appendChild(o);
         });
-        if (val) sel.value = val;
+        if (val) { sel.value = val; }
+        else if (sel === prodClientSelect && lastClientId) {
+          sel.value = lastClientId;
+          if (sel.value) sel.dispatchEvent(new Event('change'));
+        }
       });
       await refreshSellerSelect();
       await refreshMachinesForProcessSelect();
@@ -2152,14 +2315,13 @@ ${printScript}
       const records  = await dbGetAll_raw('records');
       const clients  = await dbGetAll_raw('clients');
       const machines = await dbGetAll_raw('machines');
-      const procs    = await dbGetAll_raw('processes');
 
       const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const thisMonth = records.filter(r => (r.date_start || '').startsWith(ym));
       const kgMes = thisMonth.reduce((s, r) => s + parseFloat(r.total || 0), 0);
 
       const kgEl = document.getElementById('home-kg-mes');
-      if (kgEl) kgEl.textContent = kgMes >= 1000 ? (kgMes / 1000).toFixed(1) + ' t' : Math.round(kgMes) + ' kg';
+      if (kgEl) kgEl.textContent = Math.round(kgMes).toLocaleString('pt-BR') + ' kg';
       const recEl = document.getElementById('home-records-mes');
       if (recEl) recEl.textContent = thisMonth.length;
       const cliEl = document.getElementById('home-clients-count');
@@ -2171,29 +2333,41 @@ ${printScript}
       const pendEl = document.getElementById('home-pending-count');
       if (pendEl) pendEl.textContent = pending;
 
-      // Últimos 5 registros
-      const recent = [...records]
-        .sort((a, b) => (b.synced_at || b.created_at || b.date_start || '').localeCompare(a.synced_at || a.created_at || a.date_start || ''))
-        .slice(0, 5);
+      // Últimos totais agrupados por cliente+período (igual ao relatório)
       const recentEl = document.getElementById('home-recent-records');
       if (!recentEl) return;
-      if (!recent.length) {
+      if (!records.length) {
         recentEl.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;text-align:center;padding:0.75rem">Nenhum registro ainda.</div>';
         return;
       }
-      recentEl.innerHTML = recent.map(r => {
-        const c = clients.find(cl => Number(cl.id) === Number(r.client_id));
-        const m = machines.find(mc => Number(mc.id) === Number(r.machine_id));
-        const p = procs.find(pr => Number(pr.id) === Number(r.process_id));
+      // Agrupar por clientId + period (date_start mês/ano)
+      const groupMap = {};
+      for (const r of records) {
+        const cId = Number(r.client_id);
+        const period = (r.date_start || '').slice(0, 7); // yyyy-mm
+        const key = `${cId}|${period}`;
+        if (!groupMap[key]) groupMap[key] = { clientId: cId, period, total: 0, lastDate: r.date_start || '', count: 0 };
+        groupMap[key].total += parseFloat(r.total || 0);
+        groupMap[key].count++;
+        if ((r.date_start || '') > groupMap[key].lastDate) groupMap[key].lastDate = r.date_start;
+      }
+      const groups = Object.values(groupMap)
+        .sort((a, b) => b.lastDate.localeCompare(a.lastDate))
+        .slice(0, 5);
+      recentEl.innerHTML = groups.map(g => {
+        const c = clients.find(cl => Number(cl.id) === g.clientId);
+        const [yyyy, mm] = g.period.split('-');
+        const monthLabel = mm ? new Date(Number(yyyy), Number(mm) - 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }) : g.period;
+        const totalKg = g.total;
+        const totalFmt = Math.round(totalKg).toLocaleString('pt-BR') + ' kg';
         return `
           <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
             <div style="min-width:0">
               <div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c?.name || '—'}</div>
-              <div style="font-size:0.73rem;color:var(--muted)">${m?.name || ''} · ${p?.name || ''}</div>
+              <div style="font-size:0.73rem;color:var(--muted)">${monthLabel} · ${g.count} registro${g.count > 1 ? 's' : ''}</div>
             </div>
             <div style="text-align:right;flex-shrink:0;margin-left:0.75rem">
-              <div style="font-size:0.9rem;font-weight:700;color:var(--primary)">${Math.round(parseFloat(r.total || 0))} kg</div>
-              <div style="font-size:0.72rem;color:var(--muted)">${fmtDate(r.date_start)}</div>
+              <div style="font-size:0.9rem;font-weight:700;color:var(--primary)">${totalFmt}</div>
             </div>
           </div>`;
       }).join('');
@@ -2365,10 +2539,11 @@ ${printScript}
     });
 
     function _getVazaoMainFilters() {
-      const filterClient = document.getElementById('chart-filter-client')?.value || '';
-      const filterSeller = document.getElementById('chart-filter-seller')?.value || '';
-      const dateStart    = document.getElementById('chart-date-start')?.value || '';
-      const dateEnd      = document.getElementById('chart-date-end')?.value   || '';
+      const filterClient  = document.getElementById('chart-filter-client')?.value  || '';
+      const filterSeller  = document.getElementById('chart-filter-seller')?.value  || '';
+      const filterGerente = document.getElementById('chart-filter-gerente')?.value || '';
+      const dateStart     = document.getElementById('chart-date-start')?.value || '';
+      const dateEnd       = document.getElementById('chart-date-end')?.value   || '';
       const now  = new Date();
       const yyyy = now.getFullYear();
       const mm   = String(now.getMonth() + 1).padStart(2, '0');
@@ -2382,7 +2557,7 @@ ${printScript}
         else if (preset === '6m')    { const d = new Date(now); d.setMonth(d.getMonth()-5); filterStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; filterEnd = `${yyyy}-${mm}`; }
         else if (preset === 'year')  { filterStart = `${yyyy}-01`; filterEnd = `${yyyy}-12`; }
       }
-      return { filterClient, filterSeller, filterStart, filterEnd };
+      return { filterClient, filterSeller, filterGerente, filterStart, filterEnd };
     }
 
     async function _getFilteredVazaoRecords() {
@@ -2402,8 +2577,17 @@ ${printScript}
       }
 
       // Aplicar filtros principais da tela de gráficos
-      const { filterClient, filterSeller, filterStart, filterEnd } = _getVazaoMainFilters();
+      const { filterClient, filterSeller, filterGerente, filterStart, filterEnd } = _getVazaoMainFilters();
       if (filterClient) records = records.filter(r => Number(r.client_id) === Number(filterClient));
+      if (filterGerente) {
+        const allUsers = await _originalGetAll('users');
+        const gerente = allUsers.find(u => String(u.id) === filterGerente);
+        if (gerente) {
+          const gerenteName = (gerente.sellerName || gerente.name || '').toLowerCase();
+          const gerenteSellers = new Set(allUsers.filter(u => (u.manager||'').toLowerCase() === gerenteName).map(u => (u.sellerName||u.name||'').toLowerCase()));
+          records = records.filter(r => { const c = clients.find(c => Number(c.id) === Number(r.client_id)); return gerenteSellers.has((c?.seller||'').toLowerCase()); });
+        }
+      }
       if (filterSeller) records = records.filter(r => {
         const c = clients.find(c => Number(c.id) === Number(r.client_id));
         return (c?.seller || '') === filterSeller;
@@ -2675,76 +2859,93 @@ ${printScript}
     // =====================================================
     let _editingRecipeId = null; // null = novo, number = editando
 
+    // Retorna array de machine IDs a partir de machine_ids (JSON) com fallback para machine_id legado
+    function parseMachineIds(recipe) {
+      try {
+        if (recipe.machine_ids) return JSON.parse(recipe.machine_ids).map(Number).filter(Boolean);
+      } catch(e) {}
+      return recipe.machine_id ? [Number(recipe.machine_id)] : [];
+    }
+
+    function _collectMachineIds() {
+      return [...document.querySelectorAll('#recipe-machines-checkboxes .machine-chk:checked')]
+        .map(chk => Number(chk.dataset.machineId)).filter(Boolean);
+    }
+
     const RECIPE_OPS = ['Enxágue','Pré Lavagem','Lavagem','Alvejamento','Neutralização','Amaciamento'];
     const RECIPE_LEVELS = ['Alto','Médio','Baixo'];
 
     function _stepRowHtml(step = {}, products = [], idx = 0) {
       const n = step.n || (idx + 1);
-      const opOpts  = RECIPE_OPS.map(o    => `<option${step.operation===o?' selected':''}>${o}</option>`).join('');
+      const dlId    = `op-dl-${idx}`;
+      const opOpts  = RECIPE_OPS.map(o => `<option value="${o}">`).join('');
       const lvlOpts = RECIPE_LEVELS.map(l => `<option${step.level===l?' selected':''}>${l}</option>`).join('');
       const temp = step.temp || 'Fria';
       const isCustom = temp !== 'Fria' && temp !== 'Quente';
       const stepProds = Array.isArray(step.products) ? step.products.filter(v => v) : [];
 
+      // Normaliza products: string[] (antigo) → {name, dosage}[]
+      const normalizedProds = stepProds.map(p =>
+        typeof p === 'string' ? { name: p, dosage: step.dosage || '' } : p
+      ).filter(p => p && p.name);
+
       const buildProdOpts = (selected = '') =>
         `<option value="">-- Produto --</option>` +
         products.map(p => `<option value="${p.name}"${p.name===selected?' selected':''}>${p.name}</option>`).join('');
 
-      const buildProdLine = (selected = '') =>
-        `<div class="step-prod-line" style="display:flex;gap:4px;margin-bottom:4px">
-          <select class="form-input step-prod-sel" style="flex:1;font-size:0.85rem">${buildProdOpts(selected)}</select>
-          <button type="button" class="step-prod-del" style="padding:0 10px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:0.85rem;flex-shrink:0">×</button>
+      const buildProdLine = (name = '', dosage = '') =>
+        `<div class="step-prod-line" style="display:flex;gap:3px;margin-bottom:3px;align-items:center">
+          <select class="form-input step-prod-sel" style="flex:2;font-size:0.82rem;padding:0.25rem 0.35rem">${buildProdOpts(name)}</select>
+          <input type="text" class="form-input step-prod-dosage" value="${dosage}" placeholder="Dose" style="flex:1;min-width:55px;max-width:75px;font-size:0.82rem;padding:0.25rem 0.35rem"/>
+          <button type="button" class="step-prod-del" style="padding:0 7px;height:30px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:0.82rem;flex-shrink:0">×</button>
         </div>`;
 
-      const prodLinesHtml = stepProds.length
-        ? stepProds.map(sel => buildProdLine(sel)).join('')
+      const prodLinesHtml = normalizedProds.length
+        ? normalizedProds.map(p => buildProdLine(p.name, p.dosage)).join('')
         : buildProdLine('');
 
       const prodsHtml = products.length
         ? `<div class="step-prods-wrap">
             <div class="step-prod-lines">${prodLinesHtml}</div>
-            <button type="button" class="step-prod-add" style="font-size:0.78rem;padding:3px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer;color:#16a34a;margin-top:2px">+ Produto</button>
+            <button type="button" class="step-prod-add" style="font-size:0.75rem;padding:2px 8px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer;color:#16a34a;margin-top:2px">+ Produto</button>
            </div>`
         : '<span style="font-size:0.82rem;color:#94a3b8">Sem produtos cadastrados</span>';
 
       return `
         <div class="step-card">
+          <datalist id="${dlId}">${opOpts}</datalist>
           <div class="step-card-hdr">
             <span class="step-num">Etapa <strong class="step-num-val">${n}</strong></span>
-            <button type="button" class="btn-danger btn-sm step-del-btn">🗑️ Remover</button>
+            <button type="button" class="btn-danger btn-sm step-del-btn" style="padding:0.18rem 0.45rem;font-size:0.73rem">🗑️ Remover</button>
           </div>
           <div class="step-card-body">
-            <div class="step-row-fields">
-              <div class="form-field" style="flex:2;min-width:140px">
+            <div class="step-row-fields" style="gap:0.4rem">
+              <div class="form-field" style="flex:2;min-width:100px">
                 <label>Operação</label>
-                <select class="form-input step-op">${opOpts}</select>
+                <input list="${dlId}" class="form-input step-op" value="${step.operation||''}" placeholder="Selecione ou digite..." autocomplete="off"/>
               </div>
-              <div class="form-field" style="flex:1;min-width:85px">
-                <label>Tempo (min)</label>
+              <div class="form-field" style="flex:0 0 68px">
+                <label>Tempo</label>
                 <input type="number" class="form-input step-time" min="0" value="${step.time||''}" placeholder="min"/>
               </div>
-              <div class="form-field" style="flex:1;min-width:90px">
+              <div class="form-field" style="flex:1;min-width:68px">
                 <label>Nível</label>
                 <select class="form-input step-level">${lvlOpts}</select>
               </div>
             </div>
-            <div class="step-row-fields">
-              <div class="form-field" style="flex:1;min-width:130px">
-                <label>Temperatura</label>
+            <div class="step-row-fields" style="gap:0.4rem">
+              <div class="form-field" style="flex:0 0 100px">
+                <label>Temp.</label>
                 <select class="form-input step-temp-sel">
                   <option ${!isCustom&&temp==='Fria'?'selected':''}>Fria</option>
                   <option ${!isCustom&&temp==='Quente'?'selected':''}>Quente</option>
-                  <option value="__custom" ${isCustom?'selected':''}>Personalizado °C</option>
+                  <option value="__custom" ${isCustom?'selected':''}>Custom °C</option>
                 </select>
-                <input type="number" class="form-input step-temp-val" value="${isCustom?temp:''}" placeholder="Ex: 45" style="margin-top:4px;display:${isCustom?'':'none'}"/>
+                <input type="number" class="form-input step-temp-val" value="${isCustom?temp:''}" placeholder="°C" style="margin-top:3px;display:${isCustom?'':'none'}"/>
               </div>
-              <div class="form-field" style="flex:2;min-width:160px">
-                <label>Produto(s)</label>
+              <div class="form-field" style="flex:1;min-width:140px">
+                <label>Produto / Dose</label>
                 ${prodsHtml}
-              </div>
-              <div class="form-field" style="flex:1;min-width:110px">
-                <label>Dosagem</label>
-                <input type="text" class="form-input step-dosage" value="${step.dosage||''}" placeholder="Ex: 50ml/kg"/>
               </div>
             </div>
           </div>
@@ -2756,14 +2957,17 @@ ${printScript}
         const tempSel = card.querySelector('.step-temp-sel')?.value;
         const tempVal = card.querySelector('.step-temp-val')?.value;
         const temp = tempSel === '__custom' ? (tempVal || 'Fria') : (tempSel || 'Fria');
+        const products = [...card.querySelectorAll('.step-prod-line')].map(line => ({
+          name:   line.querySelector('.step-prod-sel')?.value  || '',
+          dosage: line.querySelector('.step-prod-dosage')?.value || '',
+        })).filter(p => p.name);
         return {
           n: i + 1,
           operation: card.querySelector('.step-op')?.value || '',
           time: parseFloat(card.querySelector('.step-time')?.value) || 0,
           temp,
           level: card.querySelector('.step-level')?.value || 'Alto',
-          products: [...card.querySelectorAll('.step-prod-sel')].map(sel => sel.value).filter(v => v),
-          dosage: card.querySelector('.step-dosage')?.value || '',
+          products,
         };
       });
     }
@@ -2784,8 +2988,8 @@ ${printScript}
         const opts = firstSel ? firstSel.innerHTML : '<option value="">-- Produto --</option>';
         const line = document.createElement('div');
         line.className = 'step-prod-line';
-        line.style.cssText = 'display:flex;gap:4px;margin-bottom:4px';
-        line.innerHTML = `<select class="form-input step-prod-sel" style="flex:1;font-size:0.85rem">${opts}</select><button type="button" class="step-prod-del" style="padding:0 10px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:0.85rem;flex-shrink:0">×</button>`;
+        line.style.cssText = 'display:flex;gap:3px;margin-bottom:3px;align-items:center';
+        line.innerHTML = `<select class="form-input step-prod-sel" style="flex:2;font-size:0.82rem;padding:0.25rem 0.35rem">${opts}</select><input type="text" class="form-input step-prod-dosage" placeholder="Dose" style="flex:1;min-width:55px;max-width:75px;font-size:0.82rem;padding:0.25rem 0.35rem"/><button type="button" class="step-prod-del" style="padding:0 7px;height:30px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;color:#dc2626;font-size:0.82rem;flex-shrink:0">×</button>`;
         line.querySelector('.step-prod-sel').value = '';
         linesDiv.appendChild(line);
       }
@@ -2803,7 +3007,10 @@ ${printScript}
       });
     }
 
+    let _isLoadingRecipeForm = false;
+
     async function _openRecipeForm(recipeId = null) {
+      _isLoadingRecipeForm = true;
       _editingRecipeId = recipeId;
       const isEdit = recipeId !== null;
       document.getElementById('modal-recipe-title').textContent = isEdit ? '✏️ Editar Receita' : '📝 Nova Receita';
@@ -2814,89 +3021,113 @@ ${printScript}
       const clients = await window.getAll('clients');
       const clientSel = document.getElementById('recipe-client');
       clientSel.innerHTML = '<option value="">-- Selecione --</option>';
-      clients.sort((a,b) => (a.name||'').localeCompare(b.name||''))
-             .forEach(c => clientSel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
+      clients.sort((a,b) => (a.name||'').localeCompare(b.name||'')).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        clientSel.appendChild(opt);
+      });
 
-      document.getElementById('recipe-machine').innerHTML = '<option value="">-- Selecione --</option>';
       document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
-      document.getElementById('recipe-machine-info').style.display = 'none';
       document.getElementById('recipe-date').value = new Date().toISOString().slice(0, 10);
       document.getElementById('recipe-steps-body').innerHTML = '';
 
       if (isEdit) {
         const recipe = (await dbGetAll_raw('recipes')).find(r => r.id === recipeId);
-        if (!recipe) return toast('Receita não encontrada', 'error');
+        if (!recipe) { _isLoadingRecipeForm = false; return toast('Receita não encontrada', 'error'); }
+        const selectedMachineIds = parseMachineIds(recipe);
+        const allProcsEdit = await dbGetAll_raw('processes');
+        const foundProc = findRecipeProcess(allProcsEdit, recipe);
+        const bestProcessId = foundProc?.id ?? recipe.process_id;
         clientSel.value = recipe.client_id;
-        await _loadRecipeMachines(recipe.client_id, recipe.machine_id);
-        await _loadRecipeProcesses(recipe.machine_id, recipe.process_id);
+        await _loadRecipeMachines(recipe.client_id, selectedMachineIds);
+        const firstMachId = selectedMachineIds[0];
+        if (firstMachId) await _loadRecipeProcesses(firstMachId, bestProcessId, recipe.process_name || foundProc?.name || null);
         document.getElementById('recipe-date').value = recipe.date || '';
         const steps = JSON.parse(recipe.steps || '[]');
         const products = await dbGetAll_raw('recipe_products');
         const stepsContainer = document.getElementById('recipe-steps-body');
         steps.forEach((s, i) => { stepsContainer.insertAdjacentHTML('beforeend', _stepRowHtml(s, products, i)); });
       } else {
-        // Carregar uma etapa inicial em branco
         const products = await dbGetAll_raw('recipe_products');
         document.getElementById('recipe-steps-body').innerHTML = _stepRowHtml({}, products, 0);
       }
 
+      _isLoadingRecipeForm = false;
       document.getElementById('modal-recipe').classList.remove('hidden');
     }
 
-    async function _loadRecipeMachines(clientId, selectId = null) {
-      const machineSel = document.getElementById('recipe-machine');
-      const infoEl     = document.getElementById('recipe-machine-info');
-      machineSel.innerHTML = '<option value="">-- Selecione --</option>';
+    async function _loadRecipeMachines(clientId, selectedIds = []) {
+      const container = document.getElementById('recipe-machines-checkboxes');
+      if (!container) return;
       document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
-      infoEl.style.display = 'none';
-      if (!clientId) return;
-      const machines = (await dbGetAll_raw('machines')).filter(m => Number(m.client_id) === Number(clientId));
-      machines.sort((a,b) => (a.name||'').localeCompare(b.name||''))
-              .forEach(m => machineSel.innerHTML += `<option value="${m.id}" data-cap="${m.capacity||0}">${m.name}</option>`);
-      if (selectId) {
-        machineSel.value = selectId;
-        _showMachineCap(machineSel);
+
+      if (!clientId) {
+        container.innerHTML = '<span style="font-size:0.83rem;color:var(--muted)">Selecione um cliente primeiro</span>';
+        return;
       }
+      const machines = (await dbGetAll_raw('machines'))
+        .filter(m => Number(m.client_id) === Number(clientId))
+        .sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+      if (!machines.length) {
+        container.innerHTML = '<span style="font-size:0.83rem;color:var(--muted)">Nenhuma máquina cadastrada para este cliente</span>';
+        return;
+      }
+      const selSet = new Set(selectedIds.map(Number));
+      container.innerHTML = machines.map(m => `
+        <label style="display:flex;align-items:center;gap:0.55rem;padding:0.3rem 0.25rem;cursor:pointer;border-radius:6px">
+          <input type="checkbox" class="machine-chk" data-machine-id="${m.id}"
+                 ${selSet.has(Number(m.id)) ? 'checked' : ''}
+                 style="width:16px;height:16px;accent-color:var(--primary);flex-shrink:0"/>
+          <span style="font-size:0.88rem;font-weight:600">⚙️ ${m.name}</span>
+          ${m.capacity ? `<span style="font-size:0.75rem;color:var(--muted)">${m.capacity} kg</span>` : ''}
+        </label>`).join('');
+
+      // Carregar processos da primeira máquina selecionada
+      const firstSel = machines.find(m => selSet.has(Number(m.id)));
+      if (firstSel) await _loadRecipeProcesses(firstSel.id);
     }
 
-    function _showMachineCap(sel) {
-      const opt = sel.options[sel.selectedIndex];
-      const cap = opt?.dataset?.cap;
-      const infoEl = document.getElementById('recipe-machine-info');
-      if (cap && cap !== '0') {
-        document.getElementById('recipe-machine-cap').textContent = cap;
-        infoEl.style.display = '';
-      } else {
-        infoEl.style.display = 'none';
-      }
-    }
-
-    async function _loadRecipeProcesses(machineId, selectId = null) {
+    let _procLoadToken = 0;
+    async function _loadRecipeProcesses(machineId, selectId = null, selectName = null) {
+      const token = ++_procLoadToken;
       const processSel = document.getElementById('recipe-process');
       if (!processSel) return;
       processSel.innerHTML = '<option value="">-- Selecione --</option>';
       if (!machineId) return;
 
-      const procs      = (await dbGetAll_raw('processes')).filter(p => Number(p.machine_id) === Number(machineId));
+      const allProcs = await dbGetAll_raw('processes');
+      const filtered = allProcs.filter(p => Number(p.machine_id) === Number(machineId));
+      // Deduplicar por nome: mantém o de ID maior (mais recente)
+      const byName = new Map();
+      filtered.forEach(p => {
+        const key = (p.name || '').toLowerCase().trim();
+        if (!byName.has(key) || Number(p.id) > Number(byName.get(key).id)) byName.set(key, p);
+      });
+      const procs = [...byName.values()];
       const allRecipes = await dbGetAll_raw('recipes');
+      if (token !== _procLoadToken) return;
 
-      // IDs de processos que já têm receita ativa nesta máquina
-      const takenIds = new Set(
+      // Nomes de processos que já têm receita ativa cobrindo esta máquina
+      const takenNames = new Set(
         allRecipes
-          .filter(r => r.status === 'active' && Number(r.machine_id) === Number(machineId))
-          .map(r => Number(r.process_id))
+          .filter(r => r.status === 'active' && parseMachineIds(r).includes(Number(machineId)))
+          .map(r => (r.process_name || '').toLowerCase().trim())
+          .filter(Boolean)
       );
 
       // Ao editar, o processo da própria receita não é bloqueado
-      let ownProcId = 0;
+      let ownProcName = '';
       if (_editingRecipeId !== null) {
         const cur = allRecipes.find(r => r.id === _editingRecipeId);
-        if (cur) ownProcId = Number(cur.process_id);
+        if (cur) ownProcName = (cur.process_name || '').toLowerCase().trim();
       }
 
       procs.sort((a,b) => (a.name||'').localeCompare(b.name||''))
            .forEach(p => {
-             const taken = takenIds.has(Number(p.id)) && Number(p.id) !== ownProcId;
+             const pName = (p.name || '').toLowerCase().trim();
+             const taken = takenNames.has(pName) && pName !== ownProcName;
              const opt = document.createElement('option');
              opt.value = p.id;
              opt.textContent = p.name + (taken ? ' — já tem receita' : '');
@@ -2905,22 +3136,45 @@ ${printScript}
            });
 
       if (selectId) processSel.value = selectId;
+      // Fallback por nome quando o ID não bate (GAS ID mismatch pós-sync)
+      if ((!processSel.value || processSel.value === '') && selectName) {
+        const nameLow = selectName.toLowerCase().trim();
+        for (const opt of processSel.options) {
+          if (!opt.disabled && opt.value && opt.textContent.toLowerCase().trim().startsWith(nameLow)) {
+            processSel.value = opt.value;
+            break;
+          }
+        }
+      }
+      // Fallback: se só tem um processo disponível para a máquina, seleciona automaticamente
+      if (!processSel.value || processSel.value === '') {
+        const available = Array.from(processSel.options).filter(o => o.value && !o.disabled);
+        if (available.length === 1) processSel.value = available[0].value;
+      }
     }
 
     document.getElementById('recipe-client')?.addEventListener('change', e => {
-      _loadRecipeMachines(e.target.value);
+      if (_isLoadingRecipeForm) return;
+      _loadRecipeMachines(e.target.value, []);
     });
-    document.getElementById('recipe-machine')?.addEventListener('change', e => {
-      _showMachineCap(e.target);
-      _loadRecipeProcesses(e.target.value);
+    document.getElementById('recipe-machines-checkboxes')?.addEventListener('change', async e => {
+      if (_isLoadingRecipeForm) return;
+      if (!e.target.classList.contains('machine-chk')) return;
+      const firstId = _collectMachineIds()[0];
+      if (firstId) await _loadRecipeProcesses(firstId);
+      else document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
     });
 
-    document.getElementById('btn-add-step')?.addEventListener('click', async () => {
+    async function _addStep() {
       const products = await dbGetAll_raw('recipe_products');
       const container = document.getElementById('recipe-steps-body');
       const count = container.querySelectorAll('.step-card').length;
       container.insertAdjacentHTML('beforeend', _stepRowHtml({}, products, count));
-    });
+      const modalBox = document.querySelector('#modal-recipe .modal-box');
+      if (modalBox) setTimeout(() => modalBox.scrollTo({ top: modalBox.scrollHeight, behavior: 'smooth' }), 50);
+    }
+    document.getElementById('btn-add-step')?.addEventListener('click', _addStep);
+    document.getElementById('btn-add-step-bottom')?.addEventListener('click', _addStep);
 
     document.getElementById('btn-new-recipe')?.addEventListener('click', () => _openRecipeForm(null));
     document.getElementById('modal-recipe-close')?.addEventListener('click',  () => document.getElementById('modal-recipe').classList.add('hidden'));
@@ -2928,11 +3182,13 @@ ${printScript}
 
     document.getElementById('btn-save-recipe')?.addEventListener('click', async () => {
       if (_saving) return;
-      const clientId  = Number(document.getElementById('recipe-client')?.value);
-      const machineId = Number(document.getElementById('recipe-machine')?.value);
-      const processId = Number(document.getElementById('recipe-process')?.value);
-      const date      = document.getElementById('recipe-date')?.value;
-      if (!clientId || !machineId || !processId) return toast('Selecione cliente, máquina e processo', 'warning');
+      const clientId   = Number(document.getElementById('recipe-client')?.value);
+      const machineIds = _collectMachineIds();
+      const processId  = Number(document.getElementById('recipe-process')?.value);
+      const date       = document.getElementById('recipe-date')?.value;
+      if (!clientId)          return toast('Selecione o cliente', 'warning');
+      if (!machineIds.length) return toast('Selecione pelo menos uma máquina', 'warning');
+      if (!processId)         return toast('Selecione o processo', 'warning');
       const steps = _collectSteps();
       if (!steps.length) return toast('Adicione pelo menos uma etapa', 'warning');
 
@@ -2941,13 +3197,21 @@ ${printScript}
       try {
         const now = new Date().toISOString();
         const creator = currentUser?.name || currentUser?.username || '';
+        const allProcsNow = await dbGetAll_raw('processes');
+        const selProc = allProcsNow.find(p => Number(p.id) === processId);
+        const processName = selProc?.name || document.getElementById('recipe-process')?.options[document.getElementById('recipe-process')?.selectedIndex]?.text || '';
+        const machineIdsJson = JSON.stringify(machineIds);
+        const primaryMachineId = machineIds[0];
 
         if (_editingRecipeId === null) {
           // Nova receita — vai direto ativa
-          const recipe = { client_id: clientId, machine_id: machineId, process_id: processId, date, created_by: creator,
+          const recipe = {
+            client_id: clientId, machine_id: primaryMachineId, machine_ids: machineIdsJson,
+            process_id: processId, process_name: processName, date, created_by: creator,
             status: 'active', version: 1, original_id: 0,
             edit_notes: '', rejection_notes: '', approved_by: '', approved_at: '',
-            steps: JSON.stringify(steps), created_at: now };
+            steps: JSON.stringify(steps), created_at: now
+          };
           const id = await dbAdd('recipes', recipe);
           recipe.id = id;
           recipe.original_id = id; // self-reference
@@ -2959,11 +3223,14 @@ ${printScript}
           const current = (await dbGetAll_raw('recipes')).find(r => r.id === _editingRecipeId);
           if (!current) return toast('Receita original não encontrada', 'error');
           const editNotes = document.getElementById('recipe-edit-notes')?.value.trim() || '';
-          const pending = { client_id: clientId, machine_id: machineId, process_id: processId, date, created_by: creator,
+          const pending = {
+            client_id: clientId, machine_id: primaryMachineId, machine_ids: machineIdsJson,
+            process_id: processId, process_name: processName, date, created_by: creator,
             status: 'pending', version: (current.version || 1) + 1,
             original_id: current.original_id || current.id,
             edit_notes: editNotes, rejection_notes: '', approved_by: '', approved_at: '',
-            steps: JSON.stringify(steps), created_at: now };
+            steps: JSON.stringify(steps), created_at: now
+          };
           const pid = await dbAdd('recipes', pending);
           pending.id = pid;
           await postToSheetDB(SHEETS.RECIPES, pending);
@@ -2979,9 +3246,33 @@ ${printScript}
       }
     });
 
+    // Busca processo para uma receita com fallbacks (ID → nome → único processo da máquina)
+    function findRecipeProcess(allProcesses, recipe) {
+      let p = allProcesses.find(p => Number(p.id) === Number(recipe.process_id));
+      if (p) return p;
+      if (recipe.process_name) {
+        const nl = recipe.process_name.toLowerCase().trim();
+        p = allProcesses.find(p => Number(p.machine_id) === Number(recipe.machine_id) && (p.name||'').toLowerCase().trim() === nl);
+        if (!p) p = allProcesses.find(p => (p.name||'').toLowerCase().trim() === nl);
+        if (p) return p;
+      }
+      const mProcs = allProcesses.filter(p => Number(p.machine_id) === Number(recipe.machine_id));
+      return mProcs.length === 1 ? mProcs[0] : null;
+    }
+
     async function renderRecipesList() {
       const list = document.getElementById('recipes-list');
       if (!list) return;
+
+      // Skeleton enquanto carrega
+      if (!list.querySelector('.skeleton-card')) {
+        list.innerHTML = [1,2,3].map(() => `
+          <div class="skeleton-card">
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line xshort"></div>
+          </div>`).join('');
+      }
 
       const filterClientId  = Number(document.getElementById('recipe-filter-client')?.value  || 0);
       const filterMachineId = Number(document.getElementById('recipe-filter-machine')?.value || 0);
@@ -3011,12 +3302,14 @@ ${printScript}
         document.getElementById('recipes-pending-count').textContent = pendings.length;
         document.getElementById('recipes-pending-list').innerHTML = pendings.map(r => {
           const c = clients.find(c => Number(c.id) === Number(r.client_id));
-          const m = machines.find(m => Number(m.id) === Number(r.machine_id));
-          const p = processes.find(p => Number(p.id) === Number(r.process_id));
+          const machIds = parseMachineIds(r);
+          const machNamesP = machIds.map(mid => machines.find(m => Number(m.id) === mid)?.name || '?').join(', ');
+          const p = findRecipeProcess(processes, r);
+          const procName = p?.name || r.process_name || null;
           return `<div class="list-item" style="flex-direction:column;gap:0.4rem;padding:0.7rem 1rem">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">
               <div>
-                <strong>${c?.name||'?'}</strong> · ⚙️ ${m?.name||'?'}${p ? ' · 🔄 '+p.name : ''}
+                <strong>${c?.name||'?'}</strong> · ⚙️ ${machNamesP||'?'}${procName ? ' · 🔄 '+procName : ''}
                 <span style="font-size:0.78rem;color:var(--muted)"> — v${r.version} · por ${r.created_by}</span>
               </div>
               <div style="display:flex;gap:0.4rem">
@@ -3032,52 +3325,289 @@ ${printScript}
         if (pendingSec) pendingSec.style.display = 'none';
       }
 
-      // Mostrar apenas receitas ativas (uma por original_id) + pendings do usuário atual
-      const activeRecipes = allRecipes.filter(r => r.status === 'active');
-      let displayed = activeRecipes;
-      if (filterClientId)  displayed = displayed.filter(r => Number(r.client_id)  === filterClientId);
-      if (filterMachineId) displayed = displayed.filter(r => Number(r.machine_id) === filterMachineId);
-      displayed.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+      // Filtro de status via chips
+      const activeStatusChip = document.querySelector('#recipes-status-filters .qf-btn.active')?.dataset?.rs || 'all';
+      let statusFilter = activeStatusChip === 'all' ? 'active' : activeStatusChip;
+      let displayed = allRecipes.filter(r => activeStatusChip === 'all' ? r.status === 'active' : r.status === statusFilter);
+      if (filterClientId)  displayed = displayed.filter(r => Number(r.client_id) === filterClientId);
+      if (filterMachineId) displayed = displayed.filter(r => parseMachineIds(r).includes(filterMachineId));
+
+      // Filtro de busca por texto
+      const searchTerm = (document.getElementById('recipe-search')?.value || '').toLowerCase().trim();
+      if (searchTerm) {
+        displayed = displayed.filter(r => {
+          const c = clients.find(c => Number(c.id) === Number(r.client_id));
+          const machIds = parseMachineIds(r);
+          const machNamesS = machIds.map(mid => machines.find(m => Number(m.id) === mid)?.name || '').filter(Boolean);
+          const p = findRecipeProcess(processes, r);
+          const text = [c?.name, ...machNamesS, p?.name, r.process_name].filter(Boolean).join(' ').toLowerCase();
+          return text.includes(searchTerm);
+        });
+      }
+      displayed.sort((a,b) => {
+        const ca = clients.find(c => Number(c.id) === Number(a.client_id))?.name || '';
+        const cb = clients.find(c => Number(c.id) === Number(b.client_id))?.name || '';
+        if (ca !== cb) return ca.localeCompare(cb);
+        return (a.process_name||'').localeCompare(b.process_name||'');
+      });
 
       document.getElementById('recipes-count').textContent = displayed.length;
 
       if (!displayed.length) {
-        list.innerHTML = '<div class="empty-state">📝 Nenhuma receita cadastrada. Clique em <strong>+ Nova Receita</strong> para começar.</div>';
+        const searchTerm2 = (document.getElementById('recipe-search')?.value || '').trim();
+        list.innerHTML = searchTerm2
+          ? `<div class="empty-state"><span class="empty-icon">🔍</span><strong>Nenhum resultado para "${searchTerm2}"</strong><p>Tente outro termo ou limpe a busca.</p></div>`
+          : `<div class="empty-state"><span class="empty-icon">🗂️</span><strong>Nenhuma receita cadastrada</strong><p>Crie a primeira receita para este filtro.</p><button class="btn-primary btn-sm" onclick="document.getElementById('btn-new-recipe').click()">+ Nova Receita</button></div>`;
         return;
       }
 
-      list.innerHTML = displayed.map(r => {
-        const c = clients.find(c => Number(c.id) === Number(r.client_id));
-        const m = machines.find(m => Number(m.id) === Number(r.machine_id));
-        const p = processes.find(p => Number(p.id) === Number(r.process_id));
+      // Agrupar por cliente → processo
+      const byClient = new Map();
+      for (const r of displayed) {
+        const cKey = String(r.client_id);
+        const pName = r.process_name || findRecipeProcess(processes, r)?.name || `proc_${r.process_id}`;
+        const pKey  = pName.toLowerCase().trim();
+        if (!byClient.has(cKey)) byClient.set(cKey, new Map());
+        if (!byClient.get(cKey).has(pKey)) byClient.get(cKey).set(pKey, { procName: pName, recs: [] });
+        byClient.get(cKey).get(pKey).recs.push(r);
+      }
+
+      const recipeCardHtml = r => {
+        const machIds  = parseMachineIds(r);
+        const machNamesC = machIds.map(mid => machines.find(m => Number(m.id) === mid)?.name || '?');
         const steps = (() => { try { return JSON.parse(r.steps||'[]'); } catch(e){ return []; } })();
-        const hasPending = allRecipes.some(p => p.status === 'pending' && (p.original_id === r.original_id || p.original_id === r.id));
+        const hasPending = allRecipes.some(x => x.status === 'pending' && (x.original_id === r.original_id || x.original_id === r.id));
         return `
-          <div class="list-item" style="flex-direction:column;gap:0.4rem;padding:0.85rem 1rem;margin-bottom:0.5rem">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
-              <div>
-                <span style="font-weight:700;font-size:0.95rem">${c?.name||'?'}</span>
-                <span style="color:var(--muted);font-size:0.82rem"> · ⚙️ ${m?.name||'?'}</span>
-                ${m?.capacity ? `<span style="color:var(--muted);font-size:0.78rem"> (${m.capacity} kg)</span>` : ''}
-                ${p ? `<span style="color:var(--muted);font-size:0.82rem"> · 🔄 ${p.name}</span>` : ''}
-              </div>
-              <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
-                ${hasPending ? '<span style="font-size:0.75rem;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:999px;font-weight:600">⏳ Edição pendente</span>' : ''}
-                <span style="font-size:0.75rem;color:var(--muted)">v${r.version} · ${fmtDate(r.date||r.created_at?.slice(0,10))}</span>
-                <button class="btn-secondary btn-sm" onclick="window._viewRecipe(${r.id})">👁️ Ver</button>
-                ${!hasPending ? `<button class="btn-edit" onclick="window._editRecipeOpen(${r.id})">✏️ Editar</button>` : ''}
-              </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:0.55rem 0.75rem;margin-bottom:0.4rem;background:#fff">
+            <div style="display:flex;flex-wrap:wrap;gap:0.25rem 0.3rem;align-items:center;margin-bottom:0.4rem">
+              ${machNamesC.map(n => `<span style="font-size:0.73rem;background:#f1f5f9;border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-weight:600;color:#334155">⚙️ ${n}</span>`).join('')}
+              ${hasPending ? '<span style="font-size:0.72rem;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:999px;font-weight:600;margin-left:auto">⏳ Pendente</span>' : ''}
+              <span style="font-size:0.7rem;color:var(--muted);margin-left:${hasPending?'0':'auto'}">v${r.version} · ${r.created_by||'—'}</span>
             </div>
-            <div style="font-size:0.8rem;color:var(--muted)">${steps.length} etapa(s) · por ${r.created_by||'—'}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:0.3rem 0.6rem">
-              ${steps.slice(0,4).map(s => `<span style="font-size:0.75rem;background:#f1f5f9;border-radius:6px;padding:2px 8px;border:1px solid var(--border)">${s.n}. ${s.operation||'—'}</span>`).join('')}
-              ${steps.length > 4 ? `<span style="font-size:0.75rem;color:var(--muted)">+${steps.length-4} mais</span>` : ''}
+            <div style="display:flex;flex-wrap:wrap;gap:0.2rem 0.4rem;margin-bottom:0.45rem">
+              ${steps.slice(0,5).map(s => `<span style="font-size:0.7rem;background:#f1f5f9;border-radius:5px;padding:1px 6px;border:1px solid var(--border);color:#374151"><strong>${s.n}.</strong> ${s.operation||'—'}</span>`).join('')}
+              ${steps.length > 5 ? `<span style="font-size:0.7rem;color:var(--muted)">+${steps.length-5} mais</span>` : ''}
+              ${!steps.length ? `<span style="font-size:0.7rem;color:var(--muted)">Sem etapas</span>` : ''}
+            </div>
+            <div style="display:flex;gap:0.3rem">
+              ${!hasPending ? `<button class="btn-edit btn-sm" onclick="window._editRecipeOpen(${r.id})" style="flex:2">✏️ Editar</button>` : ''}
+              <button class="btn-secondary btn-sm" onclick="window._viewRecipe(${r.id})" style="flex:1">👁️ Ver</button>
+              <button class="btn-secondary btn-sm" onclick="window._toggleRecipeMore(${r.id})" style="flex:0 0 2.2rem;padding:0 !important;font-size:1.15rem;font-weight:700;letter-spacing:1px" title="Mais opções">⋯</button>
+            </div>
+            <div class="recipe-more-panel" id="rmore-${r.id}">
+              ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteRecipe(${r.id}, ${r.original_id||r.id})" style="flex:0 0 auto">🗑️ Excluir</button>` : ''}
+            </div>
+          </div>`;
+      };
+
+      list.innerHTML = [...byClient.entries()].map(([cKey, procMap]) => {
+        const c = clients.find(c => String(c.id) === cKey);
+        const totalRecs = [...procMap.values()].reduce((s, v) => s + v.recs.length, 0);
+        const procsHtml = [...procMap.entries()].map(([pKey, {procName, recs}]) => {
+          const pBodyId = `pb-${cKey}-${pKey.replace(/\W/g,'_')}`;
+          return `
+            <div style="margin-bottom:0.4rem;border:1px solid #e2e8f0;border-radius:7px;overflow:hidden">
+              <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.65rem;cursor:pointer;background:#f8fafc;border-left:2px solid #93c5fd;user-select:none"
+                   onclick="(function(h){const b=document.getElementById('${pBodyId}');const open=b.style.display!=='none';b.style.display=open?'none':'block';h.querySelector('.parr').textContent=open?'▶':'▼';})(this)">
+                <span class="parr" style="font-size:0.6rem;color:#64748b;min-width:10px">▼</span>
+                <span style="font-size:0.82rem;font-weight:700;color:var(--text)">🔄 ${procName}</span>
+                <span style="font-size:0.7rem;background:#e2e8f0;border-radius:999px;padding:1px 7px;color:#64748b;font-weight:600;margin-left:auto">${recs.length} receita${recs.length>1?'s':''}</span>
+              </div>
+              <div id="${pBodyId}" style="padding:0.45rem 0.5rem;background:#fff">
+                ${recs.map(r => recipeCardHtml(r)).join('')}
+              </div>
+            </div>`;
+        }).join('');
+
+        const cBodyId = `cb-${cKey}`;
+        return `
+          <div style="border:1px solid #bfdbfe;border-radius:12px;margin-bottom:0.75rem;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+            <div style="background:#eff6ff;padding:0.55rem 0.9rem;display:flex;align-items:center;gap:0.6rem;cursor:pointer;user-select:none;border-bottom:1px solid #bfdbfe"
+                 onclick="(function(h){const b=document.getElementById('${cBodyId}');const open=b.style.display!=='none';b.style.display=open?'none':'block';h.querySelector('.carr').textContent=open?'▶':'▼';})(this)">
+              <span class="carr" style="font-size:0.65rem;color:#93c5fd;min-width:10px">▼</span>
+              <span style="font-size:0.95rem">👥</span>
+              <span style="font-weight:700;font-size:0.92rem;color:var(--primary-dark)">${c?.name||'?'}</span>
+              <span style="font-size:0.72rem;background:#dbeafe;color:var(--primary);padding:2px 9px;border-radius:999px;font-weight:600;margin-left:auto">${totalRecs} receita${totalRecs>1?'s':''}</span>
+            </div>
+            <div id="${cBodyId}" style="padding:0.6rem 0.75rem;background:#fff">
+              ${procsHtml}
             </div>
           </div>`;
       }).join('');
     }
 
     window._editRecipeOpen = (id) => _openRecipeForm(id);
+
+    window._toggleRecipeMore = function(id) {
+      const panel = document.getElementById('rmore-' + id);
+      if (!panel) return;
+      document.querySelectorAll('.recipe-more-panel.open').forEach(p => { if (p !== panel) p.classList.remove('open'); });
+      panel.classList.toggle('open');
+    };
+
+    window._deleteRecipe = async function(id, originalId) {
+      const allPrev = await dbGetAll_raw('recipes');
+      const recPrev = allPrev.find(r => r.id === Number(id));
+      const [allClPrev, allMcPrev, allPrPrev] = await Promise.all([dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes')]);
+      const cPrev = allClPrev.find(c => Number(c.id) === Number(recPrev?.client_id));
+      const machIdsPrev = recPrev ? parseMachineIds(recPrev) : [];
+      const machNamesPrev = machIdsPrev.map(mid => allMcPrev.find(m => Number(m.id) === mid)?.name).filter(Boolean).join(', ');
+      const pPrev = recPrev ? findRecipeProcess(allPrPrev, recPrev) : null;
+      const nameHint = [cPrev?.name, machNamesPrev, pPrev?.name || recPrev?.process_name].filter(Boolean).join(' › ');
+      const confirmMsg = nameHint
+        ? `Excluir receita\n"${nameHint}"?\n\nTodas as versões (ativas, arquivadas, pendentes) serão removidas.`
+        : 'Excluir esta receita e todas as suas versões?';
+      if (!await confirmAction(confirmMsg, '🗑️ Excluir', true)) return;
+      const all = await dbGetAll_raw('recipes');
+      const nId = Number(id), nOrigId = Number(originalId);
+      const toDelete = all.filter(r => Number(r.id) === nId || Number(r.original_id) === nOrigId || Number(r.id) === nOrigId);
+      if (!toDelete.length) { toast('⚠️ Receita não encontrada', 'warning'); return; }
+      let gasErr = 0;
+      for (const r of toDelete) {
+        await dbDelete('recipes', r.id);
+        const ok = await deleteSheetDB(SHEETS.RECIPES, r.id);
+        if (!ok) gasErr++;
+      }
+      if (gasErr > 0 && navigator.onLine) {
+        toast('⚠️ Removido localmente, mas o servidor não confirmou. Clique Atualizar pode reaparecer.', 'warning', 7000);
+      } else {
+        toast('Receita excluída!', 'success');
+      }
+      await renderRecipesList();
+      await updateRecipeBadge();
+    };
+
+    // Listeners do modal de replicação
+    document.getElementById('modal-recipe-replicate-close')?.addEventListener('click', () => document.getElementById('modal-recipe-replicate').classList.add('hidden'));
+    document.getElementById('modal-recipe-replicate-cancel')?.addEventListener('click', () => document.getElementById('modal-recipe-replicate').classList.add('hidden'));
+
+    let _replicateSourceId = null;
+    window._replicateRecipe = async function(recipeId) {
+      _replicateSourceId = recipeId;
+      const allRecipes = await dbGetAll_raw('recipes');
+      const source = allRecipes.find(r => r.id === recipeId);
+      if (!source) return;
+
+      const machines  = await dbGetAll_raw('machines');
+      const processes = await dbGetAll_raw('processes');
+
+      // Combinações máquina+processo do mesmo cliente
+      const clientMachines = machines.filter(m => Number(m.client_id) === Number(source.client_id));
+      const sourceMachIds = new Set(parseMachineIds(source).map(Number));
+      const targets = [];
+      for (const m of clientMachines) {
+        // Pular máquinas que já fazem parte da receita de origem
+        if (sourceMachIds.has(Number(m.id))) continue;
+        const machProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
+        for (const p of machProcs) {
+          // Verificar se já existe receita ativa cobrindo esta máquina com este processo
+          const hasActive = allRecipes.some(r =>
+            r.status === 'active' &&
+            parseMachineIds(r).includes(Number(m.id)) &&
+            (r.process_name || '').toLowerCase() === (p.name || '').toLowerCase()
+          );
+          targets.push({ machineId: m.id, machineName: m.name, processId: p.id, processName: p.name, hasActive });
+        }
+      }
+
+      // Agrupar targets por máquina
+      const byMachine = {};
+      for (const t of targets) {
+        if (!byMachine[t.machineId]) byMachine[t.machineId] = { name: t.machineName, procs: [] };
+        byMachine[t.machineId].procs.push(t);
+      }
+
+      // Máquina de origem (para identificar)
+      const srcMachine = machines.find(m => Number(m.id) === Number(source.machine_id));
+      const srcProcess = processes.find(p => Number(p.id) === Number(source.process_id));
+
+      const targetsEl = document.getElementById('replicate-targets');
+      if (!Object.keys(byMachine).length) {
+        targetsEl.innerHTML = '<div class="empty-state">Nenhuma outra combinação disponível para este cliente.</div>';
+      } else {
+        targetsEl.innerHTML = Object.entries(byMachine).map(([mId, mg]) => {
+          const available = mg.procs.filter(t => !t.hasActive);
+          const taken     = mg.procs.filter(t => t.hasActive);
+          return `
+          <div style="margin-bottom:0.75rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            <div style="background:#f8fafc;padding:0.5rem 0.75rem;font-weight:600;font-size:0.88rem;border-bottom:1px solid var(--border)">
+              ⚙️ ${mg.name}
+            </div>
+            <div style="padding:0.4rem 0.5rem">
+              ${available.map(t => `
+                <label style="display:flex;align-items:center;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:7px;cursor:pointer;hover:background:#f0f9ff">
+                  <input type="checkbox" class="replicate-target-chk" data-machine="${t.machineId}" data-process="${t.processId}" style="width:16px;height:16px;flex-shrink:0;accent-color:#2563eb"/>
+                  <span style="font-size:0.85rem">🔄 ${t.processName}</span>
+                </label>`).join('')}
+              ${taken.map(t => `
+                <div style="display:flex;align-items:center;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:7px;opacity:0.5">
+                  <span style="width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.75rem">✅</span>
+                  <span style="font-size:0.85rem">🔄 ${t.processName}</span>
+                  <span style="font-size:0.72rem;color:#15803d;background:#dcfce7;padding:1px 6px;border-radius:999px;margin-left:auto">já tem receita</span>
+                </div>`).join('')}
+              ${!available.length && !taken.length ? '<div style="font-size:0.82rem;color:var(--muted);padding:0.4rem 0.5rem">Nenhum processo cadastrado</div>' : ''}
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // Mostrar receita de origem
+      document.getElementById('replicate-source-info').innerHTML =
+        `Receita de <strong>${srcMachine?.name||'?'}</strong>${srcProcess ? ` · 🔄 <strong>${srcProcess.name}</strong>` : ''} — as etapas serão copiadas para os processos selecionados.`;
+
+      document.getElementById('modal-recipe-replicate').classList.remove('hidden');
+    };
+
+    document.getElementById('btn-confirm-replicate')?.addEventListener('click', async () => {
+      const checked = [...document.querySelectorAll('.replicate-target-chk:checked')];
+      if (!checked.length) return toast('Selecione ao menos uma combinação', 'warning');
+
+      const allRecipes = await dbGetAll_raw('recipes');
+      const source = allRecipes.find(r => r.id === _replicateSourceId);
+      if (!source) return;
+
+      const submitBtn = document.getElementById('btn-confirm-replicate');
+      setSaving(true, submitBtn, 'Replicando...');
+      try {
+        const isAdmin = currentUser?.role === 'admin';
+        const now = new Date().toISOString();
+        let count = 0;
+        const allProcsForRep = await dbGetAll_raw('processes');
+        for (const chk of checked) {
+          const machineId = Number(chk.dataset.machine);
+          const processId = Number(chk.dataset.process);
+          const tgtProc = allProcsForRep.find(p => Number(p.id) === processId);
+          const copy = {
+            client_id:    source.client_id,
+            machine_id:   machineId,
+            machine_ids:  JSON.stringify([machineId]),
+            process_id:   processId,
+            process_name: tgtProc?.name || '',
+            steps:       source.steps,
+            status:      isAdmin ? 'active' : 'pending',
+            version:     1,
+            created_by:  currentUser?.name || currentUser?.username || '',
+            created_at:  now,
+            date:        now.slice(0, 10),
+            edit_notes:  `Replicada da receita #${source.id}`,
+          };
+          const id = await dbAdd('recipes', copy);
+          copy.id = id;
+          copy.original_id = id;
+          await dbPut('recipes', copy);
+          await postToSheetDB(SHEETS.RECIPES, copy);
+          count++;
+        }
+        toast(`✅ ${count} receita${count > 1 ? 's replicadas' : ' replicada'}!`, 'success');
+        document.getElementById('modal-recipe-replicate').classList.add('hidden');
+        await renderRecipesList();
+        await updateRecipeBadge();
+      } catch(err) {
+        toast('Erro ao replicar: ' + err.message, 'error');
+      } finally {
+        setSaving(false, submitBtn);
+      }
+    });
 
     window._viewRecipe = async function(recipeId) {
       const allRecipes = await dbGetAll_raw('recipes');
@@ -3087,21 +3617,36 @@ ${printScript}
       const machines  = await dbGetAll_raw('machines');
       const processes = await dbGetAll_raw('processes');
       const c = clients.find(c => Number(c.id) === Number(recipe.client_id));
-      const m = machines.find(m => Number(m.id) === Number(recipe.machine_id));
-      const p = processes.find(p => Number(p.id) === Number(recipe.process_id));
+      const machIds = parseMachineIds(recipe);
+      const recMachines = machIds.map(mid => machines.find(m => Number(m.id) === mid)).filter(Boolean);
+      const p = findRecipeProcess(processes, recipe);
+      const procName = p?.name || recipe.process_name || null;
       const steps = (() => { try { return JSON.parse(recipe.steps||'[]'); } catch(e){ return []; } })();
 
       const statusLabel = { active:'✅ Ativa', pending:'⏳ Pendente', archived:'📦 Arquivada', rejected:'❌ Recusada' }[recipe.status] || recipe.status;
-      const stepsHtml = steps.map(s => `
-        <tr>
-          <td style="text-align:center">${s.n}</td>
-          <td>${s.operation||'—'}</td>
-          <td>${s.time ? s.time+' min' : '—'}</td>
-          <td>${s.temp||'—'}</td>
-          <td>${s.level||'—'}</td>
-          <td>${Array.isArray(s.products)?s.products.join(', '):(s.products||'—')}</td>
-          <td>${s.dosage||'—'}</td>
-        </tr>`).join('');
+      const stepsHtml = steps.length ? steps.map(s => {
+        const prods = Array.isArray(s.products) ? s.products.filter(p => p && (typeof p==='string' ? p : p?.name)) : [];
+        const prodsHtml = prods.length
+          ? prods.map(p => {
+              const name = typeof p==='string' ? p : (p?.name||'—');
+              const dose = typeof p==='string' ? '—' : (p?.dosage||'—');
+              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;padding:3px 0;border-top:1px solid #e2e8f0;font-size:0.8rem"><span>${name}</span><span style="color:var(--muted);white-space:nowrap">${dose}</span></div>`;
+            }).join('')
+          : '';
+        const chips = [
+          s.time  ? `<span style="background:#dbeafe;color:#1d4ed8;border-radius:5px;padding:2px 8px;font-size:0.75rem;font-weight:600">⏱ ${s.time} min</span>` : '',
+          s.temp  ? `<span style="background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 8px;font-size:0.75rem;font-weight:600">🌡 ${s.temp}°C</span>` : '',
+          s.level ? `<span style="background:#dcfce7;color:#15803d;border-radius:5px;padding:2px 8px;font-size:0.75rem;font-weight:600">💧 ${s.level}</span>` : '',
+        ].filter(Boolean).join('');
+        return `<div style="border-left:3px solid var(--primary);background:#f8fafc;border-radius:0 8px 8px 0;padding:0.6rem 0.75rem;margin-bottom:0.5rem">
+          <div style="display:flex;align-items:center;gap:0.5rem${(chips||prodsHtml)?';margin-bottom:0.4rem':''}">
+            <span style="background:var(--primary);color:#fff;border-radius:50%;width:22px;height:22px;min-width:22px;display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:800">${s.n}</span>
+            <span style="font-weight:700;font-size:0.9rem;color:var(--text)">${s.operation||'—'}</span>
+          </div>
+          ${chips?`<div style="display:flex;flex-wrap:wrap;gap:0.3rem${prodsHtml?';margin-bottom:0.4rem':''}">${chips}</div>`:''}
+          ${prodsHtml?`<div>${prodsHtml}</div>`:''}
+        </div>`;
+      }).join('') : `<p style="color:var(--muted);font-size:0.88rem;padding:0.5rem 0">Sem etapas cadastradas.</p>`;
 
       // Versões arquivadas
       const archived = allRecipes.filter(r => (r.original_id === recipe.original_id || r.original_id === recipe.id) && r.status === 'archived')
@@ -3122,27 +3667,24 @@ ${printScript}
             <button class="btn-primary btn-sm" style="background:#16a34a" onclick="window._viewRecipe(${activeVersion.id})">Ver v${activeVersion.version} atual</button>
            </div>` : '';
 
-      document.getElementById('modal-recipe-view-title').textContent = `📝 Receita — ${c?.name||'?'} / ${m?.name||'?'}${p ? ' / '+p.name : ''}`;
+      document.getElementById('modal-recipe-view-title').textContent = `📝 ${c?.name||'?'}`;
       document.getElementById('modal-recipe-view-body').innerHTML = `
-        <div style="display:flex;flex-wrap:wrap;gap:0.75rem 1.5rem;margin-bottom:0.75rem;font-size:0.88rem">
-          <span>👥 <strong>${c?.name||'?'}</strong></span>
-          <span>⚙️ <strong>${m?.name||'?'}</strong>${m?.capacity?' ('+m.capacity+' kg)':''}</span>
-          ${p ? `<span>🔄 <strong>${p.name}</strong></span>` : ''}
-          <span>📅 <strong>${fmtDate(recipe.date||recipe.created_at?.slice(0,10))}</strong></span>
-          <span>Versão: <strong>v${recipe.version}</strong></span>
-          <span>Status: <strong>${statusLabel}</strong></span>
-          <span>Por: <strong>${recipe.created_by||'—'}</strong></span>
-          ${recipe.edit_notes?`<span style="color:#b45309">📝 ${recipe.edit_notes}</span>`:''}
-          ${recipe.rejection_notes?`<span style="color:#dc2626">❌ Motivo recusa: ${recipe.rejection_notes}</span>`:''}
+        <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.75rem 1rem;margin-bottom:0.85rem">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.3rem 0.5rem;margin-bottom:0.35rem">
+            ${recMachines.map(m => `<span style="font-size:0.85rem;font-weight:700;color:var(--text)">⚙️ ${m.name}${m.capacity?' ('+m.capacity+' kg)':''}</span>`).join('<span style="color:var(--muted)">·</span>')}
+            ${procName?`<span style="background:#dbeafe;color:var(--primary-dark);padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:700">🔄 ${procName}</span>`:''}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:0.25rem 0.75rem;font-size:0.78rem;color:var(--muted)">
+            <span>📅 ${fmtDate(recipe.date||recipe.created_at?.slice(0,10))}</span>
+            <span>Versão <strong style="color:var(--text)">v${recipe.version}</strong></span>
+            <span>${statusLabel}</span>
+            <span>Por <strong style="color:var(--text)">${recipe.created_by||'—'}</strong></span>
+          </div>
+          ${recipe.edit_notes?`<p style="margin-top:0.4rem;font-size:0.78rem;color:#b45309">📝 ${recipe.edit_notes}</p>`:''}
+          ${recipe.rejection_notes?`<p style="margin-top:0.4rem;font-size:0.78rem;color:#dc2626">❌ Motivo: ${recipe.rejection_notes}</p>`:''}
         </div>
-        <div style="overflow-x:auto">
-          <table class="proc-table" style="min-width:600px;width:100%">
-            <thead><tr>
-              <th>N.</th><th>Operação</th><th>Tempo</th><th>Temp °C</th><th>Nível</th><th>Produto(s)</th><th>Dosagem</th>
-            </tr></thead>
-            <tbody>${stepsHtml}</tbody>
-          </table>
-        </div>
+        <div style="font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.45rem">Etapas (${steps.length})</div>
+        ${stepsHtml}
         ${activeVersionHtml}
         ${archivedHtml}`;
 
@@ -3185,48 +3727,66 @@ ${printScript}
       const machines  = await dbGetAll_raw('machines');
       const processes = await dbGetAll_raw('processes');
       const c = clients.find(c => Number(c.id) === Number(recipe.client_id));
-      const m = machines.find(m => Number(m.id) === Number(recipe.machine_id));
-      const p = processes.find(p => Number(p.id) === Number(recipe.process_id));
+      const machIds = parseMachineIds(recipe);
+      const recMachinesPdf = machIds.map(mid => machines.find(m => Number(m.id) === mid)).filter(Boolean);
+      const machinesStr = recMachinesPdf.map(m => `${m.name}${m.capacity?' ('+m.capacity+' kg)':''}`).join(', ') || '—';
+      const p = findRecipeProcess(processes, recipe);
+      const procName = p?.name || recipe.process_name || null;
       const steps = (() => { try { return JSON.parse(recipe.steps||'[]'); } catch(e){ return []; } })();
       const dateStr = fmtDate(recipe.date || recipe.created_at?.slice(0,10));
-      const stepsRows = steps.map(s => `
+      const stepsRows = steps.map(s => {
+        const prods = Array.isArray(s.products) ? s.products.filter(p => typeof p==='string' ? p : p?.name) : [];
+        const prodNames = prods.map(p => typeof p==='string' ? p : p.name).join('<br>') || '—';
+        const dosages   = prods.map(p => typeof p==='string' ? '—' : (p.dosage || '—')).join('<br>') || '—';
+        return `
         <tr>
           <td style="text-align:center;font-weight:700;background:#f1f5f9">${s.n}</td>
           <td>${s.operation||'—'}</td>
           <td style="text-align:center">${s.time ? s.time+' min' : '—'}</td>
           <td style="text-align:center">${s.temp||'—'}</td>
           <td style="text-align:center">${s.level||'—'}</td>
-          <td>${Array.isArray(s.products) ? s.products.join('<br>') : (s.products||'—')}</td>
-          <td>${s.dosage||'—'}</td>
-        </tr>`).join('');
+          <td>${prodNames}</td>
+          <td style="text-align:center">${dosages}</td>
+        </tr>`;
+      }).join('');
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>Receita — ${c?.name||'?'}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
-.hdr{background:#1e3a8a;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0}
+.hdr{background:#1d4ed8;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0}
 .hdr h1{font-size:1.1rem;margin-bottom:2px}
 .hdr p{font-size:0.75rem;color:#93c5fd;margin:0}
 .info-block{background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:14px 18px 16px;margin-bottom:16px}
 .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;margin-top:10px}
 .info-item label{font-size:0.68rem;color:#64748b;font-weight:700;text-transform:uppercase;display:block;margin-bottom:1px}
 .info-item span{font-size:0.9rem;font-weight:600}
-h2{font-size:0.88rem;font-weight:700;color:#1e3a8a;margin-bottom:8px;border-bottom:2px solid #dbeafe;padding-bottom:4px}
+h2{font-size:0.88rem;font-weight:700;color:#1d4ed8;margin-bottom:8px;border-bottom:2px solid #dbeafe;padding-bottom:4px}
 table{width:100%;border-collapse:collapse}
-thead th{background:#1e3a8a;color:#fff;padding:7px 9px;text-align:left;font-size:0.75rem}
+thead th{background:#1d4ed8;color:#fff;padding:7px 9px;text-align:left;font-size:0.75rem}
 tbody tr:nth-child(even){background:#f8fafc}
 tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical-align:top}
 .footer{margin-top:20px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
-.tip{background:#fff3cd;border:1px solid #ffc107;padding:7px 14px;border-radius:6px;margin-bottom:14px;font-size:12px}
-@media print{.tip{display:none}body{padding:10px}}
+@media screen{
+  .action-bar{position:sticky;top:0;z-index:999;background:#1d4ed8;padding:6px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+  .btn-close-rcp{background:#fff;color:#1d4ed8}
+  .btn-print-rcp{background:#4caf50;color:#fff}
+  .action-bar-label{color:#bfdbfe;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+@media print{.action-bar{display:none}body{padding:10px}}
 </style></head><body>
-<div class="tip">🖨️ <strong>Imprimir → Salvar como PDF</strong>. No celular: <strong>Compartilhar → Imprimir</strong>.</div>
+<div class="action-bar">
+  <button class="btn-close-rcp" onclick="window.close()">✕ Fechar</button>
+  <button class="btn-print-rcp" onclick="window.print()">🖨️ Salvar PDF</button>
+  <span class="action-bar-label">${c?.name||'?'} · ${machinesStr}${procName ? ' · '+procName : ''}</span>
+</div>
 <div class="hdr"><h1>📝 Receita de Lavagem</h1><p>Hygicare Lavanderia</p></div>
 <div class="info-block">
   <div class="info-grid">
-    <div class="info-item"><label>Cliente</label><span>${c?.name||'?'}</span></div>
-    <div class="info-item"><label>Máquina</label><span>${m?.name||'?'}${m?.capacity?' ('+m.capacity+' kg)':''}</span></div>
-    <div class="info-item"><label>Processo</label><span>${p?.name||'?'}</span></div>
+    <div class="info-item"><label>Cliente</label><span>${c?.name||'—'}</span></div>
+    <div class="info-item" style="grid-column:span 2"><label>Máquinas</label><span>${machinesStr}</span></div>
+    <div class="info-item"><label>Processo</label><span>${procName||'—'}</span></div>
     <div class="info-item"><label>Data</label><span>${dateStr}</span></div>
     <div class="info-item"><label>Versão</label><span>v${recipe.version}</span></div>
     <div class="info-item"><label>Criado por</label><span>${recipe.created_by||'—'}</span></div>
@@ -3294,6 +3854,15 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
     });
     document.getElementById('recipe-filter-machine')?.addEventListener('change', async () => await renderRecipesList());
 
+    // Chips de status das receitas
+    document.getElementById('recipes-status-filters')?.addEventListener('click', async e => {
+      const btn = e.target.closest('.qf-btn');
+      if (!btn) return;
+      document.querySelectorAll('#recipes-status-filters .qf-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      await renderRecipesList();
+    });
+
     // Produtos de receita
     document.getElementById('btn-recipe-products')?.addEventListener('click', async () => {
       await _renderRecipeProductsList();
@@ -3355,13 +3924,20 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         clients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(c => sel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
         if (cur) sel.value = cur;
       }
+      // Conectar campo de busca (idempotente)
+      const searchInput = document.getElementById('recipe-search');
+      if (searchInput && !searchInput.dataset.bound) {
+        searchInput.dataset.bound = '1';
+        let debounce;
+        searchInput.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => renderRecipesList(), 200); });
+      }
       await renderRecipesList();
       await updateRecipeBadge();
     }
 
     async function updateRecipeBadge() {
       const count = (await dbGetAll_raw('recipes')).filter(r => r.status === 'pending').length;
-      ['recipe-pending-badge', 'drawer-recipe-badge'].forEach(id => {
+      ['recipe-pending-badge', 'drawer-recipe-badge', 'bnav-recipe-badge'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.textContent = count;
@@ -3852,6 +4428,22 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
     await renderRecordsList();
     await updateRecipeBadge();
 
+    // Reparar process_name em receitas existentes sem precisar clicar Atualizar
+    (async () => {
+      try {
+        const recs = await dbGetAll_raw('recipes');
+        const procs = await dbGetAll_raw('processes');
+        let repaired = 0;
+        for (const r of recs) {
+          if (!r.process_name) {
+            const p = findRecipeProcess(procs, r);
+            if (p?.name) { await dbPut('recipes', { ...r, process_name: p.name }); repaired++; }
+          }
+        }
+        if (repaired > 0) { await renderRecipesList(); await updateRecipeBadge(); }
+      } catch(e) { /* silencioso */ }
+    })();
+
     // Botões de ação rápida na tela Home
     document.querySelectorAll('.home-action-btn[data-nav-to]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -4212,6 +4804,9 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
 
       // Gráfico de Vazão
       await renderVazaoChart();
+
+      // Histórico de Leituras
+      await renderVazaoHistory();
     }
 
     // Preset buttons — aplicam o período e re-renderizam
@@ -4484,7 +5079,11 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
 
     window._deleteRecord = async function(safeKey) {
       if (currentUser?.role !== 'admin') return toast('Apenas administradores podem excluir registros', 'warning');
-      if (!confirm('Excluir este grupo de registros? Esta ação não pode ser desfeita.')) return;
+      const gPreview = _recordGroups?.[safeKey];
+      const confirmMsg = gPreview
+        ? `Excluir registros de\n"${gPreview.clientName}" — ${gPreview.period}?\n\nEsta ação não pode ser desfeita.`
+        : 'Excluir este grupo de registros? Esta ação não pode ser desfeita.';
+      if (!await confirmAction(confirmMsg, '🗑️ Excluir', true)) return;
       const g = _recordGroups?.[safeKey];
       if (!g) return;
       const all = await dbGetAll_raw('records');

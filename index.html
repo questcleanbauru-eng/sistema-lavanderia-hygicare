@@ -157,7 +157,14 @@
         <div class="header-top">
           <div class="header-brand">
             <span class="brand-icon">🧺</span>
-            <div><h1>Hygicare Lavanderia</h1><small id="header-subtitle">Sistema de Gestao</small></div>
+            <div>
+              <h1>Hygicare Lavanderia</h1>
+              <small id="header-subtitle">Sistema de Gestao</small>
+              <div class="header-sync" id="header-sync-status">
+                <span class="sync-dot" id="sync-dot"></span>
+                <span id="sync-label">verificando...</span>
+              </div>
+            </div>
           </div>
           <div class="header-actions">
             <div class="api-badge" id="api-badge">✅ API: <span id="api-count">0</span></div>
@@ -167,7 +174,7 @@
                 <button id="btn-refresh-arrow" class="hdr-btn hdr-btn-green refresh-arrow" title="Escolher aba">▾</button>
                 <div id="refresh-dropdown" class="refresh-dropdown hidden">
                   <div class="refresh-dropdown-title">Atualizar apenas:</div>
-                  <button class="refresh-opt" data-sheet="all">🔄 Tudo (7 abas)</button>
+                  <button class="refresh-opt" data-sheet="all">🔄 Tudo (9 abas)</button>
                   <button class="refresh-opt" data-sheet="clients">👥 Clientes</button>
                   <button class="refresh-opt" data-sheet="machines">⚙️ Maquinas</button>
                   <button class="refresh-opt" data-sheet="processes">📋 Processos</button>
@@ -175,6 +182,8 @@
                   <button class="refresh-opt" data-sheet="users">👤 Usuarios</button>
                   <button class="refresh-opt" data-sheet="vazoes">💧 Vazões</button>
                   <button class="refresh-opt" data-sheet="vazao_records">📊 Leituras Vazão</button>
+                  <button class="refresh-opt" data-sheet="recipes">📄 Receitas</button>
+                  <button class="refresh-opt" data-sheet="recipe_products">🧴 Produtos Receita</button>
                 </div>
               </div>
             </div>
@@ -229,20 +238,20 @@
 
           <!-- Ações rápidas -->
           <div class="home-actions">
-            <button class="home-action-btn" data-nav-to="screen-form">
-              <span style="font-size:1.6rem;line-height:1">📝</span>
+            <button class="home-action-btn home-action-primary" data-nav-to="screen-form">
+              <span style="font-size:1.7rem;line-height:1">➕</span>
               <span>Registrar</span>
             </button>
-            <button class="home-action-btn" data-nav-to="screen-vazao">
-              <span style="font-size:1.6rem;line-height:1">💧</span>
-              <span>Vazão</span>
+            <button class="home-action-btn home-action-recipe" data-nav-to="screen-recipes">
+              <span style="font-size:1.7rem;line-height:1">🗂️</span>
+              <span>Receitas</span>
             </button>
-            <button class="home-action-btn" data-nav-to="screen-reports">
-              <span style="font-size:1.6rem;line-height:1">📄</span>
+            <button class="home-action-btn home-action-report" data-nav-to="screen-reports">
+              <span style="font-size:1.7rem;line-height:1">📄</span>
               <span>Relatórios</span>
             </button>
-            <button class="home-action-btn" data-nav-to="screen-charts">
-              <span style="font-size:1.6rem;line-height:1">📊</span>
+            <button class="home-action-btn home-action-chart" data-nav-to="screen-charts">
+              <span style="font-size:1.7rem;line-height:1">📊</span>
               <span>Gráficos</span>
             </button>
           </div>
@@ -303,10 +312,12 @@
             <div class="form-panel-hdr"><h3 id="form-machine-title">Nova Maquina</h3><button class="btn-close" id="btn-close-machine">X</button></div>
             <form id="form-machine">
               <input type="hidden" id="edit-machine-id" />
-              <div class="form-row">
+              <div class="form-row" style="grid-template-columns:1fr;margin-bottom:0.75rem">
                 <div class="form-field"><label>Cliente *</label><select id="machine-client-select" required><option value="">-- Selecione --</option></select></div>
-                <div class="form-field"><label>Nome da Maquina *</label><input name="name" placeholder="Ex: Lavadora Industrial 1" required /></div>
-                <div class="form-field"><label>Capacidade (kg) *</label><input name="capacity" placeholder="Ex: 50" type="number" step="0.01" required /></div>
+              </div>
+              <div id="machine-rows"></div>
+              <div id="machine-add-row-wrap" style="margin-bottom:0.75rem">
+                <button type="button" id="btn-add-machine-row" class="btn-secondary btn-sm">+ Adicionar Máquina</button>
               </div>
               <div class="form-footer">
                 <button type="button" class="btn-secondary btn-cancel-machine">Cancelar</button>
@@ -329,10 +340,12 @@
             <div class="form-panel-hdr"><h3 id="form-process-title">Novo Processo</h3><button class="btn-close" id="btn-close-process">X</button></div>
             <form id="form-process">
               <input type="hidden" id="edit-process-id" />
-              <div class="form-row">
-                <div class="form-field"><label>Maquina *</label><select id="process-machine-select" required><option value="">-- Selecione --</option></select></div>
-                <div class="form-field"><label>Nome do Processo *</label><input name="name" placeholder="Ex: Lavagem Pesada" required /></div>
-                <div class="form-field"><label>Capacidade especifica (kg)</label><input name="capacity" placeholder="Deixe vazio = usa da maquina" type="number" step="0.01" /></div>
+              <div class="form-row" style="grid-template-columns:1fr;margin-bottom:0.75rem">
+                <div class="form-field"><label>Máquina *</label><select id="process-machine-select" required><option value="">-- Selecione --</option></select></div>
+              </div>
+              <div id="process-rows"></div>
+              <div id="process-add-row-wrap" style="margin-bottom:0.75rem">
+                <button type="button" id="btn-add-process-row" class="btn-secondary btn-sm">+ Adicionar Processo</button>
               </div>
               <div class="form-footer">
                 <button type="button" class="btn-secondary btn-cancel-process">Cancelar</button>
@@ -352,6 +365,9 @@
             <p class="prod-card-title">Novo Registro</p>
             <div class="form-row" style="grid-template-columns:1fr">
               <div class="form-field"><label>Cliente *</label><select id="prod-client-select"><option value="">-- Selecione um cliente --</option></select></div>
+            </div>
+            <div id="last-report-info" style="display:none;margin:-0.25rem 0 0.75rem;padding:0.45rem 0.75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:0.82rem;color:#0369a1">
+              📋 Último relatório: <strong id="last-report-dates"></strong>
             </div>
             <div class="form-row form-row-2col">
               <div class="form-field"><label>📅 Data Início</label><input type="date" id="prod-date-start" /></div>
@@ -518,8 +534,8 @@
             <h3 style="margin:0 0 1rem;font-size:1.05rem;color:#1e40af">ℹ️ Sistema</h3>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
               <div style="background:#f8fafc;border-radius:8px;padding:14px">
-                <div style="font-size:0.75rem;color:#64748b">Cache SW</div>
-                <div style="font-weight:600;color:#1e293b">v51</div>
+                <div style="font-size:0.75rem;color:#64748b">Versão do Cache</div>
+                <div style="font-weight:700;color:var(--primary);font-size:1rem" id="admin-sw-version">verificando...</div>
               </div>
               <div style="background:#f8fafc;border-radius:8px;padding:14px">
                 <div style="font-size:0.75rem;color:#64748b">Apps Script (ID)</div>
@@ -644,14 +660,25 @@
             </div>
           </div>
 
+          <!-- Filtros rápidos de status -->
+          <div id="recipes-status-filters" class="quick-filters" style="margin-bottom:0.75rem">
+            <button class="qf-btn active" data-rs="all">Todas</button>
+            <button class="qf-btn" data-rs="active">Ativas</button>
+            <button class="qf-btn" data-rs="pending">Pendentes</button>
+            <button class="qf-btn" data-rs="archived">Arquivadas</button>
+          </div>
+
           <!-- Filtros -->
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
-            <select id="recipe-filter-client" class="filter-select" style="min-width:180px">
+          <div class="filter-row">
+            <select id="recipe-filter-client" class="filter-select">
               <option value="">👥 Todos os clientes</option>
             </select>
-            <select id="recipe-filter-machine" class="filter-select" style="min-width:180px">
+            <select id="recipe-filter-machine" class="filter-select">
               <option value="">⚙️ Todas as máquinas</option>
             </select>
+          </div>
+          <div style="margin-bottom:0.75rem;position:relative">
+            <input type="search" id="recipe-search" placeholder="🔍 Buscar por cliente, máquina ou processo..." style="width:100%;padding:0.65rem 1rem 0.65rem 0.9rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;font-family:inherit;color:var(--text);background:#fff;outline:none" />
           </div>
 
           <!-- Lista de receitas -->
@@ -669,14 +696,14 @@
             <span>🔍</span>
             <input type="text" id="search-records" placeholder="Buscar por cliente, maquina ou processo..." />
           </div>
-          <div id="records-quick-filters" class="quick-filters">
-            <button class="qf-btn active" data-qf="all">Todos</button>
-            <button class="qf-btn" data-qf="week">Esta semana</button>
-            <button class="qf-btn" data-qf="month">Este mês</button>
-            <button class="qf-btn" data-qf="lastmonth">Mês passado</button>
-          </div>
-          <div style="margin-bottom:0.65rem">
-            <select id="filter-seller-records" class="form-input" style="font-size:0.85rem;padding:0.4rem 0.6rem;width:100%;max-width:280px">
+          <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
+            <div id="records-quick-filters" class="quick-filters" style="margin-bottom:0;flex-wrap:wrap">
+              <button class="qf-btn active" data-qf="all">Todos</button>
+              <button class="qf-btn" data-qf="week">Esta semana</button>
+              <button class="qf-btn" data-qf="month">Este mês</button>
+              <button class="qf-btn" data-qf="lastmonth">Mês passado</button>
+            </div>
+            <select id="filter-seller-records" class="form-input" style="font-size:0.85rem;padding:0.35rem 0.6rem;height:36px;min-width:170px;max-width:220px">
               <option value="">👤 Todos os vendedores</option>
             </select>
           </div>
@@ -688,6 +715,10 @@
           <div id="records-list"></div>
         </section>
       </main>
+
+      <!-- FAB — Registrar -->
+      <button class="fab-btn" id="fab-btn" title="Novo Registro">➕</button>
+
       <footer><small>Hygicare Lavanderia — Offline-first PWA · Google Apps Script</small></footer>
 
       <!-- ===== BOTTOM NAV (mobile only) ===== -->
@@ -696,9 +727,9 @@
           <span class="bnav-icon">📋</span>
           <span class="bnav-label">Relatórios</span>
         </button>
-        <button class="bnav-btn" data-target="screen-vazao">
-          <span class="bnav-icon">💧</span>
-          <span class="bnav-label">Vazão</span>
+        <button class="bnav-btn" data-target="screen-recipes">
+          <span class="bnav-icon">📝</span>
+          <span class="bnav-label">Receitas<span id="bnav-recipe-badge" class="nav-badge hidden">0</span></span>
         </button>
         <button class="bnav-btn bnav-fab" data-target="screen-form">
           <span class="bnav-icon">➕</span>
@@ -757,7 +788,7 @@
         <div style="border-top:1px solid #e2e8f0;margin-bottom:1rem"></div>
 
         <!-- Botão Imprimir -->
-        <button id="share-btn-print" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:0.9rem 1rem;background:#1e3a8a;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:1rem;font-weight:700;letter-spacing:0.3px;min-height:52px">
+        <button id="share-btn-print" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:0.9rem 1rem;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:1rem;font-weight:700;min-height:52px">
           <span style="font-size:1.3rem">🖨️</span> Imprimir / Salvar PDF
         </button>
         <p style="font-size:0.78rem;color:#64748b;text-align:center;margin-top:6px">No diálogo de impressão, escolha <strong>Salvar como PDF</strong></p>
@@ -774,16 +805,10 @@
           <button class="btn-close" id="modal-recipe-close">✕</button>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem;margin-bottom:0.75rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.6rem 0.75rem;margin-bottom:0.75rem">
           <div class="form-field">
             <label>👥 Cliente *</label>
             <select id="recipe-client" class="form-input" required>
-              <option value="">-- Selecione --</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label>⚙️ Máquina *</label>
-            <select id="recipe-machine" class="form-input" required>
               <option value="">-- Selecione --</option>
             </select>
           </div>
@@ -794,13 +819,16 @@
             </select>
           </div>
           <div class="form-field">
-            <label>📅 Data de Elaboração</label>
+            <label>📅 Data</label>
             <input type="date" id="recipe-date" class="form-input" />
           </div>
         </div>
 
-        <div id="recipe-machine-info" style="display:none;margin-bottom:0.75rem;padding:0.45rem 0.75rem;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd;font-size:0.85rem;color:#0369a1">
-          ⚙️ Capacidade: <strong id="recipe-machine-cap">—</strong> kg
+        <div class="form-field" style="margin-bottom:0.75rem">
+          <label>⚙️ Máquinas *</label>
+          <div id="recipe-machines-checkboxes" style="border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.75rem;background:#fff;max-height:150px;overflow-y:auto;min-height:44px;display:flex;flex-direction:column;gap:0.1rem">
+            <span style="font-size:0.83rem;color:var(--muted)">Selecione um cliente primeiro</span>
+          </div>
         </div>
 
         <div style="margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between">
@@ -808,7 +836,11 @@
           <button type="button" id="btn-add-step" class="btn-secondary btn-sm">+ Etapa</button>
         </div>
 
-        <div id="recipe-steps-body" style="margin-bottom:0.75rem"></div>
+        <div id="recipe-steps-body" style="margin-bottom:0.5rem"></div>
+
+        <div style="margin-bottom:0.75rem">
+          <button type="button" id="btn-add-step-bottom" class="btn-secondary" style="width:100%;font-size:0.88rem;padding:0.5rem;border-style:dashed">＋ Adicionar Etapa</button>
+        </div>
 
         <div id="recipe-edit-notes-row" style="display:none;margin-bottom:0.75rem">
           <div class="form-field">
@@ -820,6 +852,23 @@
         <div class="form-footer" style="margin-top:1rem">
           <button type="button" class="btn-secondary" id="modal-recipe-cancel">Cancelar</button>
           <button type="button" id="btn-save-recipe" class="btn-primary">💾 Salvar Receita</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Replicar Receita -->
+    <div id="modal-recipe-replicate" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:520px">
+        <div class="modal-hdr">
+          <h3>🔁 Replicar Receita</h3>
+          <button class="btn-close" id="modal-recipe-replicate-close">✕</button>
+        </div>
+        <div id="replicate-source-info" style="font-size:0.83rem;color:var(--muted);background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.75rem"></div>
+        <p style="font-size:0.83rem;color:var(--muted);margin-bottom:0.6rem">Selecione os processos que devem receber uma cópia desta receita:</p>
+        <div id="replicate-targets" style="max-height:360px;overflow-y:auto;margin-bottom:1rem"></div>
+        <div class="form-footer">
+          <button type="button" class="btn-secondary" id="modal-recipe-replicate-cancel">Cancelar</button>
+          <button type="button" id="btn-confirm-replicate" class="btn-primary">🔁 Replicar</button>
         </div>
       </div>
     </div>
