@@ -3810,12 +3810,23 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       const pending = all.find(r => r.id === pendingId);
       if (!pending || pending.status !== 'pending') return toast('Receita não encontrada ou não está pendente', 'error');
 
-      // Arquivar versão ativa atual
       const currentActive = all.find(r => r.status === 'active' && (r.original_id === pending.original_id || r.id === pending.original_id));
       if (currentActive) {
-        const archived = { ...currentActive, status: 'archived' };
-        await dbPut('recipes', archived);
-        await patchSheetDB(SHEETS.RECIPES, archived.id, archived);
+        const pendingMachSet = new Set(parseMachineIds(pending).map(Number));
+        const activeMachIds  = parseMachineIds(currentActive).map(Number);
+        const remaining      = activeMachIds.filter(id => !pendingMachSet.has(id));
+
+        if (remaining.length > 0) {
+          // Máquinas removidas da edição continuam com a receita original (apenas atualiza machine_ids)
+          const kept = { ...currentActive, machine_id: remaining[0], machine_ids: JSON.stringify(remaining) };
+          await dbPut('recipes', kept);
+          await patchSheetDB(SHEETS.RECIPES, kept.id, kept);
+        } else {
+          // Todas as máquinas migraram → arquiva original
+          const archived = { ...currentActive, status: 'archived' };
+          await dbPut('recipes', archived);
+          await patchSheetDB(SHEETS.RECIPES, archived.id, archived);
+        }
       }
 
       // Ativar a versão pendente
