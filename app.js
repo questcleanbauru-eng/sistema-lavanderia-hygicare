@@ -912,6 +912,21 @@ ${printScript}
       event.currentTarget.addEventListener('dragend', function() { this.style.opacity = ''; }, { once: true });
     };
 
+    window._pcaAssign = async function(sel) {
+      const procName = sel.dataset.proc;
+      const gi = sel.value === '' ? null : Number(sel.value);
+      if (gi === null) return;
+      const d = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+      d.groups = d.groups || [];
+      d.groups.forEach(g => { g.processes = (g.processes||[]).filter(p => p !== procName); });
+      if (d.groups[gi]) {
+        if (!d.groups[gi].processes) d.groups[gi].processes = [];
+        if (!d.groups[gi].processes.includes(procName)) d.groups[gi].processes.push(procName);
+      }
+      localStorage.setItem('hygicare_proc_groups', JSON.stringify(d));
+      await renderProcColorsAdmin();
+    };
+
     window._pcaDrop = async function(event, groupIdx) {
       event.preventDefault();
       event.currentTarget.style.background = '';
@@ -945,7 +960,13 @@ ${printScript}
                ondragstart="window._pcaDragStart(event)"
                style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.6rem;margin-bottom:0.2rem;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:grab;font-size:0.83rem;font-weight:500;color:var(--text);user-select:none">
             <span style="color:var(--muted);font-size:0.65rem;letter-spacing:-1px">⠿</span>
-            ${escHtml(name)}
+            <span style="flex:1">${escHtml(name)}</span>
+            ${groups.length ? `<select class="pca-assign-sel" data-proc="${escHtml(name)}"
+                style="font-size:0.72rem;border:1px solid var(--border);border-radius:4px;padding:2px 4px;color:var(--muted);cursor:pointer;max-width:90px;background:#fff"
+                onchange="window._pcaAssign(this)">
+              <option value="">→ grupo</option>
+              ${groups.map((g, gi) => `<option value="${gi}">${escHtml(g.name)}</option>`).join('')}
+            </select>` : ''}
           </div>`).join('')
         : '<p style="color:var(--muted);font-size:0.78rem;text-align:center;padding:0.75rem 0;margin:0">✓ Todos os processos estão agrupados</p>';
 
@@ -989,7 +1010,7 @@ ${printScript}
                  ondragover="event.preventDefault();event.currentTarget.style.borderColor='#2563eb'"
                  ondragleave="event.currentTarget.style.borderColor=''"
                  ondrop="window._pcaDrop(event,null)"
-                 style="min-height:80px;border:2px dashed var(--border);border-radius:8px;padding:0.4rem;background:#f9fafb;transition:border-color 0.15s">
+                 style="min-height:80px;max-height:380px;overflow-y:auto;border:2px dashed var(--border);border-radius:8px;padding:0.4rem;background:#f9fafb;transition:border-color 0.15s">
               ${ungroupedHtml}
             </div>
           </div>
@@ -998,7 +1019,7 @@ ${printScript}
               <span style="font-size:0.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px">Grupos</span>
               <button class="pca-new-grp" style="font-size:0.78rem;padding:2px 10px;border:1.5px solid var(--primary);border-radius:6px;background:#fff;color:var(--primary);cursor:pointer;font-weight:700">+ Novo</button>
             </div>
-            <div id="pca-groups">${groupsHtml}</div>
+            <div id="pca-groups" style="max-height:380px;overflow-y:auto">${groupsHtml}</div>
           </div>
         </div>`;
 
