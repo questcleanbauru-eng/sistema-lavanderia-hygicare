@@ -267,8 +267,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     loginScreen.classList.add('hidden');
     appMain.classList.remove('hidden');
     userNameSpan.textContent = `👤 ${currentUser.name}`;
-    document.getElementById('header-subtitle').textContent =
-      `${currentUser.name} · ${{ admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' }[currentUser.role] || 'Vendedor'}`;
+    const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' }[currentUser.role] || 'Vendedor';
+    const _subtitle  = document.getElementById('header-subtitle');
+    if (_subtitle) {
+      _subtitle.textContent = `${currentUser.name} · ${_roleLabel}`;
+      if ('caches' in window) {
+        caches.keys().then(keys => {
+          const k = keys.find(k => k.startsWith('lavanderia-cache-'));
+          const ver = k ? k.replace('lavanderia-cache-', '') : '';
+          if (ver && _subtitle) _subtitle.textContent = `${currentUser.name} · ${_roleLabel} · ${ver}`;
+        });
+      }
+    }
     updateApiDisplay(getApiCount());
     updateSyncStatus();
     initApp();
