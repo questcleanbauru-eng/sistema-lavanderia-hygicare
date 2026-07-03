@@ -1779,3 +1779,9 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .screen-title h2 { font-size: 1.8rem; }
 }
 
+/* --- Cores dos Processos — grade responsiva --- */
+.pca-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 640px) {
+  .pca-grid { grid-template-columns: 1fr; }
+}
+

@@ -1007,7 +1007,7 @@ ${printScript}
         : '<p style="color:var(--muted);font-size:0.82rem;text-align:center;padding:0.75rem 0;margin:0">Nenhum grupo criado. Clique em "+ Novo" para começar.</p>';
 
       container.innerHTML = `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
+        <div class="pca-grid">
           <div>
             <div style="font-size:0.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:0.5rem">
               Sem grupo
@@ -1286,12 +1286,10 @@ ${printScript}
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
       if (!navigator.onLine) return;
       try {
-        const existingRecords = await _originalGetAll('records');
-        const existingClients = await _originalGetAll('clients');
-        // Sincroniza se IndexedDB estiver vazio OU se última sync foi há mais de 4h
+        // Sincroniza sempre ao abrir — debounce de 2 min para evitar dupla chamada
         const lastSync = localStorage.getItem('lastSyncTime');
-        const stale = !lastSync || (Date.now() - new Date(lastSync).getTime() > 4 * 60 * 60 * 1000);
-        if (existingRecords.length > 0 && existingClients.length > 0 && !stale) return;
+        const minsAgo = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 60000 : Infinity;
+        if (minsAgo < 2) return;
 
         const results = await Promise.allSettled(
           Object.values(SHEET_MAP).map(s =>
@@ -1577,17 +1575,21 @@ ${printScript}
         const res = await r.json();
         addApiCount(1, 'read');
         const rows = res.data || [];
-        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval'];
+        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email'];
         rows.forEach(row => {
           const key = String(row.chave);
           if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {
             if (row.valor === '') {
               localStorage.removeItem(key);
+              if (key === 'notification_email') localStorage.removeItem('hygicare_cfg_notify_email');
             } else {
               localStorage.setItem(key, String(row.valor));
               if (key === 'hygicare_cfg_sync_interval') {
                 const v = parseInt(row.valor);
                 if (!isNaN(v) && v > 0) CONFIG.SYNC_INTERVAL_HOURS = v;
+              }
+              if (key === 'notification_email') {
+                localStorage.setItem('hygicare_cfg_notify_email', String(row.valor));
               }
             }
           }
