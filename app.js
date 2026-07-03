@@ -630,6 +630,7 @@ ${printScript}
       // Close drawer if open
       closeDrawer();
     }
+    window.show = show;
 
     // ===== DRAWER / BOTTOM NAV =====
     const drawerOverlay = document.getElementById('drawer-overlay');
