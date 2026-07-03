@@ -669,6 +669,7 @@ ${printScript}
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
         if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
+        if (screenId === 'screen-alerts')  await renderAlertsScreen();
       });
     });
 
@@ -685,6 +686,7 @@ ${printScript}
         if (screenId === 'screen-recipes')   await initRecipesScreen();
         if (screenId === 'screen-users')     await renderUsersList();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
+        if (screenId === 'screen-alerts')    await renderAlertsScreen();
       });
     });
 
@@ -771,6 +773,7 @@ ${printScript}
       'nav-recipes':   'screen-recipes',
       'nav-form':      'screen-form',
       'nav-reports':   'screen-reports',
+      'nav-alerts':    'screen-alerts',
       'nav-users':     'screen-users',
       'nav-admin':     'screen-admin',
     };
@@ -788,6 +791,7 @@ ${printScript}
         if (screenId === 'screen-recipes')   await initRecipesScreen();
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
+        if (screenId === 'screen-alerts')    await renderAlertsScreen();
         if (screenId === 'screen-users')     await renderUsersList();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
       });
@@ -810,6 +814,7 @@ ${printScript}
       set('cfg-sync-interval', cfgSync);
       set('cfg-sheets-url',   cfgSheets);
       set('cfg-notify-email', cfgEmail);
+      set('cfg-alert-days',   localStorage.getItem('hygicare_cfg_alert_days') || '60');
       const periodoCb = document.getElementById('cfg-periodo-habilitado');
       if (periodoCb) periodoCb.checked = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
 
@@ -897,10 +902,12 @@ ${printScript}
       const sync        = document.getElementById('cfg-sync-interval')?.value.trim() || '';
       const sheets      = document.getElementById('cfg-sheets-url')?.value.trim()    || '';
       const notifyEmail = document.getElementById('cfg-notify-email')?.value.trim()  || '';
+      const alertDays   = document.getElementById('cfg-alert-days')?.value.trim()    || '';
 
       if (gasUrl) { localStorage.setItem('hygicare_cfg_gas_url', gasUrl); CONFIG.GAS_URL = gasUrl; }
       if (sync)   { localStorage.setItem('hygicare_cfg_sync_interval', sync); CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync); callGAS('upsert', 'Config', { chave: 'hygicare_cfg_sync_interval', valor: sync }); }
-      if (sheets) localStorage.setItem('hygicare_cfg_sheets_url',    sheets);
+      if (sheets) localStorage.setItem('hygicare_cfg_sheets_url', sheets);
+      if (alertDays && parseInt(alertDays) > 0) { localStorage.setItem('hygicare_cfg_alert_days', alertDays); callGAS('upsert', 'Config', { chave: 'hygicare_cfg_alert_days', valor: alertDays }); }
       localStorage.setItem('hygicare_cfg_notify_email', notifyEmail);
 
       // Persiste e-mail de notificação na aba Config do GAS para que "Testar E-mail" funcione
@@ -1609,7 +1616,7 @@ ${printScript}
         const res = await r.json();
         addApiCount(1, 'read');
         const rows = res.data || [];
-        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email'];
+        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days'];
         rows.forEach(row => {
           const key = String(row.chave);
           if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {
@@ -2570,6 +2577,109 @@ ${printScript}
     window.dbDelete = dbDelete;
 
     // =====================================================
+    // TELA AVISOS
+    // =====================================================
+    function updateAlertsBadge(count, alertDays) {
+      ['nav-alerts-badge', 'drawer-alerts-badge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = count;
+        el.classList.toggle('hidden', count === 0);
+      });
+      const widget = document.getElementById('home-alerts-widget');
+      const homeCount = document.getElementById('home-alerts-count');
+      const homeDays  = document.getElementById('home-alerts-days');
+      if (widget)    widget.style.display = count > 0 ? '' : 'none';
+      if (homeCount) homeCount.textContent = count;
+      if (homeDays && alertDays) homeDays.textContent = alertDays;
+    }
+
+    async function _computeOverdue() {
+      const alertDays = parseInt(localStorage.getItem('hygicare_cfg_alert_days') || '60');
+      const clients   = await getAll('clients');
+      const records   = await dbGetAll_raw('records');
+      const lastDate  = {};
+      for (const r of records) {
+        const cid = Number(r.client_id);
+        const date = r.date_end || r.date_start;
+        if (!date) continue;
+        if (!lastDate[cid] || date > lastDate[cid]) lastDate[cid] = date;
+      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const threshold = new Date(today);
+      threshold.setDate(threshold.getDate() - alertDays);
+      const thresholdStr = threshold.toISOString().split('T')[0];
+      const overdue = [];
+      for (const c of clients) {
+        const last = lastDate[Number(c.id)] || null;
+        if (!last || last < thresholdStr) {
+          const daysSince = last ? Math.floor((today.getTime() - new Date(last).getTime()) / 86400000) : null;
+          overdue.push({ client: c, last, daysSince });
+        }
+      }
+      overdue.sort((a, b) => {
+        if (!a.last && !b.last) return (a.client.name || '').localeCompare(b.client.name || '');
+        if (!a.last) return -1;
+        if (!b.last) return 1;
+        return (b.daysSince || 0) - (a.daysSince || 0);
+      });
+      return { overdue, alertDays };
+    }
+
+    async function refreshAlertsBadge() {
+      const { overdue, alertDays } = await _computeOverdue();
+      updateAlertsBadge(overdue.length, alertDays);
+    }
+
+    async function renderAlertsScreen() {
+      const { overdue, alertDays } = await _computeOverdue();
+      updateAlertsBadge(overdue.length, alertDays);
+
+      const countEl = document.getElementById('alerts-count-badge');
+      if (countEl) countEl.textContent = overdue.length;
+      const daysEl = document.getElementById('alerts-days-display');
+      if (daysEl) daysEl.textContent = alertDays;
+
+      const list = document.getElementById('alerts-list');
+      if (!list) return;
+
+      if (!overdue.length) {
+        list.innerHTML = `<div class="empty-state">✅ Tudo em dia!<p>Nenhum cliente está há mais de ${alertDays} dias sem relatório.</p></div>`;
+        return;
+      }
+
+      list.innerHTML = overdue.map(({ client, last, daysSince }) => {
+        const severe = daysSince === null || daysSince > alertDays * 2;
+        const clr    = severe ? '#dc2626' : '#d97706';
+        const bg     = severe ? '#fef2f2' : '#fffbeb';
+        const border = severe ? '#ef4444' : '#f59e0b';
+        const lastStr   = last ? fmtDate(last) : 'Nunca';
+        const daysLabel = daysSince !== null ? `${daysSince} dias sem relatório` : 'Sem registros';
+        const clientId  = client.id;
+        return `
+          <div style="background:${bg};border:1px solid ${border};border-left:4px solid ${border};border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.4rem">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
+              <div style="min-width:0">
+                <div style="font-weight:700;font-size:0.92rem;color:var(--text)">👤 ${escHtml(client.name)}</div>
+                ${client.city ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">📍 ${escHtml(client.city)}${client.seller ? ` · 👨‍💼 ${escHtml(client.seller)}` : ''}</div>` : ''}
+                <div style="font-size:0.8rem;margin-top:0.35rem">
+                  <span style="color:${clr};font-weight:700">⏱ ${daysLabel}</span>
+                  <span style="color:var(--muted);margin-left:0.5rem;font-size:0.75rem">Último: ${lastStr}</span>
+                </div>
+              </div>
+              <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;flex-shrink:0;white-space:nowrap"
+                onclick="(async()=>{const s=document.getElementById('prod-client');if(s){s.value='${clientId}';s.dispatchEvent(new Event('change'));}show('screen-form')})()">
+                + Registrar
+              </button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    window.renderAlertsScreen = renderAlertsScreen;
+
+    // =====================================================
     // TELA VAZÃO
     // =====================================================
     async function syncVazaoData() {
@@ -2663,6 +2773,8 @@ ${printScript}
             </div>
           </div>`;
       }).join('');
+
+      refreshAlertsBadge();
     }
 
     async function initVazaoScreen() {

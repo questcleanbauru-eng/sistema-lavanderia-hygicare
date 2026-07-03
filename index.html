@@ -203,6 +203,7 @@
           <button class="nav-btn" id="nav-recipes">📝 Receitas<span id="recipe-pending-badge" class="nav-badge hidden">0</span></button>
           <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio</button>
           <button class="nav-btn" id="nav-form">📝 Gerar Relatório</button>
+          <button class="nav-btn" id="nav-alerts">🔔 Avisos<span id="nav-alerts-badge" class="nav-badge hidden">0</span></button>
           <button class="nav-btn admin-only hidden" id="nav-users">👤 Usuarios</button>
           <button class="nav-btn admin-only hidden" id="nav-admin">🛠️ Admin</button>
         </nav>
@@ -258,11 +259,35 @@
             </button>
           </div>
 
+          <!-- Widget: clientes sem relatório -->
+          <div id="home-alerts-widget" style="display:none;margin-bottom:1rem">
+            <div class="card" style="border-left:4px solid #f59e0b;background:#fffbeb;cursor:pointer;padding:0.75rem 1rem" onclick="show('screen-alerts');renderAlertsScreen()">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+                <div>
+                  <div style="font-weight:700;color:#92400e;font-size:0.92rem">⚠️ <span id="home-alerts-count">0</span> cliente(s) sem relatório</div>
+                  <div style="font-size:0.78rem;color:#b45309;margin-top:2px">Há mais de <span id="home-alerts-days">60</span> dias — toque para ver</div>
+                </div>
+                <span style="font-size:1.4rem;color:#d97706">›</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Últimos registros -->
           <div class="card">
             <h3 style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">📋 Últimos registros</h3>
             <div id="home-recent-records"></div>
           </div>
+        </section>
+
+        <!-- ===== TELA AVISOS ===== -->
+        <section id="screen-alerts" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>🔔 Avisos</h2><span class="count-badge" id="alerts-count-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a">0</span></div>
+          </div>
+          <div id="alerts-config-row" style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:0.65rem 1rem;margin-bottom:0.85rem;font-size:0.85rem;color:var(--muted)">
+            Clientes sem relatório há mais de <strong id="alerts-days-display" style="color:var(--text)">60</strong> dias
+          </div>
+          <div id="alerts-list"></div>
         </section>
 
         <section id="screen-clients" class="screen hidden">
@@ -594,6 +619,13 @@
             </div>
             <div class="form-row" style="margin-top:0.5rem">
               <div class="form-field">
+                <label>⏰ Aviso: dias sem relatório</label>
+                <input type="number" id="cfg-alert-days" min="1" max="365" placeholder="60" style="max-width:120px" />
+                <small>Clientes sem relatório há mais de N dias aparecem em 🔔 Avisos</small>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
                 <button id="btn-save-config" class="btn-primary" style="width:100%">💾 Salvar Configuracoes</button>
               </div>
             </div>
@@ -787,6 +819,7 @@
         <button class="drawer-item" data-target="screen-processes">📋 Processos</button>
         <button class="drawer-item" data-target="screen-vazao">💧 Vazão</button>
         <button class="drawer-item" data-target="screen-recipes">📝 Receitas<span id="drawer-recipe-badge" class="nav-badge hidden">0</span></button>
+        <button class="drawer-item" data-target="screen-alerts">🔔 Avisos<span id="drawer-alerts-badge" class="nav-badge hidden" style="margin-left:0.4rem">0</span></button>
         <button class="drawer-item admin-only hidden" data-target="screen-users">👤 Usuários</button>
         <button class="drawer-item admin-only hidden" data-target="screen-admin">🛠️ Admin</button>
         <div class="drawer-divider"></div>
