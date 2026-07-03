@@ -1348,52 +1348,65 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   /* BOTÃO DELETAR — target de toque mínimo */
   .btn-danger { min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
 
-  /* LISTA DE ITENS */
-  .list-item { flex-direction: column; gap: 0.7rem; }
-  .list-item-actions { width: 100%; justify-content: flex-end; gap: 0.6rem; }
-  .btn-edit, .btn-danger { padding: 0.5rem 0.9rem; font-size: 0.85rem; }
+  /* LISTA DE ITENS — compacto no mobile */
+  .items-list { gap: 0.4rem; }
+  .list-item { padding: 0.55rem 0.85rem; flex-direction: column; gap: 0.4rem; }
+  .list-item-name { font-size: 0.88rem; margin-bottom: 0.1rem; }
+  .list-item-details { gap: 0.3rem; margin-top: 0.15rem; }
+  .detail-chip { font-size: 0.72rem; padding: 0.1rem 0.4rem; }
+  .list-item .badge { font-size: 0.7rem; padding: 0.1rem 0.45rem; }
+  .list-item-actions { flex-direction: row; width: 100%; justify-content: flex-end; gap: 0.35rem; }
+  .list-item-actions .btn-edit,
+  .list-item-actions .btn-danger,
+  .list-item-actions .btn-secondary { width: auto; min-height: 32px; padding: 0.3rem 0.65rem; font-size: 0.8rem; }
 
-  /* BOTOES GERAIS */
+  /* BOTOES GERAIS (fora de listas) */
   .btn-primary, .btn-secondary, .btn-success { width: 100%; justify-content: center; text-align: center; font-size: 0.95rem; min-height: 48px; }
   .btn-lg { width: 100%; justify-content: center; font-size: 1rem; min-height: 50px; }
   .prod-btn-row { flex-direction: column; }
 
-  /* TABELA DE PROCESSOS — cards empilhados sem scroll */
+  /* TABELA DE PROCESSOS (Registrar) — flexbox, escopo só em .machine-block-body */
   .machine-block-body { overflow-x: visible; }
-  .proc-table { min-width: unset; width: 100%; font-size: 0.88rem; }
-  .proc-table thead { display: none; }
-  .proc-table tbody { display: flex; flex-direction: column; gap: 0; }
-  .proc-table tr.process-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-    gap: 0.15rem 0.4rem;
+  .machine-block-body .proc-table { min-width: unset; width: 100%; font-size: 0.88rem; }
+  .machine-block-body .proc-table thead { display: none; }
+  .machine-block-body .proc-table tbody { display: block; }
+  .machine-block-body .proc-table tr.process-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.1rem 0.5rem;
     padding: 0.45rem 0.75rem;
     border-bottom: 1px solid var(--border);
   }
-  .proc-table tr.process-row:last-child { border-bottom: none; }
+  .machine-block-body .proc-table tr.process-row:last-child { border-bottom: none; }
   /* Nome do processo ocupa linha inteira */
-  .proc-table td:nth-child(1) {
-    grid-column: 1 / -1;
+  .machine-block-body .proc-table tr.process-row td:nth-child(1) {
+    flex: 0 0 100%;
     font-weight: 700;
     font-size: 0.83rem;
     color: var(--text);
     padding: 0;
+    margin-bottom: 0.1rem;
   }
   /* Executados + Cancelados lado a lado */
-  .proc-table td:nth-child(2),
-  .proc-table td:nth-child(3) {
+  .machine-block-body .proc-table tr.process-row td:nth-child(2),
+  .machine-block-body .proc-table tr.process-row td:nth-child(3) {
+    flex: 1 1 0;
+    min-width: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
   }
-  .proc-table td:nth-child(2)::before { content: 'Executados'; font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
-  .proc-table td:nth-child(3)::before { content: 'Cancelados'; font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+  .machine-block-body .proc-table tr.process-row td:nth-child(2)::before { content: 'Executados'; font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+  .machine-block-body .proc-table tr.process-row td:nth-child(3)::before { content: 'Cancelados'; font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
   /* Ocultar Capacidade e Total no mobile */
-  .proc-table td:nth-child(4),
-  .proc-table td:nth-child(5) { display: none; }
-  .proc-table input[type=number] { max-width: 100%; width: 100%; padding: 0.3rem 0.4rem; font-size: 0.88rem; min-height: 36px; }
+  .machine-block-body .proc-table tr.process-row td:nth-child(4),
+  .machine-block-body .proc-table tr.process-row td:nth-child(5) { display: none; }
+  .machine-block-body .proc-table input[type=number] { max-width: 100%; width: 100%; padding: 0.3rem 0.4rem; font-size: 0.88rem; min-height: 36px; }
+
+  /* TABELA DE VAZÃO mobile — inputs full-width */
+  .vazao-mach-block .proc-table input[type=number] { max-width: 100%; width: 100%; padding: 0.3rem 0.4rem; font-size: 0.88rem; min-height: 36px; }
 
   /* TABELA DE REGISTROS — cards empilhados no mobile */
   .records-group-body { overflow-x: visible; }
@@ -1459,9 +1472,10 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 
   /* Remover duplicata - já definido acima com 1.05rem */
 
-  /* LISTA CLIENTES/MÁQUINAS — ações em linha com texto truncado */
+  /* LISTA CLIENTES/MÁQUINAS — ações compactas */
   .list-item-actions .btn-edit,
-  .list-item-actions .btn-danger { min-height: 36px; }
+  .list-item-actions .btn-danger,
+  .list-item-actions .btn-secondary { min-height: 32px; }
 
   /* ===== BOTTOM NAV (mobile only) ===== */
   header > nav { display: none; }
