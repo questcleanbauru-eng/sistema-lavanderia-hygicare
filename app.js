@@ -912,6 +912,12 @@ ${printScript}
       event.currentTarget.addEventListener('dragend', function() { this.style.opacity = ''; }, { once: true });
     };
 
+    function _pcaSave(d) {
+      const json = JSON.stringify(d);
+      localStorage.setItem('hygicare_proc_groups', json);
+      callGAS('upsert', 'Config', { chave: 'hygicare_proc_groups', valor: json });
+    }
+
     window._pcaAssign = async function(sel) {
       const procName = sel.dataset.proc;
       const gi = sel.value === '' ? null : Number(sel.value);
@@ -923,7 +929,7 @@ ${printScript}
         if (!d.groups[gi].processes) d.groups[gi].processes = [];
         if (!d.groups[gi].processes.includes(procName)) d.groups[gi].processes.push(procName);
       }
-      localStorage.setItem('hygicare_proc_groups', JSON.stringify(d));
+      _pcaSave(d);
       await renderProcColorsAdmin();
     };
 
@@ -940,7 +946,7 @@ ${printScript}
         if (!d.groups[groupIdx].processes) d.groups[groupIdx].processes = [];
         if (!d.groups[groupIdx].processes.includes(procName)) d.groups[groupIdx].processes.push(procName);
       }
-      localStorage.setItem('hygicare_proc_groups', JSON.stringify(d));
+      _pcaSave(d);
       await renderProcColorsAdmin();
     };
 
@@ -1031,7 +1037,7 @@ ${printScript}
             if (!name || !name.trim()) return;
             const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
             (d2.groups = d2.groups || []).push({ name: name.trim(), color: '#2563eb', processes: [] });
-            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            _pcaSave(d2);
             await renderProcColorsAdmin();
           }
           const delGrp = e.target.closest('.pca-del-grp');
@@ -1039,7 +1045,7 @@ ${printScript}
             const gi = Number(delGrp.dataset.gidx);
             const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
             (d2.groups || []).splice(gi, 1);
-            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            _pcaSave(d2);
             await renderProcColorsAdmin();
           }
           const rmProc = e.target.closest('.pca-rm-proc');
@@ -1047,7 +1053,7 @@ ${printScript}
             const gi = Number(rmProc.dataset.gidx), pi = Number(rmProc.dataset.pidx);
             const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
             if (d2.groups?.[gi]?.processes) d2.groups[gi].processes.splice(pi, 1);
-            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            _pcaSave(d2);
             await renderProcColorsAdmin();
           }
         });
@@ -1057,7 +1063,7 @@ ${printScript}
           const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
           if (d2.groups?.[gi]) {
             d2.groups[gi].color = e.target.value;
-            localStorage.setItem('hygicare_proc_groups', JSON.stringify(d2));
+            _pcaSave(d2);
             document.querySelectorAll(`.pca-dot-${gi}`).forEach(s => s.style.background = e.target.value);
           }
         });
@@ -1068,13 +1074,16 @@ ${printScript}
       if (!confirm('Remover todos os grupos e configurações de cor?')) return;
       localStorage.removeItem('hygicare_proc_groups');
       localStorage.removeItem('hygicare_proc_colors');
+      callGAS('upsert', 'Config', { chave: 'hygicare_proc_groups', valor: '' });
       renderProcColorsAdmin();
       toast('Configurações de cores removidas', 'info', 2000);
     });
 
     // Toggle período no formulário de registro
     document.getElementById('cfg-periodo-habilitado')?.addEventListener('change', function() {
-      localStorage.setItem('hygicare_periodo_habilitado', String(this.checked));
+      const val = String(this.checked);
+      localStorage.setItem('hygicare_periodo_habilitado', val);
+      callGAS('upsert', 'Config', { chave: 'hygicare_periodo_habilitado', valor: val });
       const endField = document.getElementById('prod-date-end-field');
       if (endField) endField.style.display = this.checked ? '' : 'none';
       toast(`Período ${this.checked ? 'habilitado — Data Início e Data Fim' : 'desabilitado — apenas Data de Início'}`, 'success', 3000);
@@ -1301,6 +1310,7 @@ ${printScript}
         }
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
+        await syncAdminConfig();
         await refreshClientsSelects();
         await renderClientsList();
         await renderMachinesList();
@@ -1381,6 +1391,7 @@ ${printScript}
         }
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
+        if (isAll) await syncAdminConfig();
 
         // Re-renderizar telas conforme o que foi atualizado
         const updated = isAll ? Object.keys(SHEET_MAP) : [target];
@@ -1554,6 +1565,30 @@ ${printScript}
     const postToSheetDB  = (sheet, data)     => callGAS('insert', sheet, data);
     const patchSheetDB   = (sheet, id, data) => callGAS('update', sheet, data, id);
     const deleteSheetDB  = (sheet, id)       => callGAS('delete', sheet, null, id);
+
+    // Busca configurações de admin (grupos de cores, período) da aba Config
+    // e aplica no localStorage — propaga para todos os usuários no próximo sync.
+    async function syncAdminConfig() {
+      if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
+      if (!navigator.onLine) return;
+      try {
+        const r = await fetch(`${gasApiUrl()}?sheet=Config`);
+        if (!r.ok) return;
+        const res = await r.json();
+        addApiCount(1, 'read');
+        const rows = res.data || [];
+        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado'];
+        rows.forEach(row => {
+          if (managed.includes(String(row.chave)) && row.valor !== undefined && row.valor !== null) {
+            if (row.valor === '') {
+              localStorage.removeItem(String(row.chave));
+            } else {
+              localStorage.setItem(String(row.chave), String(row.valor));
+            }
+          }
+        });
+      } catch(e) { /* silencioso — não bloqueia a experiência */ }
+    }
 
 
     // =====================================================
