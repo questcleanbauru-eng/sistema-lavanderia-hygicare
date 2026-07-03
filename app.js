@@ -889,7 +889,7 @@ ${printScript}
       const notifyEmail = document.getElementById('cfg-notify-email')?.value.trim()  || '';
 
       if (gasUrl) { localStorage.setItem('hygicare_cfg_gas_url', gasUrl); CONFIG.GAS_URL = gasUrl; }
-      if (sync)   { localStorage.setItem('hygicare_cfg_sync_interval', sync); CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync); }
+      if (sync)   { localStorage.setItem('hygicare_cfg_sync_interval', sync); CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync); callGAS('upsert', 'Config', { chave: 'hygicare_cfg_sync_interval', valor: sync }); }
       if (sheets) localStorage.setItem('hygicare_cfg_sheets_url',    sheets);
       localStorage.setItem('hygicare_cfg_notify_email', notifyEmail);
 
@@ -1577,13 +1577,18 @@ ${printScript}
         const res = await r.json();
         addApiCount(1, 'read');
         const rows = res.data || [];
-        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado'];
+        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval'];
         rows.forEach(row => {
-          if (managed.includes(String(row.chave)) && row.valor !== undefined && row.valor !== null) {
+          const key = String(row.chave);
+          if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {
             if (row.valor === '') {
-              localStorage.removeItem(String(row.chave));
+              localStorage.removeItem(key);
             } else {
-              localStorage.setItem(String(row.chave), String(row.valor));
+              localStorage.setItem(key, String(row.valor));
+              if (key === 'hygicare_cfg_sync_interval') {
+                const v = parseInt(row.valor);
+                if (!isNaN(v) && v > 0) CONFIG.SYNC_INTERVAL_HOURS = v;
+              }
             }
           }
         });
