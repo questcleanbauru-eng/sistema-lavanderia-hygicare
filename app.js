@@ -2,6 +2,23 @@
 // APP.JS — Sistema Lavanderia Hygicare
 // ============================================================
 
+// ---------- LAZY LOAD CHART.JS ----------
+// Carregado sob demanda ao entrar na tela de gráficos — não bloqueia o carregamento inicial
+const CHARTJS_URL = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+let _chartJsPromise = null;
+function loadChartJs() {
+  if (window.Chart) return Promise.resolve();
+  if (_chartJsPromise) return _chartJsPromise;
+  _chartJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = CHARTJS_URL;
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error('Falha ao carregar Chart.js'));
+    document.head.appendChild(s);
+  });
+  return _chartJsPromise;
+}
+
 // ---------- HELPERS ----------
 // URL efetiva para chamadas API — usa proxy same-origin para evitar CORS
 function gasApiUrl() {
@@ -202,9 +219,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let users = [...(window.USERS || [])];
 
-    if (CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+    const _loginApiUrl = gasApiUrl();
+    if (_loginApiUrl) {
       try {
-        const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.USERS}`);
+        const r = await fetch(`${_loginApiUrl}?sheet=${SHEETS.USERS}`);
         if (r.ok) {
           const res = await r.json();
           const data = res.data || [];
@@ -224,7 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Também consulta usuários criados pela tela (IndexedDB)
     try {
-      const dbUsers = await _originalGetAll('users');
+      const dbUsers = await getAll('users');
       dbUsers.forEach(du => {
         if (du.username && du.password) {
           const idx = users.findIndex(u => u.username === du.username);
@@ -263,8 +281,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  function _hideAppLoading() {
+    const el = document.getElementById('app-loading');
+    if (el) el.style.display = 'none';
+    loginScreen.style.display = '';
+  }
+
   function showApp() {
+    const loadEl = document.getElementById('app-loading');
+    if (loadEl) loadEl.style.display = 'none';
     loginScreen.classList.add('hidden');
+    loginScreen.style.display = 'none';
     appMain.classList.remove('hidden');
     userNameSpan.textContent = `👤 ${currentUser.name}`;
     const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' }[currentUser.role] || 'Vendedor';
@@ -284,7 +311,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initApp();
   }
 
-  if (currentUser) showApp();
+  if (currentUser) {
+    showApp();
+  } else {
+    _hideAppLoading(); // mostra tela de login
+  }
 
   // ---------- SYNC STATUS ----------
   function updateSyncStatus() {
@@ -473,7 +504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RELATÓRIO DE LAVANDERIA - ${esc(g.clientName)}${g.period ? ' - ' + esc(g.period.replace(/ → /g, ' a ')) : ''}</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
@@ -598,7 +629,7 @@ ${printScript}
 
     // Carregar usuários do IndexedDB para window.USERS (login offline)
     try {
-      const dbUsers = await _originalGetAll('users');
+      const dbUsers = await getAll('users');
       dbUsers.forEach(du => {
         if (!du.username || !du.password) return;
         const idx = window.USERS.findIndex(u => u.username === du.username);
@@ -1304,10 +1335,10 @@ ${printScript}
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
       if (!navigator.onLine) return;
       try {
-        // Sincroniza sempre ao abrir — debounce de 2 min para evitar dupla chamada
+        // Sincroniza sempre ao abrir — debounce de 30s apenas para evitar dupla chamada em refresh rápido
         const lastSync = localStorage.getItem('lastSyncTime');
-        const minsAgo = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 60000 : Infinity;
-        if (minsAgo < 2) return;
+        const secsAgo = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 1000 : Infinity;
+        if (secsAgo < 30) return;
 
         const results = await Promise.allSettled(
           Object.values(SHEET_MAP).map(s =>
@@ -1582,6 +1613,30 @@ ${printScript}
       return saved;
     }
 
+    // Índice sheet → entry de SHEET_MAP (para o post-save sync)
+    const SHEET_MAP_BY_SHEET = Object.fromEntries(
+      Object.values(SHEET_MAP).map(e => [e.sheet, e])
+    );
+
+    // Sync pontual de um único store após write no GAS
+    const _postSaveTimers = {};
+    async function _syncStoreFromSheet(sheetName) {
+      const entry = SHEET_MAP_BY_SHEET[sheetName];
+      if (!entry) return;
+      if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
+      try {
+        const r = await fetch(`${gasApiUrl()}?sheet=${sheetName}`);
+        if (!r.ok) return;
+        const items = (await r.json()).data || [];
+        if (items.length > 0) await saveToStore(entry.store, items);
+      } catch(e) { /* falha silenciosa */ }
+    }
+    function _scheduleSyncAfterSave(sheetName) {
+      clearTimeout(_postSaveTimers[sheetName]);
+      // 2s de delay: dá tempo ao GAS de persistir na planilha antes de re-buscar
+      _postSaveTimers[sheetName] = setTimeout(() => _syncStoreFromSheet(sheetName), 2000);
+    }
+
     async function callGAS(action, sheetName, data, id) {
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return false;
       if (!navigator.onLine) return false;
@@ -1598,6 +1653,10 @@ ${printScript}
         const res = await r.json();
         if (res.status !== 'ok') { console.warn('GAS error:', res.error); return false; }
         addApiCount(1, 'write');
+        // Após write bem-sucedido, re-sincroniza o store afetado com a planilha
+        if (['insert', 'update', 'delete'].includes(action) && sheetName !== 'Config') {
+          _scheduleSyncAfterSave(sheetName);
+        }
         return res.data || true;
       } catch (e) { console.warn('callGAS error:', e); return false; }
     }
@@ -2597,8 +2656,18 @@ ${printScript}
 
     async function _computeOverdue() {
       const alertDays = parseInt(localStorage.getItem('hygicare_cfg_alert_days') || '60');
-      const clients   = await getAll('clients');
+      let clients     = await getAll('clients');
       const records   = await dbGetAll_raw('records');
+
+      // Filtrar clientes pelo papel do usuário logado
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        clients = clients.filter(c => managed.has((c.seller || '').toLowerCase()));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName || '').toLowerCase();
+        clients = clients.filter(c => (c.seller || '').toLowerCase() === sellerName);
+      }
+
       const lastDate  = {};
       for (const r of records) {
         const cid = Number(r.client_id);
@@ -5114,6 +5183,7 @@ ${recipeSections}
     }
 
     async function renderCharts() {
+      await loadChartJs();
       let records  = await dbGetAll_raw('records');
       const clients   = await dbGetAll_raw('clients');
       const machines  = await dbGetAll_raw('machines');
@@ -5408,6 +5478,362 @@ ${recipeSections}
       document.querySelector('[data-preset="year"]')?.classList.add('active');
       renderCharts();
     });
+
+    // Botão Relatório Resumo (tela de gráficos)
+    document.getElementById('btn-summary-report')?.addEventListener('click', _printSummaryReport);
+
+    async function _printSummaryReport() {
+      // Abrir janela ANTES dos awaits — mobile bloqueia window.open após async
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc"><p style="color:#546e7a;font-size:1rem">⏳ Gerando relatório...</p></body></html>');
+
+      let records   = await dbGetAll_raw('records');
+      const clients   = await dbGetAll_raw('clients');
+      const processes = await dbGetAll_raw('processes');
+
+      // Filtro por papel do usuário
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        const myClientIds = new Set(
+          clients.filter(c => managed.has((c.seller || '').toLowerCase())).map(c => Number(c.id))
+        );
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName || '').toLowerCase();
+        const myClientIds = new Set(
+          clients.filter(c => (c.seller || '').toLowerCase() === sellerName).map(c => Number(c.id))
+        );
+        records = records.filter(r => myClientIds.has(Number(r.client_id)));
+      }
+
+      // Período — mesma lógica de renderCharts
+      const dateStart = document.getElementById('chart-date-start')?.value || '';
+      const dateEnd   = document.getElementById('chart-date-end')?.value   || '';
+      const now  = new Date();
+      const yyyy = now.getFullYear();
+      const mm   = String(now.getMonth() + 1).padStart(2, '0');
+      let filterStart = '', filterEnd = '';
+      if (dateStart || dateEnd) {
+        filterStart = dateStart;
+        filterEnd   = dateEnd;
+      } else {
+        const activePeriod = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
+        if (activePeriod === 'month') {
+          filterStart = filterEnd = `${yyyy}-${mm}`;
+        } else if (activePeriod === '3m') {
+          const d3 = new Date(now); d3.setMonth(d3.getMonth() - 2);
+          filterStart = `${d3.getFullYear()}-${String(d3.getMonth()+1).padStart(2,'0')}`;
+          filterEnd   = `${yyyy}-${mm}`;
+        } else if (activePeriod === '6m') {
+          const d6 = new Date(now); d6.setMonth(d6.getMonth() - 5);
+          filterStart = `${d6.getFullYear()}-${String(d6.getMonth()+1).padStart(2,'0')}`;
+          filterEnd   = `${yyyy}-${mm}`;
+        } else if (activePeriod === 'year') {
+          filterStart = `${yyyy}-01`;
+          filterEnd   = `${yyyy}-12`;
+        }
+      }
+
+      const filterClient  = document.getElementById('chart-filter-client')?.value  || '';
+      const filterSeller  = document.getElementById('chart-filter-seller')?.value  || '';
+      const filterGerente = document.getElementById('chart-filter-gerente')?.value || '';
+
+      // Filtros por cliente / gerente / vendedor
+      if (filterClient) records = records.filter(r => Number(r.client_id) === Number(filterClient));
+      if (filterGerente) {
+        const allUsers = await _originalGetAll('users');
+        const gerente  = allUsers.find(u => String(u.id) === filterGerente);
+        if (gerente) {
+          const gerenteName    = (gerente.sellerName || gerente.name || '').toLowerCase();
+          const gerenteSellers = new Set(
+            allUsers.filter(u => (u.manager || '').toLowerCase() === gerenteName)
+              .map(u => (u.sellerName || u.name || '').toLowerCase())
+          );
+          records = records.filter(r => {
+            const c = findClientById(r.client_id, clients);
+            return gerenteSellers.has((c?.seller || '').toLowerCase());
+          });
+        }
+      }
+      if (filterSeller) records = records.filter(r => {
+        const c = findClientById(r.client_id, clients);
+        return (c?.seller || '') === filterSeller;
+      });
+
+      // Guardar cópia antes do filtro de data para calcular crescimento
+      const recordsPreDate = [...records];
+
+      if (filterStart || filterEnd) {
+        records = records.filter(r => {
+          const m = (r.date_start || '').slice(0, 7);
+          if (!m) return false;
+          if (filterStart && m < filterStart) return false;
+          if (filterEnd   && m > filterEnd)   return false;
+          return true;
+        });
+      }
+
+      // KPIs
+      const totalKg    = records.reduce((s, r) => s + parseFloat(r.total    || 0), 0);
+      const totalExec  = records.reduce((s, r) => s + parseFloat(r.executed || 0), 0);
+      const totalCanc  = records.reduce((s, r) => s + parseFloat(r.canceled || 0), 0);
+      const cancelPct  = (totalExec + totalCanc) > 0 ? (totalCanc / (totalExec + totalCanc)) * 100 : 0;
+      const clientsSet = new Set(records.map(r => r.client_id));
+
+      const ticketMedio = records.length > 0 ? totalKg / records.length : 0;
+
+      // Crescimento vs período anterior de mesma duração
+      let crescimento = null;
+      if (filterStart && filterEnd) {
+        const [fsYear, fsMon] = filterStart.split('-').map(Number);
+        const [feYear, feMon] = filterEnd.split('-').map(Number);
+        const totalMonths   = (feYear - fsYear) * 12 + (feMon - fsMon) + 1;
+        const prevEndDate   = new Date(fsYear, fsMon - 2, 1);
+        const prevStartDate = new Date(prevEndDate.getFullYear(), prevEndDate.getMonth() - totalMonths + 1, 1);
+        const prevS = `${prevStartDate.getFullYear()}-${String(prevStartDate.getMonth()+1).padStart(2,'0')}`;
+        const prevE = `${prevEndDate.getFullYear()}-${String(prevEndDate.getMonth()+1).padStart(2,'0')}`;
+        const prevKg = recordsPreDate
+          .filter(r => { const m = (r.date_start||'').slice(0,7); return m >= prevS && m <= prevE; })
+          .reduce((s, r) => s + parseFloat(r.total || 0), 0);
+        if (prevKg > 0) crescimento = ((totalKg - prevKg) / prevKg) * 100;
+        else if (totalKg > 0) crescimento = 100;
+      }
+
+      // Agregados
+      const kgCliente = {};
+      for (const r of records) {
+        const c = clients.find(cl => Number(cl.id) === Number(r.client_id));
+        const name = c?.name || `Cliente #${r.client_id}`;
+        if (!kgCliente[name]) kgCliente[name] = { kg: 0, submissoes: new Set() };
+        kgCliente[name].kg += parseFloat(r.total || 0);
+        kgCliente[name].submissoes.add(`${r.date_start}|${r.date_end}`);
+      }
+      const byClient = Object.entries(kgCliente)
+        .map(([name, c]) => [name, { kg: c.kg, recs: c.submissoes.size }])
+        .sort((a, b) => b[1].kg - a[1].kg);
+
+      const kgProcess = {};
+      for (const r of records) {
+        const p = processes.find(p => Number(p.id) === Number(r.process_id));
+        const name = p?.name || `Proc. #${r.process_id}`;
+        kgProcess[name] = (kgProcess[name] || 0) + parseFloat(r.total || 0);
+      }
+      const byProcess = Object.entries(kgProcess).sort((a, b) => b[1] - a[1]);
+
+      const kgMonth = {};
+      for (const r of records) {
+        const key = (r.date_start || '').slice(0, 7);
+        if (!key) continue;
+        const [_ky, _km] = key.split('-');
+        const label = new Date(Number(_ky), Number(_km) - 1, 1)
+          .toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        if (!kgMonth[key]) kgMonth[key] = { label, kg: 0 };
+        kgMonth[key].kg += parseFloat(r.total || 0);
+      }
+      const monthsSorted = Object.entries(kgMonth).sort((a, b) => a[0].localeCompare(b[0]));
+      const byMonthWithGrowth = monthsSorted.map(([, d], i) => {
+        const prev   = i > 0 ? monthsSorted[i-1][1].kg : null;
+        const growth = prev && prev > 0 ? ((d.kg - prev) / prev) * 100 : null;
+        return { label: d.label, kg: d.kg, growth };
+      });
+
+      // Clientes sem atividade no período filtrado
+      const activeClientIds = new Set(records.map(r => Number(r.client_id)));
+      let allClientsInScope = clients;
+      if (filterClient) allClientsInScope = clients.filter(c => Number(c.id) === Number(filterClient));
+      else if (filterSeller) allClientsInScope = clients.filter(c => (c.seller || '') === filterSeller);
+      const inactiveClients = allClientsInScope
+        .filter(c => !activeClientIds.has(Number(c.id)))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      // Labels legíveis para o cabeçalho
+      const fmtMonth = m => {
+        if (!m) return '';
+        const [y, mo] = m.split('-');
+        return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      };
+      const periodLabel = filterStart && filterEnd
+        ? (filterStart === filterEnd ? fmtMonth(filterStart)
+          : `${fmtMonth(filterStart)} a ${fmtMonth(filterEnd)}`)
+        : filterStart ? `A partir de ${fmtMonth(filterStart)}`
+        : filterEnd   ? `Até ${fmtMonth(filterEnd)}`
+        : 'Todos os períodos';
+      const clientLabel = filterClient
+        ? (clients.find(c => Number(c.id) === Number(filterClient))?.name || 'Cliente selecionado')
+        : null;
+      const sellerLabel = filterSeller || null;
+
+      const totalSubmissoes = new Set(
+        records.map(r => `${r.client_id}|${r.date_start}|${r.date_end}`)
+      ).size;
+
+      const html = _buildSummaryHtml({
+        periodLabel, clientLabel, sellerLabel,
+        totalKg, totalRecords: totalSubmissoes, activeClients: clientsSet.size,
+        cancelPct, ticketMedio: totalSubmissoes > 0 ? totalKg / totalSubmissoes : 0, crescimento,
+        byClient, byProcess, byMonthWithGrowth, inactiveClients,
+        today: new Date().toLocaleDateString('pt-BR')
+      });
+
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    }
+
+    function _buildSummaryHtml(d) {
+      const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const fmt = (v, dec = 2) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      const fmtPct = v => (v >= 0 ? '+' : '') + fmt(v, 1) + '%';
+
+      const kpiCards = [
+        { label: 'Total Processado', value: `${fmt(d.totalKg)} kg`,       color: '#1a237e' },
+        { label: 'Relatórios Enviados', value: d.totalRecords,                 color: '#0d47a1' },
+        { label: 'Clientes Ativos',     value: d.activeClients,               color: '#1565c0' },
+        { label: 'Ticket Médio',        value: `${fmt(d.ticketMedio)} kg/rel`, color: '#283593' },
+        { label: 'Cancelamentos',    value: `${fmt(d.cancelPct, 1)}%`,    color: d.cancelPct > 10 ? '#c62828' : '#2e7d32' },
+        d.crescimento !== null
+          ? { label: 'Crescimento',  value: fmtPct(d.crescimento),        color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' }
+          : { label: 'Crescimento',  value: '—',                           color: '#546e7a' }
+      ];
+
+      const kpiHtml = kpiCards.map(k =>
+        `<div class="kpi-card"><div class="kpi-label">${esc(k.label)}</div><div class="kpi-value" style="color:${k.color}">${esc(String(k.value))}</div></div>`
+      ).join('');
+
+      const clientRows = d.byClient.map(([name, c], i) => {
+        const pctKg = d.totalKg > 0 ? (c.kg / d.totalKg * 100).toFixed(1) : '0.0';
+        return `<tr>
+          <td class="tc">${i+1}</td>
+          <td class="tl">${esc(name)}</td>
+          <td class="tc">${fmt(c.kg)} kg</td>
+          <td class="tc">${c.recs}</td>
+          <td class="tc">${pctKg}%</td>
+        </tr>`;
+      }).join('');
+
+      const procRows = d.byProcess.map(([name, kg], i) => {
+        const pctKg = d.totalKg > 0 ? (kg / d.totalKg * 100).toFixed(1) : '0.0';
+        return `<tr>
+          <td class="tc">${i+1}</td>
+          <td class="tl">${esc(name)}</td>
+          <td class="tc">${fmt(kg)} kg</td>
+          <td class="tc">${pctKg}%</td>
+        </tr>`;
+      }).join('');
+
+      const monthRows = d.byMonthWithGrowth.map(m => {
+        const gHtml = m.growth !== null
+          ? `<span style="color:${m.growth >= 0 ? '#2e7d32' : '#c62828'};font-weight:bold">${m.growth >= 0 ? '+' : ''}${fmt(m.growth, 1)}%</span>`
+          : '—';
+        return `<tr><td class="tl">${esc(m.label)}</td><td class="tc">${fmt(m.kg)} kg</td><td class="tc">${gHtml}</td></tr>`;
+      }).join('');
+
+      let inactiveSec = '';
+      if (d.inactiveClients.length > 0) {
+        const chips = d.inactiveClients.map(c =>
+          `<span class="inactive-chip">${esc(c.name || '#'+c.id)}</span>`
+        ).join('');
+        inactiveSec = `<div class="sec">
+          <div class="sec-hd" style="background:#78909c">CLIENTES SEM ATIVIDADE NO PERÍODO (${d.inactiveClients.length})</div>
+          <div style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+        </div>`;
+      }
+
+      let filterInfo = `Período: <strong>${esc(d.periodLabel)}</strong>`;
+      if (d.clientLabel) filterInfo += ` · Cliente: <strong>${esc(d.clientLabel)}</strong>`;
+      if (d.sellerLabel) filterInfo += ` · Vendedor: <strong>${esc(d.sellerLabel)}</strong>`;
+
+      return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relatório Resumo — ${esc(d.periodLabel)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
+.hdr{display:flex;align-items:center;background:#1a237e;color:#fff;min-height:60px;padding:0 12px;gap:10px;margin-bottom:8px}
+.hdr-logo{width:40px;height:40px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;text-align:center;line-height:1.3;flex-shrink:0;letter-spacing:.5px;color:#fff}
+.hdr-c{flex:1;text-align:center;line-height:1.4}
+.hdr-c h1{font-size:16px;font-weight:bold;color:#fff}
+.hdr-info{font-size:9px;color:#c5cae9;margin-top:3px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}
+.kpi-card{border:1px solid #e0e0e0;border-radius:4px;padding:8px 10px;text-align:center;page-break-inside:avoid}
+.kpi-label{font-size:8px;color:#757575;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.kpi-value{font-size:15px;font-weight:bold}
+.sec{margin-bottom:8px;border:1px solid #ddd;page-break-inside:avoid}
+.sec-hd{background:#1a237e;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
+table{width:100%;border-collapse:collapse;font-size:9px}
+thead th{background:#e3e8f0;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #ddd;white-space:nowrap}
+th.tl,td.tl{text-align:left}
+th.tc,td.tc{text-align:center}
+tbody tr:nth-child(even) td{background:#f9f9f9}
+tbody td{padding:3px 6px;border:1px solid #ddd;vertical-align:middle}
+tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #ddd;font-size:9px}
+.inactive-chip{background:#eceff1;border:1px solid #cfd8dc;border-radius:20px;padding:3px 10px;font-size:9px;color:#37474f}
+.filter-info{background:#f8fafc;border:1px solid #e0e0e0;border-radius:4px;padding:6px 12px;font-size:9px;color:#546e7a;margin-bottom:8px}
+.rpt-footer{margin-top:10px;border-top:2px solid #1a237e;padding:7px 0 0;text-align:center;font-size:8px;color:#555;line-height:1.7}
+.rpt-footer strong{color:#1a237e}
+@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:10mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
+@media screen{
+  .action-bar{position:sticky;top:0;z-index:999;background:#1a237e;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .btn-close-rpt{background:#fff;color:#1a237e}
+  .btn-print-rpt{background:#4caf50;color:#fff}
+  .action-bar-label{color:#c5cae9;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+  body{max-width:960px;margin:0 auto;padding:0 8px}
+}
+@media screen and (max-width:600px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .kpi-value{font-size:12px}
+}
+</style>
+</head>
+<body>
+<div class="action-bar">
+  <button class="btn-close-rpt" onclick="window.close()">✕ Fechar</button>
+  <button class="btn-print-rpt" onclick="window.print()">🖨️ Salvar PDF</button>
+  <span class="action-bar-label">Relatório Resumo · ${esc(d.periodLabel)}</span>
+</div>
+<div class="hdr">
+  <div class="hdr-logo">HYGIC<br>ARE</div>
+  <div class="hdr-c">
+    <h1>RELATÓRIO RESUMO DE LAVANDERIA</h1>
+    <div class="hdr-info">${esc(d.periodLabel)} · Gerado em ${esc(d.today)}</div>
+  </div>
+</div>
+<div class="filter-info">${filterInfo}</div>
+<div class="kpi-grid">${kpiHtml}</div>
+<div class="sec">
+  <div class="sec-hd">TOTAIS POR CLIENTE</div>
+  <table>
+    <thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Cliente</th><th class="tc">Total kg</th><th class="tc">Relatórios</th><th class="tc">% Total</th></tr></thead>
+    <tbody>${clientRows || '<tr><td colspan="5" class="tc" style="color:#9e9e9e;padding:12px">Sem dados</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="2" style="text-align:right">Total:</td><td class="tc">${fmt(d.totalKg)} kg</td><td class="tc">${d.totalRecords}</td><td></td></tr></tfoot>
+  </table>
+</div>
+<div class="sec">
+  <div class="sec-hd">TOTAIS POR PROCESSO</div>
+  <table>
+    <thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Processo</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead>
+    <tbody>${procRows || '<tr><td colspan="4" class="tc" style="color:#9e9e9e;padding:12px">Sem dados</td></tr>'}</tbody>
+  </table>
+</div>
+<div class="sec">
+  <div class="sec-hd">EVOLUÇÃO MENSAL</div>
+  <table>
+    <thead><tr><th class="tl">Mês</th><th class="tc">Total kg</th><th class="tc">Crescimento m/m</th></tr></thead>
+    <tbody>${monthRows || '<tr><td colspan="3" class="tc" style="color:#9e9e9e;padding:12px">Sem dados</td></tr>'}</tbody>
+  </table>
+</div>
+${inactiveSec}
+<div class="rpt-footer">
+  <strong>Hygicare</strong> · Sistema de Gestão de Lavanderia · Relatório gerado em ${esc(d.today)}
+</div>
+</body>
+</html>`;
+    }
 
     // =====================================================
     // GERENCIAR USUARIOS (admin)

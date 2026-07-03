@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v154';
+const CACHE = 'lavanderia-cache-v164';
 const ASSETS = [
   '/',
   '/index.html',
@@ -6,7 +6,10 @@ const ASSETS = [
   '/app.js',
   '/auth.js',
   '/db.js',
-  '/config.js'
+  '/config.js',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 self.addEventListener('install', e => {
@@ -39,7 +42,8 @@ self.addEventListener('fetch', e => {
   if (url.includes('script.google.com')) return;
   if (url.includes('googleusercontent.com')) return;
   if (url.includes('googleapis.com')) return;
-  if (url.includes('cdn.jsdelivr.net')) return;
+  // cdn.jsdelivr.net é cacheado normalmente (stale-while-revalidate)
+  // para que Chart.js funcione offline após o primeiro carregamento
 
   // Stale-while-revalidate: responde do cache imediatamente e atualiza em background
   e.respondWith(
