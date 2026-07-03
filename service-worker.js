@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v149';
+const CACHE = 'lavanderia-cache-v150';
 const ASSETS = [
   '/',
   '/index.html',
@@ -31,6 +31,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
   const url = e.request.url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return;
   if (url.includes('script.google.com')) return;
   if (url.includes('googleusercontent.com')) return;
   if (url.includes('googleapis.com')) return;
