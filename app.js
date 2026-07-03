@@ -3076,8 +3076,16 @@ ${printScript}
     // =====================================================
     // GERENCIAR VAZÕES POR MÁQUINA (painel inline)
     // =====================================================
+    function _vazaoBatchRowHtml(idx) {
+      return `
+        <div class="vazao-batch-row" style="display:flex;gap:0.5rem;align-items:center">
+          <input placeholder="Nome (ex: BOMBA ${idx})" class="form-input vazao-batch-name" style="flex:2;min-width:100px;padding:0.4rem 0.7rem" />
+          <input placeholder="Unidade (ex: L/s)" class="form-input vazao-batch-unit" style="flex:1;min-width:70px;padding:0.4rem 0.7rem" />
+          <button type="button" onclick="this.closest('.vazao-batch-row').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem;padding:2px 6px;flex-shrink:0" title="Remover">✕</button>
+        </div>`;
+    }
+
     window._manageVazoes = async function(machineId, machineName) {
-      // Cria/exibe um painel de gestão inline
       const existing = document.getElementById(`vazao-mgr-${machineId}`);
       if (existing) { existing.remove(); return; }
 
@@ -3093,38 +3101,59 @@ ${printScript}
         <div id="vazao-mgr-list-${machineId}">
           ${vazoes.length ? vazoes.map(v => _vazaoItem(v)).join('') : '<p style="color:var(--muted);font-size:0.85rem;margin:0.5rem 0">Nenhuma vazão cadastrada.</p>'}
         </div>
-        <form id="vazao-add-form-${machineId}" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem">
-          <input name="name" placeholder="Nome (ex: Vazão 1)" required class="form-input" style="flex:2;min-width:120px;padding:0.4rem 0.7rem" />
-          <input name="unit" placeholder="Unidade (ex: L/s)" class="form-input" style="flex:1;min-width:80px;padding:0.4rem 0.7rem" />
-          <button type="submit" class="btn-primary" style="padding:0.4rem 0.9rem;font-size:0.85rem">+ Adicionar</button>
-        </form>
+        <div style="margin-top:0.75rem">
+          <div style="font-size:0.75rem;font-weight:700;color:var(--muted);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.4px">Adicionar em lote</div>
+          <div id="vazao-batch-rows-${machineId}" style="display:flex;flex-direction:column;gap:0.35rem">
+            ${[1,2,3].map(i => _vazaoBatchRowHtml(i)).join('')}
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem;justify-content:space-between;align-items:center">
+            <button type="button" id="vazao-add-row-${machineId}" class="btn-secondary" style="font-size:0.82rem;padding:0.35rem 0.8rem;min-height:0;width:auto">+ Linha</button>
+            <button type="button" id="vazao-save-batch-${machineId}" class="btn-primary" style="font-size:0.85rem;padding:0.4rem 1.1rem;min-height:0;width:auto">💾 Salvar todos</button>
+          </div>
+        </div>
       `;
 
-      // Inserir após o card da máquina
       const machCard = document.querySelector(`[data-machine-id="${machineId}"]`);
       if (machCard) machCard.after(panel);
       else document.getElementById('machines-list-cad').appendChild(panel);
 
-      document.getElementById(`vazao-add-form-${machineId}`)?.addEventListener('submit', async e => {
-        e.preventDefault();
+      document.getElementById(`vazao-add-row-${machineId}`)?.addEventListener('click', () => {
+        const rowsEl = document.getElementById(`vazao-batch-rows-${machineId}`);
+        const n = rowsEl.querySelectorAll('.vazao-batch-row').length + 1;
+        rowsEl.insertAdjacentHTML('beforeend', _vazaoBatchRowHtml(n));
+        rowsEl.querySelector('.vazao-batch-row:last-child .vazao-batch-name')?.focus();
+      });
+
+      document.getElementById(`vazao-save-batch-${machineId}`)?.addEventListener('click', async () => {
+        const rowsEl = document.getElementById(`vazao-batch-rows-${machineId}`);
+        const rows = [...rowsEl.querySelectorAll('.vazao-batch-row')].map(row => ({
+          name: row.querySelector('.vazao-batch-name')?.value.trim(),
+          unit: row.querySelector('.vazao-batch-unit')?.value.trim() || ''
+        })).filter(r => r.name);
+
+        if (!rows.length) return toast('Informe ao menos um nome', 'warning');
         if (_saving) return;
-        const fd = new FormData(e.target);
-        const data = { machine_id: Number(machineId), name: fd.get('name').trim(), unit: fd.get('unit').trim(), created_at: new Date().toISOString() };
-        if (!data.name) return;
-        const addBtn = e.target.querySelector('button[type="submit"]');
-        setSaving(true, addBtn, '⏳...');
+
+        const btn = document.getElementById(`vazao-save-batch-${machineId}`);
+        setSaving(true, btn, '⏳...');
         try {
-          const id = await dbAdd('vazoes', data);
-          data.id = id;
-          await postToSheetDB(SHEETS.VAZOES, data);
-          e.target.reset();
           const listEl = document.getElementById(`vazao-mgr-list-${machineId}`);
-          if (listEl) listEl.innerHTML += _vazaoItem(data);
-          toast('Vazão adicionada!', 'success');
+          listEl.querySelectorAll('p').forEach(p => p.remove());
+
+          for (const r of rows) {
+            const data = { machine_id: Number(machineId), name: r.name, unit: r.unit, created_at: new Date().toISOString() };
+            const id = await dbAdd('vazoes', data);
+            data.id = id;
+            await postToSheetDB(SHEETS.VAZOES, data);
+            if (listEl) listEl.innerHTML += _vazaoItem(data);
+          }
+
+          rowsEl.innerHTML = _vazaoBatchRowHtml(1);
+          toast(`${rows.length} vazão(ões) adicionada(s)!`, 'success');
         } catch(err) {
-          toast('Erro ao adicionar vazão', 'error');
+          toast('Erro ao salvar', 'error');
         } finally {
-          setSaving(false, addBtn);
+          setSaving(false, btn);
         }
       });
     };
