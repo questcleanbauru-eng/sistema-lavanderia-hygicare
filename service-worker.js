@@ -17,6 +17,10 @@ self.addEventListener('install', e => {
   );
 });
 
+self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>

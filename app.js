@@ -1472,9 +1472,33 @@ ${printScript}
       btn.addEventListener('click', e => {
         e.stopPropagation();
         refreshDropdown.classList.add('hidden');
-        doRefresh(btn.dataset.sheet);
+        if (btn.id === 'btn-force-sw-update') {
+          _forceSwUpdate();
+        } else {
+          doRefresh(btn.dataset.sheet);
+        }
       });
     });
+
+    async function _forceSwUpdate() {
+      toast('⏳ Limpando cache e atualizando app…', 'info', 3000);
+      try {
+        // Limpar todos os caches do SW
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+        // Forçar o SW a buscar nova versão
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update();
+            // Se houver waiting SW, manda skipWaiting
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+        }
+      } catch(e) { /* ignora erros de cache */ }
+      // Recarrega a página para pegar o novo SW
+      window.location.reload(true);
+    }
 
     // =====================================================
     // HELPERS DE NORMALIZAÇÃO E PERSISTÊNCIA
