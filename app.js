@@ -219,10 +219,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let users = [...(window.USERS || [])];
 
-    const _loginApiUrl = gasApiUrl();
-    if (_loginApiUrl) {
+    if (CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
       try {
-        const r = await fetch(`${_loginApiUrl}?sheet=${SHEETS.USERS}`);
+        const r = await fetch(`${CONFIG.GAS_URL}?sheet=${SHEETS.USERS}`);
         if (r.ok) {
           const res = await r.json();
           const data = res.data || [];
