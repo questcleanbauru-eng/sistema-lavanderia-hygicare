@@ -5301,11 +5301,14 @@ ${recipeSections}
         porMes[key].kg += parseFloat(r.total || 0);
       }
       const mesSorted = Object.entries(porMes).sort((a,b) => a[0].localeCompare(b[0]));
-      // Dividir pelo total de meses do período (inclusive os sem registros)
+      // Dividir pelo total de meses do período selecionado, limitado ao mês atual
+      const _nowKey = `${yyyy}-${mm}`;
       let _chartPeriodMonths = 0;
-      if (filterStart && filterEnd) {
-        const [fsY, fsM] = filterStart.split('-').map(Number);
-        const [feY, feM] = filterEnd.split('-').map(Number);
+      if (filterStart || filterEnd) {
+        const _fs = filterStart || (mesSorted[0]?.[0] ?? _nowKey);
+        const _fe = filterEnd && filterEnd <= _nowKey ? filterEnd : _nowKey;
+        const [fsY, fsM] = _fs.split('-').map(Number);
+        const [feY, feM] = _fe.split('-').map(Number);
         _chartPeriodMonths = (feY - fsY) * 12 + (feM - fsM) + 1;
       } else if (mesSorted.length > 0) {
         const [fy, fm] = mesSorted[0][0].split('-').map(Number);
@@ -5662,11 +5665,14 @@ ${recipeSections}
         kgMonth[key].kg += parseFloat(r.total || 0);
       }
       const monthsSorted = Object.entries(kgMonth).sort((a, b) => a[0].localeCompare(b[0]));
-      // Dividir pelo total de meses do período (inclusive os sem registros)
+      // Dividir pelo total de meses do período selecionado, limitado ao mês atual
+      const _rptNowKey = `${yyyy}-${mm}`;
       let _periodMonths = 0;
-      if (filterStart && filterEnd) {
-        const [fsY, fsM] = filterStart.split('-').map(Number);
-        const [feY, feM] = filterEnd.split('-').map(Number);
+      if (filterStart || filterEnd) {
+        const _fs = filterStart || (monthsSorted[0]?.[0] ?? _rptNowKey);
+        const _fe = filterEnd && filterEnd <= _rptNowKey ? filterEnd : _rptNowKey;
+        const [fsY, fsM] = _fs.split('-').map(Number);
+        const [feY, feM] = _fe.split('-').map(Number);
         _periodMonths = (feY - fsY) * 12 + (feM - fsM) + 1;
       } else if (monthsSorted.length > 0) {
         const [fy, fm] = monthsSorted[0][0].split('-').map(Number);
