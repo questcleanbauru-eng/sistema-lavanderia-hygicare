@@ -3535,7 +3535,7 @@ ${printScript}
       document.getElementById('recipe-steps-body').innerHTML = '';
 
       if (isEdit) {
-        const recipe = (await dbGetAll_raw('recipes')).find(r => r.id === recipeId);
+        const recipe = (await dbGetAll_raw('recipes')).find(r => Number(r.id) === Number(recipeId));
         if (!recipe) { _isLoadingRecipeForm = false; return toast('Receita não encontrada', 'error'); }
         const selectedMachineIds = parseMachineIds(recipe);
         const allProcsEdit = await dbGetAll_raw('processes');
@@ -3622,7 +3622,7 @@ ${printScript}
       // Ao editar, o processo da própria receita não é bloqueado
       let ownProcName = '';
       if (_editingRecipeId !== null) {
-        const cur = allRecipes.find(r => r.id === _editingRecipeId);
+        const cur = allRecipes.find(r => Number(r.id) === Number(_editingRecipeId));
         if (cur) ownProcName = (cur.process_name || '').toLowerCase().trim();
       }
 
@@ -3663,8 +3663,13 @@ ${printScript}
       if (_isLoadingRecipeForm) return;
       if (!e.target.classList.contains('machine-chk')) return;
       const firstId = _collectMachineIds()[0];
-      if (firstId) await _loadRecipeProcesses(firstId);
-      else document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+      if (firstId) {
+        // Preserva o processo já selecionado ao adicionar/remover máquinas
+        const currentProcId = document.getElementById('recipe-process')?.value;
+        await _loadRecipeProcesses(firstId, currentProcId ? Number(currentProcId) : null);
+      } else {
+        document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+      }
     });
 
     async function _addStep() {
@@ -3722,7 +3727,7 @@ ${printScript}
           toast('✅ Receita criada!', 'success');
         } else {
           // Edição — cria versão pendente para aprovação
-          const current = (await dbGetAll_raw('recipes')).find(r => r.id === _editingRecipeId);
+          const current = (await dbGetAll_raw('recipes')).find(r => Number(r.id) === Number(_editingRecipeId));
           if (!current) return toast('Receita original não encontrada', 'error');
           const editNotes = document.getElementById('recipe-edit-notes')?.value.trim() || '';
           const pending = {
@@ -4419,14 +4424,14 @@ ${recipeSections}
 
     window._approveRecipe = async function(pendingId) {
       const all = await dbGetAll_raw('recipes');
-      const pending = all.find(r => r.id === pendingId);
+      const pending = all.find(r => Number(r.id) === Number(pendingId));
       if (!pending || pending.status !== 'pending') return toast('Receita não encontrada ou não está pendente', 'error');
 
       // Usa replaces_id (preciso) se disponível, senão fallback pelo original_id
       const currentActive = (pending.replaces_id
-        ? all.find(r => r.status === 'active' && r.id === pending.replaces_id)
+        ? all.find(r => r.status === 'active' && Number(r.id) === Number(pending.replaces_id))
         : null)
-        || all.find(r => r.status === 'active' && (r.original_id === pending.original_id || r.id === pending.original_id));
+        || all.find(r => r.status === 'active' && (Number(r.original_id) === Number(pending.original_id) || Number(r.id) === Number(pending.original_id)));
       if (currentActive) {
         const pendingMachSet = new Set(parseMachineIds(pending).map(Number));
         const activeMachIds  = parseMachineIds(currentActive).map(Number);
