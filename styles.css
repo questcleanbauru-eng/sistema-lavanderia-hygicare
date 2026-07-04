@@ -2,6 +2,47 @@
    HYGICARE LAVANDERIA — STYLES
    ============================================= */
 
+/* =========== SKELETON LOADING =========== */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s infinite;
+  border-radius: 8px;
+  color: transparent !important;
+  pointer-events: none;
+}
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+#app-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 1rem;
+  background: var(--bg);
+}
+.app-loading-logo {
+  font-size: 3rem;
+  animation: pulse-logo 1.5s ease-in-out infinite;
+}
+@keyframes pulse-logo { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.app-loading-bar {
+  width: 200px; height: 4px;
+  background: #e5e7eb; border-radius: 99px; overflow: hidden;
+}
+.app-loading-bar-fill {
+  height: 100%; width: 40%;
+  background: var(--primary); border-radius: 99px;
+  animation: loading-bar 1.4s ease-in-out infinite;
+}
+@keyframes loading-bar {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
 :root {
   --primary:       #2563eb;
   --primary-dark:  #1d4ed8;
@@ -1180,7 +1221,7 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 /* KPI cards */
 .charts-kpi {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.9rem;
   margin-bottom: 1.2rem;
 }

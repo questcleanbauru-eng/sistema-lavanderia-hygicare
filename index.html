@@ -11,13 +11,13 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='72' font-size='62' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>H</text></svg>" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="description" content="Sistema de Gestão de Lavanderia Hygicare — controle de produção, relatórios e gráficos." />
     <title>Sistema Lavanderia Hygicare</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <!-- Chart.js carregado sob demanda via loadChartJs() — não incluir aqui -->
   </head>
   <body>
-    <div id="toast-container"></div>
+    <div id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
     <!-- Modal Editar Registro -->
     <div id="modal-edit-record" class="modal-overlay hidden">
@@ -138,14 +138,24 @@
         </form>
       </div>
     </div>
-    <div id="offline-banner" class="offline-banner hidden">⚠️ Sem conexão com a internet</div>
-    <div id="login-screen" class="login-container">
+    <div id="offline-banner" class="offline-banner hidden" role="alert" aria-live="assertive">⚠️ Sem conexão com a internet</div>
+
+    <!-- Tela de carregamento inicial — some após auth.js inicializar -->
+    <div id="app-loading" aria-label="Carregando aplicação" aria-live="polite">
+      <div class="app-loading-logo" aria-hidden="true">🧺</div>
+      <div class="app-loading-bar" role="progressbar" aria-label="Carregando...">
+        <div class="app-loading-bar-fill"></div>
+      </div>
+      <p style="font-size:0.85rem;color:var(--muted)">Carregando Hygicare...</p>
+    </div>
+
+    <div id="login-screen" class="login-container" style="display:none">
       <div class="login-card">
         <div class="login-logo">🧺</div>
         <h1>Hygicare</h1>
         <p class="login-subtitle">Sistema de Gestao de Lavanderia</p>
         <form id="form-login">
-          <div class="input-group"><span class="input-icon">👤</span><input type="text" name="username" placeholder="Usuario" required autofocus /></div>
+          <div class="input-group"><span class="input-icon">👤</span><input type="text" name="username" placeholder="Usuario" required autofocus autocomplete="username" aria-label="Nome de usuário" /></div>
           <div class="input-group"><span class="input-icon">🔒</span><input type="password" name="password" id="login-password" placeholder="Senha" required /><button type="button" id="btn-toggle-pw" style="background:none;border:none;cursor:pointer;padding:0 0.8rem;font-size:1.1rem;color:#94a3b8" title="Mostrar/ocultar senha">👁️</button></div>
           <button type="submit" id="btn-login">Entrar</button>
         </form>
@@ -194,9 +204,9 @@
           </div>
         </div>
         <nav>
-          <button class="nav-btn" id="nav-home">🏠 Início</button>
-          <button class="nav-btn" id="nav-clients">👥 Clientes</button>
-          <button class="nav-btn" id="nav-machines">⚙️ Maquinas</button>
+          <button class="nav-btn" id="nav-home" aria-label="Ir para Início">🏠 Início</button>
+          <button class="nav-btn" id="nav-clients" aria-label="Ir para Clientes">👥 Clientes</button>
+          <button class="nav-btn" id="nav-machines" aria-label="Ir para Máquinas">⚙️ Maquinas</button>
           <button class="nav-btn" id="nav-processes">📋 Processos</button>
           <button class="nav-btn" id="nav-charts">📊 Graficos</button>
           <button class="nav-btn" id="nav-vazao">💧 Vazão</button>
@@ -416,6 +426,7 @@
         <section id="screen-charts" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title"><h2>📊 Gráficos</h2></div>
+            <button id="btn-summary-report" class="btn-primary" style="white-space:nowrap;font-size:0.85rem">📄 Relatório Resumo</button>
           </div>
           <p style="font-size:0.78rem;color:var(--muted);margin:-0.25rem 0 0.75rem;display:flex;align-items:center;gap:0.3rem">
             <span>ℹ️</span> Os dados consideram a <strong>Data de Início</strong> de cada registro para agrupamento mensal.
@@ -438,6 +449,10 @@
             <div class="kpi-card kpi-danger">
               <div class="kpi-value" id="kpi-cancelamento">—</div>
               <div class="kpi-label">Taxa cancelamento</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="kpi-media-mensal">—</div>
+              <div class="kpi-label">Média kg/mês</div>
             </div>
           </div>
 

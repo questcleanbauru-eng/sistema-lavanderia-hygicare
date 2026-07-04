@@ -5172,13 +5172,14 @@ ${recipeSections}
       });
     }
 
-    function _setKpis(totalKg, totalRec, totalClients, cancelPct) {
+    function _setKpis(totalKg, totalRec, totalClients, cancelPct, mediaMensal) {
       const fmt = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
       const el = id => document.getElementById(id);
       if (el('kpi-total-kg'))     el('kpi-total-kg').textContent     = fmt(totalKg) + ' kg';
       if (el('kpi-registros'))    el('kpi-registros').textContent    = totalRec;
       if (el('kpi-clientes'))     el('kpi-clientes').textContent     = totalClients;
       if (el('kpi-cancelamento')) el('kpi-cancelamento').textContent = cancelPct.toFixed(1) + '%';
+      if (el('kpi-media-mensal')) el('kpi-media-mensal').textContent = mediaMensal != null ? fmt(mediaMensal) + ' kg' : '—';
     }
 
     async function renderCharts() {
@@ -5275,7 +5276,9 @@ ${recipeSections}
       const totalCanc  = records.reduce((s, r) => s + parseFloat(r.canceled || 0), 0);
       const cancelPct  = (totalExec + totalCanc) > 0 ? (totalCanc / (totalExec + totalCanc)) * 100 : 0;
       const clientsSet = new Set(records.map(r => r.client_id));
-      _setKpis(totalKg, records.length, clientsSet.size, cancelPct);
+      // Média calculada após agrupar por mês (feita abaixo e reutilizada aqui via closure)
+      let _mediaMensal = null;
+      _setKpis(totalKg, records.length, clientsSet.size, cancelPct, null);
 
       if (!records.length) {
         CHART_IDS.forEach(id => {
@@ -5298,22 +5301,39 @@ ${recipeSections}
         porMes[key].kg += parseFloat(r.total || 0);
       }
       const mesSorted = Object.entries(porMes).sort((a,b) => a[0].localeCompare(b[0]));
+      _mediaMensal = mesSorted.length > 0 ? totalKg / mesSorted.length : 0;
+      // Atualizar KPI de média agora que temos o valor
+      const _elMedia = document.getElementById('kpi-media-mensal');
+      if (_elMedia) {
+        const fmtM = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
+        _elMedia.textContent = fmtM(_mediaMensal) + ' kg';
+      }
       const ctxM = document.getElementById('chart-por-mes');
       if (ctxM) _charts.porMes = new Chart(ctxM, {
         type: 'line',
         data: {
           labels: mesSorted.map(e => e[1].label),
-          datasets: [{
-            label: 'kg processado',
-            data: mesSorted.map(e => +e[1].kg.toFixed(2)),
-            borderColor: '#2563eb',
-            backgroundColor: 'rgba(37,99,235,0.1)',
-            fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6
-          }]
+          datasets: [
+            {
+              label: 'kg processado',
+              data: mesSorted.map(e => +e[1].kg.toFixed(2)),
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37,99,235,0.1)',
+              fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6
+            },
+            {
+              label: `Média (${(_mediaMensal/1000 >= 1 ? (_mediaMensal/1000).toFixed(1)+'k' : _mediaMensal.toFixed(0))} kg/mês)`,
+              data: mesSorted.map(() => +_mediaMensal.toFixed(2)),
+              borderColor: '#f59e0b',
+              borderDash: [6, 3],
+              backgroundColor: 'transparent',
+              fill: false, tension: 0, pointRadius: 0, pointHoverRadius: 0, borderWidth: 2
+            }
+          ]
         },
         options: {
           responsive: true,
-          plugins: { legend: { display: false } },
+          plugins: { legend: { display: mesSorted.length > 1, labels: { font: { size: 11 } } } },
           scales: { y: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
         }
       });
@@ -5580,7 +5600,8 @@ ${recipeSections}
       const cancelPct  = (totalExec + totalCanc) > 0 ? (totalCanc / (totalExec + totalCanc)) * 100 : 0;
       const clientsSet = new Set(records.map(r => r.client_id));
 
-      const ticketMedio = records.length > 0 ? totalKg / records.length : 0;
+      const ticketMedio  = records.length > 0 ? totalKg / records.length : 0;
+      const mediaMensal  = monthsSorted.length > 0 ? totalKg / monthsSorted.length : 0;
 
       // Crescimento vs período anterior de mesma duração
       let crescimento = null;
@@ -5670,7 +5691,8 @@ ${recipeSections}
       const html = _buildSummaryHtml({
         periodLabel, clientLabel, sellerLabel,
         totalKg, totalRecords: totalSubmissoes, activeClients: clientsSet.size,
-        cancelPct, ticketMedio: totalSubmissoes > 0 ? totalKg / totalSubmissoes : 0, crescimento,
+        cancelPct, ticketMedio: totalSubmissoes > 0 ? totalKg / totalSubmissoes : 0,
+        mediaMensal, crescimento,
         byClient, byProcess, byMonthWithGrowth, inactiveClients,
         today: new Date().toLocaleDateString('pt-BR')
       });
@@ -5686,14 +5708,14 @@ ${recipeSections}
       const fmtPct = v => (v >= 0 ? '+' : '') + fmt(v, 1) + '%';
 
       const kpiCards = [
-        { label: 'Total Processado', value: `${fmt(d.totalKg)} kg`,       color: '#1a237e' },
-        { label: 'Relatórios Enviados', value: d.totalRecords,                 color: '#0d47a1' },
-        { label: 'Clientes Ativos',     value: d.activeClients,               color: '#1565c0' },
-        { label: 'Ticket Médio',        value: `${fmt(d.ticketMedio)} kg/rel`, color: '#283593' },
-        { label: 'Cancelamentos',    value: `${fmt(d.cancelPct, 1)}%`,    color: d.cancelPct > 10 ? '#c62828' : '#2e7d32' },
+        { label: 'Total Processado',    value: `${fmt(d.totalKg)} kg`,         color: '#1a237e' },
+        { label: 'Relatórios Enviados', value: d.totalRecords,                  color: '#0d47a1' },
+        { label: 'Clientes Ativos',     value: d.activeClients,                 color: '#1565c0' },
+        { label: 'Média kg/mês',        value: `${fmt(d.mediaMensal)} kg`,      color: '#283593' },
+        { label: 'Cancelamentos',       value: `${fmt(d.cancelPct, 1)}%`,       color: d.cancelPct > 10 ? '#c62828' : '#2e7d32' },
         d.crescimento !== null
-          ? { label: 'Crescimento',  value: fmtPct(d.crescimento),        color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' }
-          : { label: 'Crescimento',  value: '—',                           color: '#546e7a' }
+          ? { label: 'Crescimento',     value: fmtPct(d.crescimento),           color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' }
+          : { label: 'Crescimento',     value: '—',                              color: '#546e7a' }
       ];
 
       const kpiHtml = kpiCards.map(k =>
@@ -5727,6 +5749,9 @@ ${recipeSections}
           : '—';
         return `<tr><td class="tl">${esc(m.label)}</td><td class="tc">${fmt(m.kg)} kg</td><td class="tc">${gHtml}</td></tr>`;
       }).join('');
+      const monthFooter = d.byMonthWithGrowth.length > 1
+        ? `<tfoot><tr><td class="tl" style="font-weight:bold">Média do período</td><td class="tc" style="font-weight:bold;color:#b45309">${fmt(d.mediaMensal)} kg/mês</td><td></td></tr></tfoot>`
+        : '';
 
       let inactiveSec = '';
       if (d.inactiveClients.length > 0) {
@@ -5824,6 +5849,7 @@ tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #d
   <table>
     <thead><tr><th class="tl">Mês</th><th class="tc">Total kg</th><th class="tc">Crescimento m/m</th></tr></thead>
     <tbody>${monthRows || '<tr><td colspan="3" class="tc" style="color:#9e9e9e;padding:12px">Sem dados</td></tr>'}</tbody>
+    ${monthFooter}
   </table>
 </div>
 ${inactiveSec}
