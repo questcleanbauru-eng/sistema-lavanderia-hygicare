@@ -5301,7 +5301,18 @@ ${recipeSections}
         porMes[key].kg += parseFloat(r.total || 0);
       }
       const mesSorted = Object.entries(porMes).sort((a,b) => a[0].localeCompare(b[0]));
-      _mediaMensal = mesSorted.length > 0 ? totalKg / mesSorted.length : 0;
+      // Dividir pelo total de meses do período (inclusive os sem registros)
+      let _chartPeriodMonths = 0;
+      if (filterStart && filterEnd) {
+        const [fsY, fsM] = filterStart.split('-').map(Number);
+        const [feY, feM] = filterEnd.split('-').map(Number);
+        _chartPeriodMonths = (feY - fsY) * 12 + (feM - fsM) + 1;
+      } else if (mesSorted.length > 0) {
+        const [fy, fm] = mesSorted[0][0].split('-').map(Number);
+        const [ly, lm] = mesSorted[mesSorted.length - 1][0].split('-').map(Number);
+        _chartPeriodMonths = (ly - fy) * 12 + (lm - fm) + 1;
+      }
+      _mediaMensal = _chartPeriodMonths > 0 ? totalKg / _chartPeriodMonths : 0;
       // Atualizar KPI de média agora que temos o valor
       const _elMedia = document.getElementById('kpi-media-mensal');
       if (_elMedia) {
@@ -5651,7 +5662,18 @@ ${recipeSections}
         kgMonth[key].kg += parseFloat(r.total || 0);
       }
       const monthsSorted = Object.entries(kgMonth).sort((a, b) => a[0].localeCompare(b[0]));
-      const mediaMensal  = monthsSorted.length > 0 ? totalKg / monthsSorted.length : 0;
+      // Dividir pelo total de meses do período (inclusive os sem registros)
+      let _periodMonths = 0;
+      if (filterStart && filterEnd) {
+        const [fsY, fsM] = filterStart.split('-').map(Number);
+        const [feY, feM] = filterEnd.split('-').map(Number);
+        _periodMonths = (feY - fsY) * 12 + (feM - fsM) + 1;
+      } else if (monthsSorted.length > 0) {
+        const [fy, fm] = monthsSorted[0][0].split('-').map(Number);
+        const [ly, lm] = monthsSorted[monthsSorted.length - 1][0].split('-').map(Number);
+        _periodMonths = (ly - fy) * 12 + (lm - fm) + 1;
+      }
+      const mediaMensal = _periodMonths > 0 ? totalKg / _periodMonths : 0;
       const byMonthWithGrowth = monthsSorted.map(([, d], i) => {
         const prev   = i > 0 ? monthsSorted[i-1][1].kg : null;
         const growth = prev && prev > 0 ? ((d.kg - prev) / prev) * 100 : null;
