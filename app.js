@@ -713,7 +713,7 @@ ${printScript}
         if (screenId === 'screen-vazao')     await initVazaoScreen();
         if (screenId === 'screen-recipes')   await initRecipesScreen();
         if (screenId === 'screen-form') await _initFormScreen();
-        if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
+        if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
         if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
         if (screenId === 'screen-alerts')  await renderAlertsScreen();
@@ -837,7 +837,7 @@ ${printScript}
         if (screenId === 'screen-vazao')     await initVazaoScreen();
         if (screenId === 'screen-recipes')   await initRecipesScreen();
         if (screenId === 'screen-form') await _initFormScreen();
-        if (screenId === 'screen-reports') { await refreshReportClientFilter(); await renderRecordsList(); }
+        if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-alerts')    await renderAlertsScreen();
         if (screenId === 'screen-users')     await renderUsersList();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
@@ -4509,6 +4509,29 @@ ${recipeSections}
     // =====================================================
     // RELATÓRIO — FILTROS
     // =====================================================
+    async function refreshMonthYearFilter() {
+      const sel = document.getElementById('filter-month-year');
+      if (!sel) return;
+      const records = await dbGetAll_raw('records');
+      const months = new Set();
+      for (const r of records) {
+        const d = (r.date_start || r.created_at || '').slice(0, 7);
+        if (d && d.length === 7) months.add(d);
+      }
+      const sorted = [...months].sort().reverse();
+      const current = sel.value;
+      sel.innerHTML = '<option value="">📅 Mês/Ano</option>';
+      for (const m of sorted) {
+        const [y, mo] = m.split('-').map(Number);
+        const label = new Date(y, mo - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+        if (m === current) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
     function getReportFilters() {
       const activeQf = document.querySelector('#records-quick-filters .qf-btn.active')?.dataset?.qf || 'all';
       const now = new Date();
@@ -4545,10 +4568,32 @@ ${recipeSections}
     document.getElementById('filter-seller-records')?.addEventListener('change', applyFilters);
     document.getElementById('filter-date-start')  .addEventListener('change', applyFilters);
     document.getElementById('filter-date-end')    .addEventListener('change', applyFilters);
+
+    document.getElementById('filter-month-year')?.addEventListener('change', function() {
+      const val = this.value;
+      if (val) {
+        const [y, m] = val.split('-').map(Number);
+        const first = `${val}-01`;
+        const last  = new Date(y, m, 0).toISOString().slice(0, 10);
+        document.getElementById('filter-date-start').value = first;
+        document.getElementById('filter-date-end').value   = last;
+        document.getElementById('records-quick-filters')?.querySelectorAll('.qf-btn').forEach(b => b.classList.remove('active'));
+      } else {
+        document.getElementById('filter-date-start').value = '';
+        document.getElementById('filter-date-end').value   = '';
+        document.querySelector('#records-quick-filters .qf-btn[data-qf="all"]')?.classList.add('active');
+      }
+      applyFilters();
+    });
+
     document.getElementById('records-quick-filters')?.querySelectorAll('.qf-btn').forEach(btn => {
       btn.addEventListener('click', function() {
         document.getElementById('records-quick-filters').querySelectorAll('.qf-btn').forEach(b => b.classList.remove('active'));
         this.classList.add('active');
+        const mySelect = document.getElementById('filter-month-year');
+        if (mySelect) { mySelect.value = ''; }
+        document.getElementById('filter-date-start').value = '';
+        document.getElementById('filter-date-end').value   = '';
         applyFilters();
       });
     });
@@ -4557,6 +4602,8 @@ ${recipeSections}
       document.getElementById('filter-client-records').value = '';
       const sellerSel = document.getElementById('filter-seller-records');
       if (sellerSel) sellerSel.value = '';
+      const mySelect = document.getElementById('filter-month-year');
+      if (mySelect) mySelect.value = '';
       document.getElementById('filter-date-start').value = '';
       document.getElementById('filter-date-end').value = '';
       document.getElementById('records-quick-filters')?.querySelectorAll('.qf-btn').forEach(b => b.classList.remove('active'));
