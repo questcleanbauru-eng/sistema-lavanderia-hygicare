@@ -5601,7 +5601,6 @@ ${recipeSections}
       const clientsSet = new Set(records.map(r => r.client_id));
 
       const ticketMedio  = records.length > 0 ? totalKg / records.length : 0;
-      const mediaMensal  = monthsSorted.length > 0 ? totalKg / monthsSorted.length : 0;
 
       // Crescimento vs período anterior de mesma duração
       let crescimento = null;
@@ -5652,6 +5651,7 @@ ${recipeSections}
         kgMonth[key].kg += parseFloat(r.total || 0);
       }
       const monthsSorted = Object.entries(kgMonth).sort((a, b) => a[0].localeCompare(b[0]));
+      const mediaMensal  = monthsSorted.length > 0 ? totalKg / monthsSorted.length : 0;
       const byMonthWithGrowth = monthsSorted.map(([, d], i) => {
         const prev   = i > 0 ? monthsSorted[i-1][1].kg : null;
         const growth = prev && prev > 0 ? ((d.kg - prev) / prev) * 100 : null;
