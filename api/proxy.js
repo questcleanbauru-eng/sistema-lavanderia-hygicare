@@ -1,9 +1,14 @@
 // Vercel serverless proxy — encaminha requisições para o Google Apps Script
 // evitando restrições de CORS do browser.
+// A URL do GAS é lida de variável de ambiente (GAS_URL) configurada no Vercel Dashboard
+// — nunca hardcode aqui para não expor o endpoint publicamente.
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzvQTnHT3IIojMVEKHyoWgkx4dYr7AuhrVROEfGzZjFRajR0xYtkC7TFoqaA3evTYBuag/exec';
+const GAS_URL = (process.env.GAS_URL || '').trim();
 
 module.exports = async function handler(req, res) {
+  if (!GAS_URL) {
+    return res.status(503).json({ status: 'error', error: 'GAS_URL não configurada no servidor' });
+  }
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 

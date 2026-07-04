@@ -163,9 +163,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Service Worker
   if ('serviceWorker' in navigator) {
     try {
-      await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
-      // Avisa o usuário quando uma nova versão estiver disponível
+      const swReg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      // Força o waiting SW a ativar imediatamente quando detectado
+      swReg.addEventListener('updatefound', () => {
+        const newSW = swReg.installing;
+        if (!newSW) return;
+        newSW.addEventListener('statechange', () => {
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            newSW.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+      // Quando o novo SW assumir o controle:
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Se ainda não está logado, recarrega silenciosamente para garantir código novo
+        const session = localStorage.getItem('lavanderia_session');
+        if (!session) {
+          window.location.reload();
+          return;
+        }
         toast('Nova versão disponível!', 'info', 12000, {
           label: 'Atualizar',
           fn: () => window.location.reload()
@@ -221,7 +237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
       try {
-        const r = await fetch(`${CONFIG.GAS_URL}?sheet=${SHEETS.USERS}`);
+        const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.USERS}`);
         if (r.ok) {
           const res = await r.json();
           const data = res.data || [];
@@ -832,6 +848,202 @@ ${printScript}
     if (currentUser?.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
     }
+
+    document.getElementById('btn-admin-report-pdf')?.addEventListener('click', async () => {
+      const win = window.open('', '_blank', 'width=1000,height=750');
+      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
+
+      const days = Number(document.getElementById('admin-report-period')?.value || 30);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffISO = cutoff.toISOString().slice(0, 10);
+      const prevCutoff = new Date(cutoff);
+      prevCutoff.setDate(prevCutoff.getDate() - days);
+      const prevCutoffISO = prevCutoff.toISOString().slice(0, 10);
+
+      const [records, clients, recipes] = await Promise.all([
+        dbGetAll_raw('records'),
+        dbGetAll_raw('clients'),
+        dbGetAll_raw('recipes'),
+      ]);
+
+      // Formatação pt-BR
+      const fmtKg  = n => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' kg';
+      const fmtNum = n => Number(n).toLocaleString('pt-BR');
+      const fmtPct = n => (n >= 0 ? '+' : '') + Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+
+      const inPeriod = r => (r.date_start || r.created_at || '').slice(0,10) >= cutoffISO;
+      const inPrev   = r => { const d = (r.date_start || r.created_at || '').slice(0,10); return d >= prevCutoffISO && d < cutoffISO; };
+
+      const curRecs  = records.filter(inPeriod);
+      const prevRecs = records.filter(inPrev);
+      const sumKg    = arr => arr.reduce((s, r) => s + (parseFloat(r.total) || 0), 0);
+      const curKg    = sumKg(curRecs);
+      const prevKg   = sumKg(prevRecs);
+      const diffPct  = prevKg > 0 ? ((curKg - prevKg) / prevKg * 100) : null;
+      const diffHtml = diffPct === null ? '<span style="color:#94a3b8">—</span>'
+        : diffPct >= 0
+          ? `<span style="color:#16a34a">▲ ${fmtPct(diffPct)}</span>`
+          : `<span style="color:#dc2626">▼ ${fmtPct(Math.abs(diffPct))}</span>`;
+
+      const activeClientSet  = new Set(curRecs.map(r => String(r.client_id)));
+      const inactiveCount    = clients.filter(c => !activeClientSet.has(String(c.id))).length;
+      const pendingRecipes   = recipes.filter(r => r.status === 'pending');
+      const avgKg            = curRecs.length > 0 ? curKg / curRecs.length : 0;
+      const totalCanceled    = curRecs.reduce((s, r) => s + (parseFloat(r.canceled) || 0), 0);
+      const cancelPct        = curKg > 0 ? (totalCanceled / (curKg + totalCanceled) * 100) : 0;
+
+      // KPI cards — 3 colunas × 2 linhas
+      const kpi = (icon, label, value, sub='', color='#1e293b') => `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px 14px;text-align:center">
+          <div style="font-size:1.4rem;margin-bottom:4px">${icon}</div>
+          <div style="font-size:1.25rem;font-weight:800;color:${color};margin-bottom:3px;line-height:1.2">${value}</div>
+          <div style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${label}</div>
+          ${sub ? `<div style="font-size:0.72rem;color:#94a3b8">${sub}</div>` : ''}
+        </div>`;
+
+      const kpisHtml = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+        ${kpi('⚖️', 'Total kg processado', fmtKg(curKg), 'vs anterior: '+diffHtml, '#1e3a8a')}
+        ${kpi('📋', 'Registros no período', fmtNum(curRecs.length), `média ${fmtKg(avgKg)} / registro`)}
+        ${kpi('👥', 'Clientes ativos', fmtNum(activeClientSet.size), `${fmtNum(inactiveCount)} inativos de ${fmtNum(clients.length)} total`, activeClientSet.size > 0 ? '#16a34a' : '#64748b')}
+        ${kpi('📉', 'Kg cancelados', fmtKg(totalCanceled), `${cancelPct.toLocaleString('pt-BR',{maximumFractionDigits:1})}% do total processado`, totalCanceled > 0 ? '#dc2626' : '#16a34a')}
+        ${kpi('📝', 'Receitas ativas', fmtNum(recipes.filter(r=>r.status==='active').length), `${fmtNum(pendingRecipes.length)} pendente${pendingRecipes.length!==1?'s':''} de aprovação`)}
+        ${kpi('⏳', 'Maior espera (receita)', pendingRecipes.length ? Math.max(...pendingRecipes.map(r=>r.created_at?Math.floor((Date.now()-new Date(r.created_at))/86400000):0))+' dias' : '—', pendingRecipes.length ? 'receita aguardando aprovação há mais tempo' : 'sem pendências', pendingRecipes.length > 3 ? '#dc2626' : '#64748b')}
+      </div>`;
+
+      // Ranking de clientes
+      const byClient = {};
+      for (const r of curRecs) {
+        const cid = String(r.client_id);
+        if (!byClient[cid]) byClient[cid] = { kg: 0, count: 0, canceled: 0 };
+        byClient[cid].kg       += parseFloat(r.total)    || 0;
+        byClient[cid].count    += 1;
+        byClient[cid].canceled += parseFloat(r.canceled) || 0;
+      }
+      const clientRanking = Object.entries(byClient)
+        .map(([cid, v]) => ({ client: clients.find(c => String(c.id) === cid), ...v }))
+        .sort((a, b) => b.kg - a.kg);
+
+      const rankingRows = clientRanking.map((row, i) => `
+        <tr style="${i % 2 === 0 ? 'background:#f8fafc' : ''}">
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-weight:700;color:#64748b;text-align:center">${i+1}º</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-weight:600">${row.client?.name || '?'}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#64748b">${row.client?.city || '—'}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#64748b">${row.client?.seller || '—'}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center;color:#64748b">${fmtNum(row.count)}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700;color:#16a34a">${fmtKg(row.kg)}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:right;color:${row.canceled>0?'#dc2626':'#94a3b8'}">${fmtKg(row.canceled)}</td>
+        </tr>`).join('');
+
+      // Clientes inativos no período
+      const inactiveClients = clients.filter(c => !activeClientSet.has(String(c.id)));
+      const inactiveRows = inactiveClients.length
+        ? inactiveClients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map((c,i) => `
+            <tr style="${i%2===0?'background:#f8fafc':''}">
+              <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-weight:600">${c.name||'?'}</td>
+              <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#64748b">${c.city||'—'}</td>
+              <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#64748b">${c.seller||'—'}</td>
+            </tr>`).join('')
+        : `<tr><td colspan="3" style="padding:14px;text-align:center;color:#16a34a;font-weight:600">✅ Todos os clientes têm registros no período</td></tr>`;
+
+      // Resumo por vendedor
+      const bySeller = {};
+      for (const r of curRecs) {
+        const c = clients.find(cl => String(cl.id) === String(r.client_id));
+        const sel = c?.seller || '(Sem vendedor)';
+        if (!bySeller[sel]) bySeller[sel] = { kg: 0, count: 0, clientSet: new Set() };
+        bySeller[sel].kg    += parseFloat(r.total) || 0;
+        bySeller[sel].count += 1;
+        bySeller[sel].clientSet.add(String(r.client_id));
+      }
+      const sellerRows = Object.entries(bySeller)
+        .sort((a, b) => b[1].kg - a[1].kg)
+        .map(([sel, v], i) => `
+          <tr style="${i % 2 === 0 ? 'background:#f8fafc' : ''}">
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-weight:600">👨‍💼 ${sel}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center">${fmtNum(v.clientSet.size)}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center">${fmtNum(v.count)}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700;color:#16a34a">${fmtKg(v.kg)}</td>
+          </tr>`).join('');
+
+      // Receitas pendentes
+      const pendingRows = pendingRecipes
+        .sort((a,b) => (a.created_at||'') < (b.created_at||'') ? -1 : 1)
+        .map(r => {
+          const c = clients.find(cl => Number(cl.id) === Number(r.client_id));
+          const dias = r.created_at ? Math.floor((Date.now() - new Date(r.created_at)) / 86400000) : 0;
+          const diasColor = dias > 7 ? '#dc2626' : dias > 3 ? '#b45309' : '#64748b';
+          return `<tr>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-weight:600">${c?.name||'?'}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9">${r.name||'—'}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#64748b">${r.created_by||'—'}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:600;color:${diasColor}">${dias} dias</td>
+          </tr>`;
+        }).join('') || `<tr><td colspan="4" style="padding:14px;text-align:center;color:#16a34a;font-weight:600">✅ Nenhuma receita pendente</td></tr>`;
+
+      const now = new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      const periodLabel = days === 365 ? 'Últimos 12 meses' : `Últimos ${days} dias`;
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Relatório Executivo — Hygicare Lavanderia</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
+.abar{position:sticky;top:0;z-index:99;background:#1e3a8a;padding:6px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px;border-radius:6px}
+.abar button{padding:5px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+.btn-x{background:#fff;color:#1e3a8a}.btn-p{background:#16a34a;color:#fff}
+.abar-lbl{color:#bfdbfe;font-size:11px;flex:1}
+.doc-hdr{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:20px}
+.doc-hdr h1{font-size:1.3rem;margin-bottom:4px}
+.doc-hdr p{font-size:0.78rem;color:#bfdbfe}
+h2{font-size:0.85rem;font-weight:700;color:#1e40af;margin:20px 0 10px;border-bottom:2px solid #dbeafe;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}
+thead th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700}
+.footer{margin-top:24px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
+@media print{.abar{display:none}body{padding:10px}}
+</style></head><body>
+<div class="abar">
+  <button class="btn-x" onclick="window.close()">✕ Fechar</button>
+  <button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+  <span class="abar-lbl">Relatório Executivo — Hygicare Lavanderia — ${periodLabel}</span>
+</div>
+<div class="doc-hdr">
+  <h1>📊 Relatório Executivo</h1>
+  <p>Hygicare Lavanderia &nbsp;·&nbsp; ${periodLabel} &nbsp;·&nbsp; Gerado em ${now}</p>
+</div>
+
+${kpisHtml}
+
+<h2>🏆 Ranking de Clientes — kg processado</h2>
+<table>
+  <thead><tr><th style="text-align:center">#</th><th>Cliente</th><th>Cidade</th><th>Vendedor</th><th style="text-align:center">Registros</th><th style="text-align:right">Total kg</th><th style="text-align:right">Cancelado</th></tr></thead>
+  <tbody>${rankingRows || '<tr><td colspan="7" style="padding:14px;text-align:center;color:#94a3b8">Nenhum registro no período</td></tr>'}</tbody>
+</table>
+
+<h2>😴 Clientes sem atividade no período</h2>
+<table>
+  <thead><tr><th>Cliente</th><th>Cidade</th><th>Vendedor</th></tr></thead>
+  <tbody>${inactiveRows}</tbody>
+</table>
+
+<h2>👨‍💼 Performance por Vendedor</h2>
+<table>
+  <thead><tr><th>Vendedor</th><th style="text-align:center">Clientes ativos</th><th style="text-align:center">Registros</th><th style="text-align:right">Total kg</th></tr></thead>
+  <tbody>${sellerRows || '<tr><td colspan="4" style="padding:14px;text-align:center;color:#94a3b8">Nenhum dado no período</td></tr>'}</tbody>
+</table>
+
+<h2>⏳ Receitas Pendentes de Aprovação</h2>
+<table>
+  <thead><tr><th>Cliente</th><th>Nome da Receita</th><th>Criado por</th><th style="text-align:center">Aguardando</th></tr></thead>
+  <tbody>${pendingRows}</tbody>
+</table>
+
+<div class="footer">Hygicare Lavanderia &nbsp;·&nbsp; Relatório Executivo &nbsp;·&nbsp; ${now}</div>
+</body></html>`;
+
+      win.document.write(html);
+      win.document.close();
+    });
 
     function refreshAdminPanel() {
       const cfgGasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
@@ -1467,15 +1679,6 @@ ${printScript}
           await renderUsersList();
         }
         if (updated.includes('recipes') || updated.includes('recipe_products') || isAll) {
-          // Reparar process_name para receitas que ainda estão sem ele após o sync
-          const allRecipesRepair = await dbGetAll_raw('recipes');
-          const allProcsRepair   = await dbGetAll_raw('processes');
-          for (const r of allRecipesRepair) {
-            if (!r.process_name) {
-              const p = findRecipeProcess(allProcsRepair, r);
-              if (p?.name) await dbPut('recipes', { ...r, process_name: p.name });
-            }
-          }
           await renderRecipesList();
           await updateRecipeBadge();
         }
@@ -1559,20 +1762,31 @@ ${printScript}
     }
 
     async function saveToStore(storeName, items) {
-      // Para recipes: preservar campos locais que o GAS não armazena (process_name)
       if (storeName === 'recipes') {
         const existing = await dbGetAll_raw('recipes');
         const snapById = new Map(existing.map(r => [Number(r.id), r]));
+        const gasIds = new Set(items.map(item => Number(item.id)));
         await clearStore('recipes');
         let saved = 0;
         for (const item of items) {
           try {
             const n = normalizeItem(item);
             const old = snapById.get(Number(n.id));
-            if (old?.process_name && !n.process_name) n.process_name = old.process_name;
+            // Preservar campos do novo schema que o GAS pode não ter ainda (migração)
+            if (old?.replaces_id && !n.replaces_id) n.replaces_id = old.replaces_id;
+            if (old?.name        && !n.name)        n.name         = old.name;
+            if (old?.version     && !n.version)     n.version      = old.version;
+            if (old?.all_machines != null && (n.all_machines == null || n.all_machines === '')) n.all_machines = old.all_machines;
+            if (old?.machine_info && !n.machine_info) n.machine_info = old.machine_info;
             await dbPut('recipes', n);
             saved++;
           } catch (err) { console.warn('⚠️ Erro ao salvar recipe:', err, item); }
+        }
+        // Preservar receitas pendentes locais que ainda não chegaram ao GAS
+        for (const local of existing) {
+          if (!gasIds.has(Number(local.id)) && local.status === 'pending') {
+            try { await dbPut('recipes', local); saved++; } catch (_) {}
+          }
         }
         return saved;
       }
@@ -1628,6 +1842,10 @@ ${printScript}
         if (!r.ok) return;
         const items = (await r.json()).data || [];
         if (items.length > 0) await saveToStore(entry.store, items);
+        if (entry.store === 'recipes' && !document.getElementById('screen-recipes')?.classList.contains('hidden')) {
+          await renderRecipesList();
+          await updateRecipeBadge();
+        }
       } catch(e) { /* falha silenciosa */ }
     }
     function _scheduleSyncAfterSave(sheetName) {
@@ -2036,11 +2254,18 @@ ${printScript}
         }
         list.innerHTML = Object.entries(bySeller)
           .sort((a, b) => a[0].localeCompare(b[0]))
-          .map(([seller, cs]) => `
+          .map(([seller, cs], idx) => {
+            const bodyId = `sg-${idx}`;
+            return `
             <div class="client-group">
-              <div class="client-group-hdr">👨‍💼 ${seller}<span class="count-badge" style="margin-left:auto">${cs.length}</span></div>
-              ${cs.map(_clientItemHtml).join('')}
-            </div>`)
+              <div class="client-group-hdr" style="cursor:pointer;user-select:none"
+                   onclick="(function(h){const b=document.getElementById('${bodyId}');const open=b.style.display!=='none';b.style.display=open?'none':'block';h.querySelector('.sg-arr').textContent=open?'▶':'▼';})(this)">
+                <span class="sg-arr" style="font-size:0.65rem;color:#94a3b8;min-width:12px;margin-right:0.3rem">▼</span>
+                👨‍💼 ${seller}<span class="count-badge" style="margin-left:auto">${cs.length}</span>
+              </div>
+              <div id="${bodyId}">${cs.map(_clientItemHtml).join('')}</div>
+            </div>`;
+          })
           .join('');
       } else {
         list.innerHTML = clients.map(_clientItemHtml).join('');
@@ -3361,17 +3586,13 @@ ${printScript}
     // =====================================================
     let _editingRecipeId = null; // null = novo, number = editando
 
-    // Retorna array de machine IDs a partir de machine_ids (JSON) com fallback para machine_id legado
-    function parseMachineIds(recipe) {
-      try {
-        if (recipe.machine_ids) return JSON.parse(recipe.machine_ids).map(Number).filter(Boolean);
-      } catch(e) {}
-      return recipe.machine_id ? [Number(recipe.machine_id)] : [];
-    }
-
-    function _collectMachineIds() {
-      return [...document.querySelectorAll('#recipe-machines-checkboxes .machine-chk:checked')]
-        .map(chk => Number(chk.dataset.machineId)).filter(Boolean);
+    async function _checkDuplicateRecipeName(name, clientId, excludeId = null) {
+      if (!name || !clientId) return null;
+      const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+      const n = norm(name);
+      const all = await dbGetAll_raw('recipes');
+      const active = all.filter(r => r.status === 'active' && Number(r.client_id) === Number(clientId) && Number(r.id) !== Number(excludeId));
+      return active.find(r => norm(r.name) === n) || active.find(r => norm(r.name).includes(n) || n.includes(norm(r.name))) || null;
     }
 
     const RECIPE_OPS = ['Enxágue','Pré Lavagem','Lavagem','Alvejamento','Neutralização','Amaciamento'];
@@ -3509,17 +3730,30 @@ ${printScript}
       });
     }
 
-    let _isLoadingRecipeForm = false;
+    function _setAllMachinesToggle(allMachines) {
+      const yes = document.getElementById('recipe-allmach-yes');
+      const no  = document.getElementById('recipe-allmach-no');
+      const row = document.getElementById('recipe-machine-info-row');
+      if (allMachines) {
+        yes.style.cssText = 'flex:1;font-weight:700;background:var(--primary);color:#fff;border-color:var(--primary)';
+        no.style.cssText  = 'flex:1';
+        if (row) row.style.display = 'none';
+      } else {
+        yes.style.cssText = 'flex:1';
+        no.style.cssText  = 'flex:1;font-weight:700;background:#dc2626;color:#fff;border-color:#dc2626';
+        if (row) row.style.display = '';
+      }
+      document.getElementById('recipe-allmach-yes').dataset.active = allMachines ? '1' : '';
+    }
 
     async function _openRecipeForm(recipeId = null) {
-      _isLoadingRecipeForm = true;
       _editingRecipeId = recipeId;
       const isEdit = recipeId !== null;
       document.getElementById('modal-recipe-title').textContent = isEdit ? '✏️ Editar Receita' : '📝 Nova Receita';
       document.getElementById('recipe-edit-notes-row').style.display = isEdit ? '' : 'none';
       document.getElementById('recipe-edit-notes').value = '';
+      document.getElementById('recipe-name-warn').style.display = 'none';
 
-      // Preencher cliente select
       const clients = await window.getAll('clients');
       const clientSel = document.getElementById('recipe-client');
       clientSel.innerHTML = '<option value="">-- Selecione --</option>';
@@ -3530,145 +3764,46 @@ ${printScript}
         clientSel.appendChild(opt);
       });
 
-      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione as máquinas primeiro --</option>';
       document.getElementById('recipe-date').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('recipe-name').value = '';
+      document.getElementById('recipe-machine-info').value = '';
       document.getElementById('recipe-steps-body').innerHTML = '';
+      _setAllMachinesToggle(true);
 
       if (isEdit) {
         const recipe = (await dbGetAll_raw('recipes')).find(r => Number(r.id) === Number(recipeId));
-        if (!recipe) { _isLoadingRecipeForm = false; return toast('Receita não encontrada', 'error'); }
-        const selectedMachineIds = parseMachineIds(recipe);
-        const allProcsEdit = await dbGetAll_raw('processes');
-        const foundProc = findRecipeProcess(allProcsEdit, recipe);
-        const bestProcessId = foundProc?.id ?? recipe.process_id;
+        if (!recipe) return toast('Receita não encontrada', 'error');
         clientSel.value = recipe.client_id;
-        await _loadRecipeMachines(recipe.client_id, selectedMachineIds);
-        const firstMachId = selectedMachineIds[0];
-        if (firstMachId) await _loadRecipeProcesses(firstMachId, bestProcessId, recipe.process_name || foundProc?.name || null);
-        document.getElementById('recipe-date').value = recipe.date || '';
+        document.getElementById('recipe-name').value = recipe.name || '';
+        document.getElementById('recipe-date').value = recipe.date || new Date().toISOString().slice(0, 10);
+        const allMach = recipe.all_machines === true || recipe.all_machines === 'true' || recipe.all_machines === '1' || recipe.all_machines === 1 || recipe.all_machines === undefined || recipe.all_machines === '';
+        _setAllMachinesToggle(allMach);
+        if (!allMach) document.getElementById('recipe-machine-info').value = recipe.machine_info || '';
         const steps = JSON.parse(recipe.steps || '[]');
         const products = await dbGetAll_raw('recipe_products');
-        const stepsContainer = document.getElementById('recipe-steps-body');
-        steps.forEach((s, i) => { stepsContainer.insertAdjacentHTML('beforeend', _stepRowHtml(s, products, i)); });
+        steps.forEach((s, i) => document.getElementById('recipe-steps-body').insertAdjacentHTML('beforeend', _stepRowHtml(s, products, i)));
       } else {
         const products = await dbGetAll_raw('recipe_products');
         document.getElementById('recipe-steps-body').innerHTML = _stepRowHtml({}, products, 0);
       }
 
-      _isLoadingRecipeForm = false;
       document.getElementById('modal-recipe').classList.remove('hidden');
     }
 
-    async function _loadRecipeMachines(clientId, selectedIds = []) {
-      const container = document.getElementById('recipe-machines-checkboxes');
-      if (!container) return;
-      document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione as máquinas primeiro --</option>';
+    document.getElementById('recipe-allmach-yes')?.addEventListener('click', () => _setAllMachinesToggle(true));
+    document.getElementById('recipe-allmach-no')?.addEventListener('click',  () => _setAllMachinesToggle(false));
 
-      if (!clientId) {
-        container.innerHTML = '<span style="font-size:0.83rem;color:var(--muted)">Selecione um cliente primeiro</span>';
-        return;
-      }
-      const machines = (await dbGetAll_raw('machines'))
-        .filter(m => Number(m.client_id) === Number(clientId))
-        .sort((a,b) => (a.name||'').localeCompare(b.name||''));
-
-      if (!machines.length) {
-        container.innerHTML = '<span style="font-size:0.83rem;color:var(--muted)">Nenhuma máquina cadastrada para este cliente</span>';
-        return;
-      }
-      const selSet = new Set(selectedIds.map(Number));
-      container.innerHTML = machines.map(m => `
-        <label style="display:flex;align-items:center;gap:0.55rem;padding:0.3rem 0.25rem;cursor:pointer;border-radius:6px">
-          <input type="checkbox" class="machine-chk" data-machine-id="${m.id}"
-                 ${selSet.has(Number(m.id)) ? 'checked' : ''}
-                 style="width:16px;height:16px;accent-color:var(--primary);flex-shrink:0"/>
-          <span style="font-size:0.88rem;font-weight:600">⚙️ ${m.name}</span>
-          ${m.capacity ? `<span style="font-size:0.75rem;color:var(--muted)">${m.capacity} kg</span>` : ''}
-        </label>`).join('');
-
-      // Carregar processos da primeira máquina selecionada
-      const firstSel = machines.find(m => selSet.has(Number(m.id)));
-      if (firstSel) await _loadRecipeProcesses(firstSel.id);
-    }
-
-    let _procLoadToken = 0;
-    async function _loadRecipeProcesses(machineId, selectId = null, selectName = null) {
-      const token = ++_procLoadToken;
-      const processSel = document.getElementById('recipe-process');
-      if (!processSel) return;
-      processSel.innerHTML = '<option value="">-- Selecione --</option>';
-      if (!machineId) return;
-
-      const allProcs = await dbGetAll_raw('processes');
-      const filtered = allProcs.filter(p => Number(p.machine_id) === Number(machineId));
-      // Deduplicar por nome: mantém o de ID maior (mais recente)
-      const byName = new Map();
-      filtered.forEach(p => {
-        const key = (p.name || '').toLowerCase().trim();
-        if (!byName.has(key) || Number(p.id) > Number(byName.get(key).id)) byName.set(key, p);
-      });
-      const procs = [...byName.values()];
-      const allRecipes = await dbGetAll_raw('recipes');
-      if (token !== _procLoadToken) return;
-
-      // Nomes de processos que já têm receita ativa cobrindo esta máquina
-      const takenNames = new Set(
-        allRecipes
-          .filter(r => r.status === 'active' && parseMachineIds(r).includes(Number(machineId)))
-          .map(r => (r.process_name || '').toLowerCase().trim())
-          .filter(Boolean)
-      );
-
-      // Ao editar, o processo da própria receita não é bloqueado
-      let ownProcName = '';
-      if (_editingRecipeId !== null) {
-        const cur = allRecipes.find(r => Number(r.id) === Number(_editingRecipeId));
-        if (cur) ownProcName = (cur.process_name || '').toLowerCase().trim();
-      }
-
-      procs.sort((a,b) => (a.name||'').localeCompare(b.name||''))
-           .forEach(p => {
-             const pName = (p.name || '').toLowerCase().trim();
-             const taken = takenNames.has(pName) && pName !== ownProcName;
-             const opt = document.createElement('option');
-             opt.value = p.id;
-             opt.textContent = p.name + (taken ? ' — já tem receita' : '');
-             opt.disabled = taken;
-             processSel.appendChild(opt);
-           });
-
-      if (selectId) processSel.value = selectId;
-      // Fallback por nome quando o ID não bate (GAS ID mismatch pós-sync)
-      if ((!processSel.value || processSel.value === '') && selectName) {
-        const nameLow = selectName.toLowerCase().trim();
-        for (const opt of processSel.options) {
-          if (!opt.disabled && opt.value && opt.textContent.toLowerCase().trim().startsWith(nameLow)) {
-            processSel.value = opt.value;
-            break;
-          }
-        }
-      }
-      // Fallback: se só tem um processo disponível para a máquina, seleciona automaticamente
-      if (!processSel.value || processSel.value === '') {
-        const available = Array.from(processSel.options).filter(o => o.value && !o.disabled);
-        if (available.length === 1) processSel.value = available[0].value;
-      }
-    }
-
-    document.getElementById('recipe-client')?.addEventListener('change', e => {
-      if (_isLoadingRecipeForm) return;
-      _loadRecipeMachines(e.target.value, []);
-    });
-    document.getElementById('recipe-machines-checkboxes')?.addEventListener('change', async e => {
-      if (_isLoadingRecipeForm) return;
-      if (!e.target.classList.contains('machine-chk')) return;
-      const firstId = _collectMachineIds()[0];
-      if (firstId) {
-        // Preserva o processo já selecionado ao adicionar/remover máquinas
-        const currentProcId = document.getElementById('recipe-process')?.value;
-        await _loadRecipeProcesses(firstId, currentProcId ? Number(currentProcId) : null);
+    document.getElementById('recipe-name')?.addEventListener('blur', async () => {
+      const name = document.getElementById('recipe-name').value.trim();
+      const clientId = document.getElementById('recipe-client').value;
+      const warn = document.getElementById('recipe-name-warn');
+      if (!name || !clientId) { warn.style.display = 'none'; return; }
+      const dup = await _checkDuplicateRecipeName(name, clientId, _editingRecipeId);
+      if (dup) {
+        warn.textContent = `⚠️ Já existe uma receita chamada "${dup.name}" para este cliente.`;
+        warn.style.display = '';
       } else {
-        document.getElementById('recipe-process').innerHTML = '<option value="">-- Selecione --</option>';
+        warn.style.display = 'none';
       }
     });
 
@@ -3689,52 +3824,52 @@ ${printScript}
 
     document.getElementById('btn-save-recipe')?.addEventListener('click', async () => {
       if (_saving) return;
-      const clientId   = Number(document.getElementById('recipe-client')?.value);
-      const machineIds = _collectMachineIds();
-      const processId  = Number(document.getElementById('recipe-process')?.value);
-      const date       = document.getElementById('recipe-date')?.value;
-      if (!clientId)          return toast('Selecione o cliente', 'warning');
-      if (!machineIds.length) return toast('Selecione pelo menos uma máquina', 'warning');
-      if (!processId)         return toast('Selecione o processo', 'warning');
+      const clientId  = Number(document.getElementById('recipe-client')?.value);
+      const name      = (document.getElementById('recipe-name')?.value || '').trim();
+      const date      = document.getElementById('recipe-date')?.value;
+      const allMach   = !!document.getElementById('recipe-allmach-yes')?.dataset?.active;
+      const machInfo  = (document.getElementById('recipe-machine-info')?.value || '').trim();
+      if (!clientId) return toast('Selecione o cliente', 'warning');
+      if (!name)     return toast('Informe o nome da receita', 'warning');
+      if (!date)     return toast('Informe a data', 'warning');
+      if (!allMach && !machInfo) return toast('Informe qual(is) máquina(s)', 'warning');
       const steps = _collectSteps();
       if (!steps.length) return toast('Adicione pelo menos uma etapa', 'warning');
+
+      // Verificar duplicata e pedir confirmação se necessário
+      const dup = await _checkDuplicateRecipeName(name, clientId, _editingRecipeId);
+      if (dup) {
+        const ok = await confirmAction(`Já existe uma receita chamada "${dup.name}" para este cliente.\n\nDeseja continuar mesmo assim?`, 'Continuar');
+        if (!ok) return;
+      }
 
       const btn = document.getElementById('btn-save-recipe');
       setSaving(true, btn);
       try {
         const now = new Date().toISOString();
         const creator = currentUser?.name || currentUser?.username || '';
-        const allProcsNow = await dbGetAll_raw('processes');
-        const selProc = allProcsNow.find(p => Number(p.id) === processId);
-        const processName = selProc?.name || document.getElementById('recipe-process')?.options[document.getElementById('recipe-process')?.selectedIndex]?.text || '';
-        const machineIdsJson = JSON.stringify(machineIds);
-        const primaryMachineId = machineIds[0];
 
         if (_editingRecipeId === null) {
-          // Nova receita — vai direto ativa
           const recipe = {
-            client_id: clientId, machine_id: primaryMachineId, machine_ids: machineIdsJson,
-            process_id: processId, process_name: processName, date, created_by: creator,
-            status: 'active', version: 1, original_id: 0,
+            client_id: clientId, name, date, version: 1,
+            all_machines: allMach, machine_info: allMach ? '' : machInfo,
+            created_by: creator, status: 'active',
             edit_notes: '', rejection_notes: '', approved_by: '', approved_at: '',
             steps: JSON.stringify(steps), created_at: now
           };
           const id = await dbAdd('recipes', recipe);
           recipe.id = id;
-          recipe.original_id = id; // self-reference
           await dbPut('recipes', recipe);
           await postToSheetDB(SHEETS.RECIPES, recipe);
           toast('✅ Receita criada!', 'success');
         } else {
-          // Edição — cria versão pendente para aprovação
           const current = (await dbGetAll_raw('recipes')).find(r => Number(r.id) === Number(_editingRecipeId));
           if (!current) return toast('Receita original não encontrada', 'error');
           const editNotes = document.getElementById('recipe-edit-notes')?.value.trim() || '';
           const pending = {
-            client_id: clientId, machine_id: primaryMachineId, machine_ids: machineIdsJson,
-            process_id: processId, process_name: processName, date, created_by: creator,
-            status: 'pending', version: (current.version || 1) + 1,
-            original_id: current.original_id || current.id,
+            client_id: clientId, name, date, version: (Number(current.version) || 1) + 1,
+            all_machines: allMach, machine_info: allMach ? '' : machInfo,
+            created_by: creator, status: 'pending',
             replaces_id: current.id,
             edit_notes: editNotes, rejection_notes: '', approved_by: '', approved_at: '',
             steps: JSON.stringify(steps), created_at: now
@@ -3742,7 +3877,7 @@ ${printScript}
           const pid = await dbAdd('recipes', pending);
           pending.id = pid;
           await postToSheetDB(SHEETS.RECIPES, pending);
-          toast('⏳ Edição enviada para aprovação do administrador!', 'info', 5000);
+          toast('⏳ Edição enviada para aprovação!', 'info', 5000);
         }
 
         document.getElementById('modal-recipe').classList.add('hidden');
@@ -3753,20 +3888,6 @@ ${printScript}
         setSaving(false, btn);
       }
     });
-
-    // Busca processo para uma receita com fallbacks (ID → nome → único processo da máquina)
-    function findRecipeProcess(allProcesses, recipe) {
-      let p = allProcesses.find(p => Number(p.id) === Number(recipe.process_id));
-      if (p) return p;
-      if (recipe.process_name) {
-        const nl = recipe.process_name.toLowerCase().trim();
-        p = allProcesses.find(p => Number(p.machine_id) === Number(recipe.machine_id) && (p.name||'').toLowerCase().trim() === nl);
-        if (!p) p = allProcesses.find(p => (p.name||'').toLowerCase().trim() === nl);
-        if (p) return p;
-      }
-      const mProcs = allProcesses.filter(p => Number(p.machine_id) === Number(recipe.machine_id));
-      return mProcs.length === 1 ? mProcs[0] : null;
-    }
 
     async function renderRecipesList() {
       const list = document.getElementById('recipes-list');
@@ -3782,13 +3903,10 @@ ${printScript}
           </div>`).join('');
       }
 
-      const filterClientId  = Number(document.getElementById('recipe-filter-client')?.value  || 0);
-      const filterMachineId = Number(document.getElementById('recipe-filter-machine')?.value || 0);
+      const filterClientId = Number(document.getElementById('recipe-filter-client')?.value || 0);
 
-      const [clients, machines, processes, allRecipesRaw] = await Promise.all([
+      const [clients, allRecipesRaw] = await Promise.all([
         dbGetAll_raw('clients'),
-        dbGetAll_raw('machines'),
-        dbGetAll_raw('processes'),
         dbGetAll_raw('recipes'),
       ]);
       let allRecipes = allRecipesRaw;
@@ -3813,15 +3931,18 @@ ${printScript}
         document.getElementById('recipes-pending-count').textContent = pendings.length;
         document.getElementById('recipes-pending-list').innerHTML = pendings.map(r => {
           const c = clients.find(c => Number(c.id) === Number(r.client_id));
-          const machIds = parseMachineIds(r);
-          const machNamesP = machIds.map(mid => machines.find(m => Number(m.id) === mid)?.name || '?').join(', ');
-          const p = findRecipeProcess(processes, r);
-          const procName = p?.name || r.process_name || null;
+          const allMach = String(r.all_machines) === '1' || r.all_machines === true || r.all_machines === 'true';
+          const machChip = allMach
+            ? '<span style="font-size:0.75rem;background:#dcfce7;color:#15803d;padding:1px 7px;border-radius:999px;font-weight:600">✅ Todas as máquinas</span>'
+            : (r.machine_info ? `<span style="font-size:0.75rem;background:#fef3c7;color:#b45309;padding:1px 7px;border-radius:999px;font-weight:600">⚙️ ${r.machine_info}</span>` : '');
           return `<div class="list-item" style="flex-direction:column;gap:0.4rem;padding:0.7rem 1rem">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">
-              <div>
-                <strong>${c?.name||'?'}</strong> · ⚙️ ${machNamesP||'?'}${procName ? ' · 🔄 '+procName : ''}
-                <span style="font-size:0.78rem;color:var(--muted)"> — v${r.version} · por ${r.created_by}</span>
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.3rem">
+                <strong>${c?.name||'?'}</strong>
+                <span style="color:var(--muted)">·</span>
+                <span style="font-weight:600">📋 ${r.name||'—'}</span>
+                ${machChip}
+                <span style="font-size:0.78rem;color:var(--muted)">— por ${r.created_by}</span>
               </div>
               <div style="display:flex;gap:0.4rem">
                 <button class="btn-secondary btn-sm" onclick="window._viewRecipe(${r.id})">👁️ Ver</button>
@@ -3838,20 +3959,15 @@ ${printScript}
 
       // Filtro de status via chips
       const activeStatusChip = document.querySelector('#recipes-status-filters .qf-btn.active')?.dataset?.rs || 'all';
-      let statusFilter = activeStatusChip === 'all' ? 'active' : activeStatusChip;
-      let displayed = allRecipes.filter(r => activeStatusChip === 'all' ? r.status === 'active' : r.status === statusFilter);
-      if (filterClientId)  displayed = displayed.filter(r => Number(r.client_id) === filterClientId);
-      if (filterMachineId) displayed = displayed.filter(r => parseMachineIds(r).includes(filterMachineId));
+      let displayed = allRecipes.filter(r => activeStatusChip === 'all' ? r.status === 'active' : r.status === activeStatusChip);
+      if (filterClientId) displayed = displayed.filter(r => Number(r.client_id) === filterClientId);
 
       // Filtro de busca por texto
       const searchTerm = (document.getElementById('recipe-search')?.value || '').toLowerCase().trim();
       if (searchTerm) {
         displayed = displayed.filter(r => {
           const c = clients.find(c => Number(c.id) === Number(r.client_id));
-          const machIds = parseMachineIds(r);
-          const machNamesS = machIds.map(mid => machines.find(m => Number(m.id) === mid)?.name || '').filter(Boolean);
-          const p = findRecipeProcess(processes, r);
-          const text = [c?.name, ...machNamesS, p?.name, r.process_name].filter(Boolean).join(' ').toLowerCase();
+          const text = [c?.name, r.name, r.machine_info].filter(Boolean).join(' ').toLowerCase();
           return text.includes(searchTerm);
         });
       }
@@ -3859,7 +3975,7 @@ ${printScript}
         const ca = clients.find(c => Number(c.id) === Number(a.client_id))?.name || '';
         const cb = clients.find(c => Number(c.id) === Number(b.client_id))?.name || '';
         if (ca !== cb) return ca.localeCompare(cb);
-        return (a.process_name||'').localeCompare(b.process_name||'');
+        return (a.name||'').localeCompare(b.name||'');
       });
 
       document.getElementById('recipes-count').textContent = displayed.length;
@@ -3872,28 +3988,35 @@ ${printScript}
         return;
       }
 
-      // Agrupar por cliente → processo
+      // Agrupar por cliente
       const byClient = new Map();
       for (const r of displayed) {
         const cKey = String(r.client_id);
-        const pName = r.process_name || findRecipeProcess(processes, r)?.name || `proc_${r.process_id}`;
-        const pKey  = pName.toLowerCase().trim();
-        if (!byClient.has(cKey)) byClient.set(cKey, new Map());
-        if (!byClient.get(cKey).has(pKey)) byClient.get(cKey).set(pKey, { procName: pName, recs: [] });
-        byClient.get(cKey).get(pKey).recs.push(r);
+        if (!byClient.has(cKey)) byClient.set(cKey, []);
+        byClient.get(cKey).push(r);
       }
 
+      const _allMachBool = r => String(r.all_machines) === '1' || r.all_machines === true || r.all_machines === 'true';
+
       const recipeCardHtml = r => {
-        const machIds  = parseMachineIds(r);
-        const machNamesC = machIds.map(mid => machines.find(m => Number(m.id) === mid)?.name || '?');
+        const hasPending = allRecipes.some(x => x.status === 'pending' && Number(x.replaces_id) === Number(r.id));
+        const allMach = _allMachBool(r);
+        const machChip = allMach
+          ? '<span style="font-size:0.73rem;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:999px;padding:1px 8px;font-weight:600">✅ Todas as máquinas</span>'
+          : (r.machine_info ? `<span style="font-size:0.73rem;background:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:999px;padding:1px 8px;font-weight:600">⚙️ ${r.machine_info}</span>` : '');
         const steps = (() => { try { return JSON.parse(r.steps||'[]'); } catch(e){ return []; } })();
-        const hasPending = allRecipes.some(x => x.status === 'pending' && (x.original_id === r.original_id || x.original_id === r.id));
+        const dateStr = r.date ? fmtDate(r.date) : '';
         return `
           <div style="border:1px solid var(--border);border-radius:8px;padding:0.55rem 0.75rem;margin-bottom:0.4rem;background:#fff">
-            <div style="display:flex;flex-wrap:wrap;gap:0.25rem 0.3rem;align-items:center;margin-bottom:0.4rem">
-              ${machNamesC.map(n => `<span style="font-size:0.73rem;background:#f1f5f9;border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-weight:600;color:#334155">⚙️ ${n}</span>`).join('')}
-              ${hasPending ? '<span style="font-size:0.72rem;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:999px;font-weight:600;margin-left:auto">⏳ Pendente</span>' : ''}
-              <span style="font-size:0.7rem;color:var(--muted);margin-left:${hasPending?'0':'auto'}">v${r.version} · ${r.created_by||'—'}</span>
+            <div style="display:flex;flex-wrap:wrap;gap:0.25rem 0.3rem;align-items:center;margin-bottom:0.35rem">
+              <span style="font-size:0.88rem;font-weight:700;color:var(--text);flex:1;min-width:0">📋 ${r.name||'—'}</span>
+              ${hasPending ? '<span style="font-size:0.72rem;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:999px;font-weight:600">⏳ Pendente</span>' : ''}
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:0.25rem 0.4rem;align-items:center;margin-bottom:0.4rem">
+              ${machChip}
+              ${dateStr ? `<span style="font-size:0.71rem;color:var(--muted)">📅 ${dateStr}</span>` : ''}
+              ${r.version ? `<span style="font-size:0.68rem;background:#f1f5f9;border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:#64748b;font-weight:600">v${r.version}</span>` : ''}
+              <span style="font-size:0.7rem;color:var(--muted);margin-left:auto">${r.created_by||'—'}</span>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:0.2rem 0.4rem;margin-bottom:0.45rem">
               ${steps.slice(0,5).map(s => `<span style="font-size:0.7rem;background:#f1f5f9;border-radius:5px;padding:1px 6px;border:1px solid var(--border);color:#374151"><strong>${s.n}.</strong> ${s.operation||'—'}</span>`).join('')}
@@ -3906,30 +4029,13 @@ ${printScript}
               <button class="btn-secondary btn-sm" onclick="window._toggleRecipeMore(${r.id})" style="flex:0 0 2.2rem;padding:0 !important;font-size:1.15rem;font-weight:700;letter-spacing:1px" title="Mais opções">⋯</button>
             </div>
             <div class="recipe-more-panel" id="rmore-${r.id}">
-              ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteRecipe(${r.id}, ${r.original_id||r.id})" style="flex:0 0 auto">🗑️ Excluir</button>` : ''}
+              ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteRecipe(${r.id})" style="flex:0 0 auto">🗑️ Excluir</button>` : ''}
             </div>
           </div>`;
       };
 
-      list.innerHTML = [...byClient.entries()].map(([cKey, procMap]) => {
+      list.innerHTML = [...byClient.entries()].map(([cKey, recs]) => {
         const c = clients.find(c => String(c.id) === cKey);
-        const totalRecs = [...procMap.values()].reduce((s, v) => s + v.recs.length, 0);
-        const procsHtml = [...procMap.entries()].map(([pKey, {procName, recs}]) => {
-          const pBodyId = `pb-${cKey}-${pKey.replace(/\W/g,'_')}`;
-          return `
-            <div style="margin-bottom:0.4rem;border:1px solid #e2e8f0;border-radius:7px;overflow:hidden">
-              <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.65rem;cursor:pointer;background:#f8fafc;border-left:2px solid #93c5fd;user-select:none"
-                   onclick="(function(h){const b=document.getElementById('${pBodyId}');const open=b.style.display!=='none';b.style.display=open?'none':'block';h.querySelector('.parr').textContent=open?'▶':'▼';})(this)">
-                <span class="parr" style="font-size:0.6rem;color:#64748b;min-width:10px">▼</span>
-                <span style="font-size:0.82rem;font-weight:700;color:var(--text)">🔄 ${procName}</span>
-                <span style="font-size:0.7rem;background:#e2e8f0;border-radius:999px;padding:1px 7px;color:#64748b;font-weight:600;margin-left:auto">${recs.length} receita${recs.length>1?'s':''}</span>
-              </div>
-              <div id="${pBodyId}" style="padding:0.45rem 0.5rem;background:#fff">
-                ${recs.map(r => recipeCardHtml(r)).join('')}
-              </div>
-            </div>`;
-        }).join('');
-
         const cBodyId = `cb-${cKey}`;
         return `
           <div style="border:1px solid #bfdbfe;border-radius:12px;margin-bottom:0.75rem;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
@@ -3938,11 +4044,11 @@ ${printScript}
               <span class="carr" style="font-size:0.65rem;color:#93c5fd;min-width:10px">▼</span>
               <span style="font-size:0.95rem">👥</span>
               <span style="font-weight:700;font-size:0.92rem;color:var(--primary-dark)">${c?.name||'?'}</span>
-              <span style="font-size:0.72rem;background:#dbeafe;color:var(--primary);padding:2px 9px;border-radius:999px;font-weight:600;margin-left:auto">${totalRecs} receita${totalRecs>1?'s':''}</span>
+              <span style="font-size:0.72rem;background:#dbeafe;color:var(--primary);padding:2px 9px;border-radius:999px;font-weight:600;margin-left:auto">${recs.length} receita${recs.length>1?'s':''}</span>
               <button onclick="event.stopPropagation();window._shareClientRecipesPdf('${cKey}')" style="flex-shrink:0;padding:2px 10px;border:1.5px solid #93c5fd;border-radius:6px;background:#fff;color:#1d4ed8;font-size:0.72rem;font-weight:700;cursor:pointer;white-space:nowrap">📄 PDF</button>
             </div>
             <div id="${cBodyId}" style="padding:0.6rem 0.75rem;background:#fff">
-              ${procsHtml}
+              ${recs.map(r => recipeCardHtml(r)).join('')}
             </div>
           </div>`;
       }).join('');
@@ -3957,23 +4063,19 @@ ${printScript}
       panel.classList.toggle('open');
     };
 
-    window._deleteRecipe = async function(id, originalId) {
-      const allPrev = await dbGetAll_raw('recipes');
-      const recPrev = allPrev.find(r => r.id === Number(id));
-      const [allClPrev, allMcPrev, allPrPrev] = await Promise.all([dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes')]);
-      const cPrev = allClPrev.find(c => Number(c.id) === Number(recPrev?.client_id));
-      const machIdsPrev = recPrev ? parseMachineIds(recPrev) : [];
-      const machNamesPrev = machIdsPrev.map(mid => allMcPrev.find(m => Number(m.id) === mid)?.name).filter(Boolean).join(', ');
-      const pPrev = recPrev ? findRecipeProcess(allPrPrev, recPrev) : null;
-      const nameHint = [cPrev?.name, machNamesPrev, pPrev?.name || recPrev?.process_name].filter(Boolean).join(' › ');
+    window._deleteRecipe = async function(id) {
+      const all = await dbGetAll_raw('recipes');
+      const rec = all.find(r => Number(r.id) === Number(id));
+      if (!rec) { toast('⚠️ Receita não encontrada', 'warning'); return; }
+      const clients = await dbGetAll_raw('clients');
+      const c = clients.find(c => Number(c.id) === Number(rec.client_id));
+      const nameHint = [c?.name, rec.name].filter(Boolean).join(' › ');
       const confirmMsg = nameHint
         ? `Excluir receita\n"${nameHint}"?\n\nTodas as versões (ativas, arquivadas, pendentes) serão removidas.`
         : 'Excluir esta receita e todas as suas versões?';
       if (!await confirmAction(confirmMsg, '🗑️ Excluir', true)) return;
-      const all = await dbGetAll_raw('recipes');
-      const nId = Number(id), nOrigId = Number(originalId);
-      const toDelete = all.filter(r => Number(r.id) === nId || Number(r.original_id) === nOrigId || Number(r.id) === nOrigId);
-      if (!toDelete.length) { toast('⚠️ Receita não encontrada', 'warning'); return; }
+      const nId = Number(id);
+      const toDelete = all.filter(r => Number(r.id) === nId || Number(r.replaces_id) === nId);
       let gasErr = 0;
       for (const r of toDelete) {
         await dbDelete('recipes', r.id);
@@ -3989,153 +4091,21 @@ ${printScript}
       await updateRecipeBadge();
     };
 
-    // Listeners do modal de replicação
-    document.getElementById('modal-recipe-replicate-close')?.addEventListener('click', () => document.getElementById('modal-recipe-replicate').classList.add('hidden'));
-    document.getElementById('modal-recipe-replicate-cancel')?.addEventListener('click', () => document.getElementById('modal-recipe-replicate').classList.add('hidden'));
-
-    let _replicateSourceId = null;
-    window._replicateRecipe = async function(recipeId) {
-      _replicateSourceId = recipeId;
-      const allRecipes = await dbGetAll_raw('recipes');
-      const source = allRecipes.find(r => r.id === recipeId);
-      if (!source) return;
-
-      const machines  = await dbGetAll_raw('machines');
-      const processes = await dbGetAll_raw('processes');
-
-      // Combinações máquina+processo do mesmo cliente
-      const clientMachines = machines.filter(m => Number(m.client_id) === Number(source.client_id));
-      const sourceMachIds = new Set(parseMachineIds(source).map(Number));
-      const targets = [];
-      for (const m of clientMachines) {
-        // Pular máquinas que já fazem parte da receita de origem
-        if (sourceMachIds.has(Number(m.id))) continue;
-        const machProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
-        for (const p of machProcs) {
-          // Verificar se já existe receita ativa cobrindo esta máquina com este processo
-          const hasActive = allRecipes.some(r =>
-            r.status === 'active' &&
-            parseMachineIds(r).includes(Number(m.id)) &&
-            (r.process_name || '').toLowerCase() === (p.name || '').toLowerCase()
-          );
-          targets.push({ machineId: m.id, machineName: m.name, processId: p.id, processName: p.name, hasActive });
-        }
-      }
-
-      // Agrupar targets por máquina
-      const byMachine = {};
-      for (const t of targets) {
-        if (!byMachine[t.machineId]) byMachine[t.machineId] = { name: t.machineName, procs: [] };
-        byMachine[t.machineId].procs.push(t);
-      }
-
-      // Máquina de origem (para identificar)
-      const srcMachine = machines.find(m => Number(m.id) === Number(source.machine_id));
-      const srcProcess = processes.find(p => Number(p.id) === Number(source.process_id));
-
-      const targetsEl = document.getElementById('replicate-targets');
-      if (!Object.keys(byMachine).length) {
-        targetsEl.innerHTML = '<div class="empty-state">Nenhuma outra combinação disponível para este cliente.</div>';
-      } else {
-        targetsEl.innerHTML = Object.entries(byMachine).map(([mId, mg]) => {
-          const available = mg.procs.filter(t => !t.hasActive);
-          const taken     = mg.procs.filter(t => t.hasActive);
-          return `
-          <div style="margin-bottom:0.75rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
-            <div style="background:#f8fafc;padding:0.5rem 0.75rem;font-weight:600;font-size:0.88rem;border-bottom:1px solid var(--border)">
-              ⚙️ ${mg.name}
-            </div>
-            <div style="padding:0.4rem 0.5rem">
-              ${available.map(t => `
-                <label style="display:flex;align-items:center;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:7px;cursor:pointer;hover:background:#f0f9ff">
-                  <input type="checkbox" class="replicate-target-chk" data-machine="${t.machineId}" data-process="${t.processId}" style="width:16px;height:16px;flex-shrink:0;accent-color:#2563eb"/>
-                  <span style="font-size:0.85rem">🔄 ${t.processName}</span>
-                </label>`).join('')}
-              ${taken.map(t => `
-                <div style="display:flex;align-items:center;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:7px;opacity:0.5">
-                  <span style="width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.75rem">✅</span>
-                  <span style="font-size:0.85rem">🔄 ${t.processName}</span>
-                  <span style="font-size:0.72rem;color:#15803d;background:#dcfce7;padding:1px 6px;border-radius:999px;margin-left:auto">já tem receita</span>
-                </div>`).join('')}
-              ${!available.length && !taken.length ? '<div style="font-size:0.82rem;color:var(--muted);padding:0.4rem 0.5rem">Nenhum processo cadastrado</div>' : ''}
-            </div>
-          </div>`;
-        }).join('');
-      }
-
-      // Mostrar receita de origem
-      document.getElementById('replicate-source-info').innerHTML =
-        `Receita de <strong>${srcMachine?.name||'?'}</strong>${srcProcess ? ` · 🔄 <strong>${srcProcess.name}</strong>` : ''} — as etapas serão copiadas para os processos selecionados.`;
-
-      document.getElementById('modal-recipe-replicate').classList.remove('hidden');
-    };
-
-    document.getElementById('btn-confirm-replicate')?.addEventListener('click', async () => {
-      const checked = [...document.querySelectorAll('.replicate-target-chk:checked')];
-      if (!checked.length) return toast('Selecione ao menos uma combinação', 'warning');
-
-      const allRecipes = await dbGetAll_raw('recipes');
-      const source = allRecipes.find(r => r.id === _replicateSourceId);
-      if (!source) return;
-
-      const submitBtn = document.getElementById('btn-confirm-replicate');
-      setSaving(true, submitBtn, 'Replicando...');
-      try {
-        const isAdmin = currentUser?.role === 'admin';
-        const now = new Date().toISOString();
-        let count = 0;
-        const allProcsForRep = await dbGetAll_raw('processes');
-        for (const chk of checked) {
-          const machineId = Number(chk.dataset.machine);
-          const processId = Number(chk.dataset.process);
-          const tgtProc = allProcsForRep.find(p => Number(p.id) === processId);
-          const copy = {
-            client_id:    source.client_id,
-            machine_id:   machineId,
-            machine_ids:  JSON.stringify([machineId]),
-            process_id:   processId,
-            process_name: tgtProc?.name || '',
-            steps:       source.steps,
-            status:      isAdmin ? 'active' : 'pending',
-            version:     1,
-            created_by:  currentUser?.name || currentUser?.username || '',
-            created_at:  now,
-            date:        now.slice(0, 10),
-            edit_notes:  `Replicada da receita #${source.id}`,
-          };
-          const id = await dbAdd('recipes', copy);
-          copy.id = id;
-          copy.original_id = id;
-          await dbPut('recipes', copy);
-          await postToSheetDB(SHEETS.RECIPES, copy);
-          count++;
-        }
-        toast(`✅ ${count} receita${count > 1 ? 's replicadas' : ' replicada'}!`, 'success');
-        document.getElementById('modal-recipe-replicate').classList.add('hidden');
-        await renderRecipesList();
-        await updateRecipeBadge();
-      } catch(err) {
-        toast('Erro ao replicar: ' + err.message, 'error');
-      } finally {
-        setSaving(false, submitBtn);
-      }
-    });
-
     window._viewRecipe = async function(recipeId) {
       const allRecipes = await dbGetAll_raw('recipes');
       const recipe = allRecipes.find(r => r.id === recipeId);
       if (!recipe) return;
-      const clients   = await dbGetAll_raw('clients');
-      const machines  = await dbGetAll_raw('machines');
-      const processes = await dbGetAll_raw('processes');
+      const clients = await dbGetAll_raw('clients');
       const c = clients.find(c => Number(c.id) === Number(recipe.client_id));
-      const machIds = parseMachineIds(recipe);
-      const recMachines = machIds.map(mid => machines.find(m => Number(m.id) === mid)).filter(Boolean);
-      const p = findRecipeProcess(processes, recipe);
-      const procName = p?.name || recipe.process_name || null;
       const steps = (() => { try { return JSON.parse(recipe.steps||'[]'); } catch(e){ return []; } })();
 
+      const allMach = String(recipe.all_machines) === '1' || recipe.all_machines === true || recipe.all_machines === 'true';
+      const machChip = allMach
+        ? '<span style="background:#dcfce7;color:#15803d;border:1px solid #86efac;padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:700">✅ Todas as máquinas</span>'
+        : (recipe.machine_info ? `<span style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:700">⚙️ ${recipe.machine_info}</span>` : '');
+
       const statusLabel = { active:'✅ Ativa', pending:'⏳ Pendente', archived:'📦 Arquivada', rejected:'❌ Recusada' }[recipe.status] || recipe.status;
+
       const stepsHtml = steps.length ? steps.map(s => {
         const prods = Array.isArray(s.products) ? s.products.filter(p => p && (typeof p==='string' ? p : p?.name)) : [];
         const prodsHtml = prods.length
@@ -4160,35 +4130,35 @@ ${printScript}
         </div>`;
       }).join('') : `<p style="color:var(--muted);font-size:0.88rem;padding:0.5rem 0">Sem etapas cadastradas.</p>`;
 
-      // Versões arquivadas
-      const archived = allRecipes.filter(r => (r.original_id === recipe.original_id || r.original_id === recipe.id) && r.status === 'archived')
-                                  .sort((a,b) => b.version - a.version);
-      const archivedHtml = archived.length
-        ? `<div style="margin-top:1rem"><strong style="font-size:0.85rem">📜 Versões anteriores</strong>
-           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem">
-             ${archived.map(v => `<button class="btn-secondary btn-sm" onclick="window._viewRecipe(${v.id})">v${v.version} — ${fmtDate(v.date||v.created_at?.slice(0,10))}</button>`).join('')}
-           </div></div>` : '';
-
-      // Link para versão ativa (quando visualizando uma versão arquivada/recusada)
+      // Versão ativa relacionada (quando visualizando versão arquivada/recusada)
       const activeVersion = recipe.status !== 'active'
-        ? allRecipes.find(r => r.status === 'active' && (r.original_id === recipe.original_id || r.id === recipe.original_id || r.original_id === recipe.id))
+        ? allRecipes.find(r => r.status === 'active' && Number(r.id) === Number(recipe.replaces_id || -1))
+          || allRecipes.find(r => r.status === 'active' && Number(r.replaces_id) === Number(recipe.id))
         : null;
       const activeVersionHtml = activeVersion
         ? `<div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
             <span style="font-size:0.85rem;color:#15803d">📋 Existe uma versão ativa desta receita</span>
-            <button class="btn-primary btn-sm" style="background:#16a34a" onclick="window._viewRecipe(${activeVersion.id})">Ver v${activeVersion.version} atual</button>
+            <button class="btn-primary btn-sm" style="background:#16a34a" onclick="window._viewRecipe(${activeVersion.id})">Ver versão atual</button>
            </div>` : '';
 
-      document.getElementById('modal-recipe-view-title').textContent = `📝 ${c?.name||'?'}`;
+      // Versões arquivadas (pendentes que foram substituídas)
+      const archived = allRecipes.filter(r => r.status === 'archived' && Number(r.replaces_id) === Number(recipe.replaces_id || -1) && Number(r.id) !== Number(recipe.id))
+        .concat(allRecipes.filter(r => r.status === 'archived' && Number(r.id) === Number(recipe.replaces_id || -1)));
+      const archivedHtml = archived.length
+        ? `<div style="margin-top:1rem"><strong style="font-size:0.85rem">📜 Versão anterior</strong>
+           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem">
+             ${archived.map(v => `<button class="btn-secondary btn-sm" onclick="window._viewRecipe(${v.id})">${fmtDate(v.date||v.created_at?.slice(0,10))}</button>`).join('')}
+           </div></div>` : '';
+
+      document.getElementById('modal-recipe-view-title').textContent = `📝 ${c?.name||'?'} — ${recipe.name||'—'}`;
       document.getElementById('modal-recipe-view-body').innerHTML = `
         <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.75rem 1rem;margin-bottom:0.85rem">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.3rem 0.5rem;margin-bottom:0.35rem">
-            ${recMachines.map(m => `<span style="font-size:0.85rem;font-weight:700;color:var(--text)">⚙️ ${m.name}${m.capacity?' ('+m.capacity+' kg)':''}</span>`).join('<span style="color:var(--muted)">·</span>')}
-            ${procName?`<span style="background:#dbeafe;color:var(--primary-dark);padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:700">🔄 ${procName}</span>`:''}
+            ${machChip}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:0.25rem 0.75rem;font-size:0.78rem;color:var(--muted)">
             <span>📅 ${fmtDate(recipe.date||recipe.created_at?.slice(0,10))}</span>
-            <span>Versão <strong style="color:var(--text)">v${recipe.version}</strong></span>
+            ${recipe.version ? `<span>Versão <strong style="color:var(--text)">v${recipe.version}</strong></span>` : ''}
             <span>${statusLabel}</span>
             <span>Por <strong style="color:var(--text)">${recipe.created_by||'—'}</strong></span>
           </div>
@@ -4232,26 +4202,22 @@ ${printScript}
     document.getElementById('modal-recipe-view-close2')?.addEventListener('click', () => document.getElementById('modal-recipe-view').classList.add('hidden'));
 
     async function _shareRecipePdf(recipeId) {
+      const win = window.open('', '_blank', 'width=900,height=700');
+      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
       const allRecipes = await dbGetAll_raw('recipes');
       const recipe = allRecipes.find(r => r.id === recipeId);
-      if (!recipe) return toast('Receita não encontrada', 'error');
-      const clients   = await dbGetAll_raw('clients');
-      const machines  = await dbGetAll_raw('machines');
-      const processes = await dbGetAll_raw('processes');
+      if (!recipe) { win.close(); return toast('Receita não encontrada', 'error'); }
+      const clients = await dbGetAll_raw('clients');
       const c = clients.find(c => Number(c.id) === Number(recipe.client_id));
-      const machIds = parseMachineIds(recipe);
-      const recMachinesPdf = machIds.map(mid => machines.find(m => Number(m.id) === mid)).filter(Boolean);
-      const machinesStr = recMachinesPdf.map(m => `${m.name}${m.capacity?' ('+m.capacity+' kg)':''}`).join(', ') || '—';
-      const p = findRecipeProcess(processes, recipe);
-      const procName = p?.name || recipe.process_name || null;
       const steps = (() => { try { return JSON.parse(recipe.steps||'[]'); } catch(e){ return []; } })();
       const dateStr = fmtDate(recipe.date || recipe.created_at?.slice(0,10));
+      const allMach = String(recipe.all_machines) === '1' || recipe.all_machines === true || recipe.all_machines === 'true';
+      const machStr = allMach ? 'Todas as máquinas' : (recipe.machine_info || '—');
       const stepsRows = steps.map(s => {
         const prods = Array.isArray(s.products) ? s.products.filter(p => typeof p==='string' ? p : p?.name) : [];
         const prodNames = prods.map(p => typeof p==='string' ? p : p.name).join('<br>') || '—';
         const dosages   = prods.map(p => typeof p==='string' ? '—' : (p.dosage || '—')).join('<br>') || '—';
-        return `
-        <tr>
+        return `<tr>
           <td style="text-align:center;font-weight:700;background:#f1f5f9">${s.n}</td>
           <td>${s.operation||'—'}</td>
           <td style="text-align:center">${s.time ? s.time+' min' : '—'}</td>
@@ -4262,7 +4228,7 @@ ${printScript}
         </tr>`;
       }).join('');
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>PROCESSOS DE LAVAGENS - ${c?.name||'?'} - v${recipe.version} - ${dateStr}</title>
+<title>PROCESSOS DE LAVAGENS - ${c?.name||'?'} - ${recipe.name||''} - ${dateStr}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
@@ -4291,16 +4257,16 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
 <div class="action-bar">
   <button class="btn-close-rcp" onclick="window.close()">✕ Fechar</button>
   <button class="btn-print-rcp" onclick="window.print()">🖨️ Salvar PDF</button>
-  <span class="action-bar-label">${c?.name||'?'} · ${machinesStr}${procName ? ' · '+procName : ''}</span>
+  <span class="action-bar-label">${c?.name||'?'} · ${recipe.name||'—'}</span>
 </div>
 <div class="hdr"><h1>📝 Receita de Lavagem</h1><p>Hygicare Lavanderia</p></div>
 <div class="info-block">
   <div class="info-grid">
     <div class="info-item"><label>Cliente</label><span>${c?.name||'—'}</span></div>
-    <div class="info-item" style="grid-column:span 2"><label>Máquinas</label><span>${machinesStr}</span></div>
-    <div class="info-item"><label>Processo</label><span>${procName||'—'}</span></div>
+    <div class="info-item" style="grid-column:span 2"><label>Nome da Receita</label><span>${recipe.name||'—'}</span></div>
+    <div class="info-item" style="grid-column:span 2"><label>Máquinas</label><span>${machStr}</span></div>
     <div class="info-item"><label>Data</label><span>${dateStr}</span></div>
-    <div class="info-item"><label>Versão</label><span>v${recipe.version}</span></div>
+    <div class="info-item"><label>Versão</label><span>${recipe.version ? 'v'+recipe.version : 'v1'}</span></div>
     <div class="info-item"><label>Criado por</label><span>${recipe.created_by||'—'}</span></div>
   </div>
 </div>
@@ -4311,29 +4277,23 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
 </table>
 <div class="footer">Hygicare Lavanderia — Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
-      const win = window.open('', '_blank', 'width=900,height=700');
-      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
       win.document.write(html);
       win.document.close();
     }
 
     async function _shareClientRecipesPdf(clientId) {
+      const win = window.open('', '_blank', 'width=950,height=750');
+      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
       clientId = Number(clientId);
-      const [allRecipes, clients, machines, processes] = await Promise.all([
-        dbGetAll_raw('recipes'),
-        dbGetAll_raw('clients'),
-        dbGetAll_raw('machines'),
-        dbGetAll_raw('processes'),
-      ]);
+      const [allRecipes, clients] = await Promise.all([dbGetAll_raw('recipes'), dbGetAll_raw('clients')]);
       const c = clients.find(cl => Number(cl.id) === clientId);
-      if (!c) return toast('Cliente não encontrado', 'error');
+      if (!c) { win.close(); return toast('Cliente não encontrado', 'error'); }
 
       const activeRecipes = allRecipes
         .filter(r => r.status === 'active' && Number(r.client_id) === clientId)
-        .sort((a, b) => (a.process_name || '').localeCompare(b.process_name || ''));
-      if (!activeRecipes.length) return toast('Nenhuma receita ativa para este cliente', 'warning');
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      if (!activeRecipes.length) { win.close(); return toast('Nenhuma receita ativa para este cliente', 'warning'); }
 
-      const maxVersion = Math.max(...activeRecipes.map(r => Number(r.version) || 0));
       const lastIso = activeRecipes.reduce((best, r) => {
         const d = r.date || r.created_at?.slice(0, 10) || '';
         return d > best ? d : best;
@@ -4341,13 +4301,8 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       const lastDateStr = fmtDate(lastIso);
 
       const recipeSections = activeRecipes.map(r => {
-        const machIds = parseMachineIds(r);
-        const machNames = machIds.map(mid => {
-          const m = machines.find(m => Number(m.id) === mid);
-          return m ? `${m.name}${m.capacity ? ' (' + m.capacity + ' kg)' : ''}` : '?';
-        }).join(', ') || '—';
-        const p = findRecipeProcess(processes, r);
-        const procName = p?.name || r.process_name || '—';
+        const allMach = String(r.all_machines) === '1' || r.all_machines === true || r.all_machines === 'true';
+        const machStr = allMach ? 'Todas as máquinas' : (r.machine_info || '—');
         const steps = (() => { try { return JSON.parse(r.steps || '[]'); } catch(e) { return []; } })();
         const stepsRows = steps.map(s => {
           const prods = Array.isArray(s.products) ? s.products.filter(x => typeof x === 'string' ? x : x?.name) : [];
@@ -4366,8 +4321,8 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         return `
         <div class="rs">
           <div class="rs-hdr">
-            <span class="rs-proc">🔄 ${escHtml(procName)}</span>
-            <span class="rs-meta">⚙️ ${escHtml(machNames)} &nbsp;·&nbsp; v${r.version}</span>
+            <span class="rs-proc">📋 ${escHtml(r.name||'—')}</span>
+            <span class="rs-meta">⚙️ ${escHtml(machStr)} &nbsp;·&nbsp; ${fmtDate(r.date||r.created_at?.slice(0,10))}</span>
           </div>
           ${steps.length
             ? `<table><thead><tr><th style="width:34px">N.</th><th>Operação</th><th>Tempo</th><th>Temp.</th><th>Nível</th><th>Produto(s)</th><th>Dosagem</th></tr></thead><tbody>${stepsRows}</tbody></table>`
@@ -4375,7 +4330,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         </div>`;
       }).join('');
 
-      const titleStr = `PROCESSOS DE LAVAGENS - ${c.name} - v${maxVersion} - ${lastDateStr}`;
+      const titleStr = `PROCESSOS DE LAVAGENS - ${c.name} - ${lastDateStr}`;
       const htmlDoc = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>${escHtml(titleStr)}</title>
 <style>
@@ -4405,18 +4360,16 @@ tbody td{padding:5px 9px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 <div class="abar">
   <button class="btn-x" onclick="window.close()">✕ Fechar</button>
   <button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
-  <span class="abar-lbl">${escHtml(c.name)} · ${activeRecipes.length} processo${activeRecipes.length > 1 ? 's' : ''}</span>
+  <span class="abar-lbl">${escHtml(c.name)} · ${activeRecipes.length} receita${activeRecipes.length > 1 ? 's' : ''}</span>
 </div>
 <div class="doc-hdr">
   <h1>📋 Processos de Lavagens</h1>
-  <p>${escHtml(c.name)} &nbsp;·&nbsp; Hygicare Lavanderia &nbsp;·&nbsp; v${maxVersion} &nbsp;·&nbsp; Última atualização: ${lastDateStr}</p>
+  <p>${escHtml(c.name)} &nbsp;·&nbsp; Hygicare Lavanderia &nbsp;·&nbsp; Última atualização: ${lastDateStr}</p>
 </div>
 ${recipeSections}
 <div class="footer">Hygicare Lavanderia — ${escHtml(c.name)} — Gerado em ${new Date().toLocaleString('pt-BR')}</div>
 </body></html>`;
 
-      const win = window.open('', '_blank', 'width=950,height=750');
-      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
       win.document.write(htmlDoc);
       win.document.close();
     }
@@ -4427,30 +4380,15 @@ ${recipeSections}
       const pending = all.find(r => Number(r.id) === Number(pendingId));
       if (!pending || pending.status !== 'pending') return toast('Receita não encontrada ou não está pendente', 'error');
 
-      // Usa replaces_id (preciso) se disponível, senão fallback pelo original_id
-      const currentActive = (pending.replaces_id
-        ? all.find(r => r.status === 'active' && Number(r.id) === Number(pending.replaces_id))
-        : null)
-        || all.find(r => r.status === 'active' && (Number(r.original_id) === Number(pending.original_id) || Number(r.id) === Number(pending.original_id)));
-      if (currentActive) {
-        const pendingMachSet = new Set(parseMachineIds(pending).map(Number));
-        const activeMachIds  = parseMachineIds(currentActive).map(Number);
-        const remaining      = activeMachIds.filter(id => !pendingMachSet.has(id));
-
-        if (remaining.length > 0) {
-          // Máquinas removidas da edição continuam com a receita original (apenas atualiza machine_ids)
-          const kept = { ...currentActive, machine_id: remaining[0], machine_ids: JSON.stringify(remaining) };
-          await dbPut('recipes', kept);
-          await patchSheetDB(SHEETS.RECIPES, kept.id, kept);
-        } else {
-          // Todas as máquinas migraram → arquiva original
+      if (pending.replaces_id) {
+        const currentActive = all.find(r => r.status === 'active' && Number(r.id) === Number(pending.replaces_id));
+        if (currentActive) {
           const archived = { ...currentActive, status: 'archived' };
           await dbPut('recipes', archived);
           await patchSheetDB(SHEETS.RECIPES, archived.id, archived);
         }
       }
 
-      // Ativar a versão pendente
       const approved = { ...pending, status: 'active', approved_by: currentUser?.name||'', approved_at: new Date().toISOString() };
       await dbPut('recipes', approved);
       await patchSheetDB(SHEETS.RECIPES, approved.id, approved);
@@ -4475,16 +4413,7 @@ ${recipeSections}
     };
 
     // Filtros da lista
-    document.getElementById('recipe-filter-client')?.addEventListener('change', async e => {
-      const sel = document.getElementById('recipe-filter-machine');
-      sel.innerHTML = '<option value="">⚙️ Todas as máquinas</option>';
-      if (e.target.value) {
-        const mach = (await dbGetAll_raw('machines')).filter(m => Number(m.client_id) === Number(e.target.value));
-        mach.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(m => sel.innerHTML += `<option value="${m.id}">${m.name}</option>`);
-      }
-      await renderRecipesList();
-    });
-    document.getElementById('recipe-filter-machine')?.addEventListener('change', async () => await renderRecipesList());
+    document.getElementById('recipe-filter-client')?.addEventListener('change', async () => await renderRecipesList());
 
     // Chips de status das receitas
     document.getElementById('recipes-status-filters')?.addEventListener('click', async e => {
@@ -4733,7 +4662,7 @@ ${recipeSections}
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(client?.price_kg || 0) || null };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(client?.price_kg || 0) || null };
         grouped[key].rows.push({ machineName, procName, executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
@@ -4758,9 +4687,11 @@ ${recipeSections}
       }
       if (dateStart || dateEnd) {
         entries = entries.filter(([key, g]) => {
-          const [ds] = g.period.split(' → ');
-          if (dateStart && ds < dateStart) return false;
-          if (dateEnd   && ds > dateEnd)   return false;
+          const ds = g.dateStartRaw; // ISO YYYY-MM-DD
+          const de = g.dateEndRaw;
+          if (!ds) return false;
+          if (dateStart && de && de < dateStart) return false;
+          if (dateEnd   && ds > dateEnd)         return false;
           return true;
         });
       }
@@ -5068,22 +4999,6 @@ ${recipeSections}
     await initHomeScreen();
     await renderRecordsList();
     await updateRecipeBadge();
-
-    // Reparar process_name em receitas existentes sem precisar clicar Atualizar
-    (async () => {
-      try {
-        const recs = await dbGetAll_raw('recipes');
-        const procs = await dbGetAll_raw('processes');
-        let repaired = 0;
-        for (const r of recs) {
-          if (!r.process_name) {
-            const p = findRecipeProcess(procs, r);
-            if (p?.name) { await dbPut('recipes', { ...r, process_name: p.name }); repaired++; }
-          }
-        }
-        if (repaired > 0) { await renderRecipesList(); await updateRecipeBadge(); }
-      } catch(e) { /* silencioso */ }
-    })();
 
     // Botões de ação rápida na tela Home
     document.querySelectorAll('.home-action-btn[data-nav-to]').forEach(btn => {
