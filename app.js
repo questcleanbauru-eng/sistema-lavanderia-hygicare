@@ -4689,7 +4689,7 @@ ${recipeSections}
 
         const clientName  = client?.name  || `Cliente #${r.client_id}`;
         const machineName = machine?.name || `Máquina #${r.machine_id}`;
-        const procName    = process?.name || `Processo #${r.process_id}`;
+        const procName    = process?.name || '(Processo removido)';
         const period      = `${fmtDate(r.date_start)} → ${fmtDate(r.date_end)}`;
 
         // Agrupamento pelo mês do período do registro (date_start), não pela data de sync
@@ -5383,8 +5383,8 @@ ${recipeSections}
       const kgProc = {};
       for (const r of records) {
         const p = processes.find(p => Number(p.id) === Number(r.process_id));
-        const name = p?.name || `Proc. #${r.process_id}`;
-        kgProc[name] = (kgProc[name] || 0) + parseFloat(r.total || 0);
+        if (!p) continue;
+        kgProc[p.name] = (kgProc[p.name] || 0) + parseFloat(r.total || 0);
       }
       const totalKgProc = Object.values(kgProc).reduce((s, v) => s + v, 0);
       const sortedProc = Object.entries(kgProc).sort((a,b) => b[1]-a[1]).slice(0, 10);
@@ -5654,8 +5654,8 @@ ${recipeSections}
       const kgProcess = {};
       for (const r of records) {
         const p = processes.find(p => Number(p.id) === Number(r.process_id));
-        const name = p?.name || `Proc. #${r.process_id}`;
-        kgProcess[name] = (kgProcess[name] || 0) + parseFloat(r.total || 0);
+        if (!p) continue;
+        kgProcess[p.name] = (kgProcess[p.name] || 0) + parseFloat(r.total || 0);
       }
       const byProcess = Object.entries(kgProcess).sort((a, b) => b[1] - a[1]);
 
