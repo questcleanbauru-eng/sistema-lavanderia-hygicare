@@ -5283,7 +5283,8 @@ ${recipeSections}
         _chartPeriodMonths = (ly - fy) * 12 + (lm - fm) + 1;
       }
       _mediaMensal = _chartPeriodMonths > 0 ? totalKg / _chartPeriodMonths : 0;
-      const _mediaRecords = records.length > 0 ? totalKg / records.length : 0;
+      const _uniqueDays = new Set(records.map(r => (r.date_start || r.created_at || '').slice(0, 10)).filter(Boolean));
+      const _mediaRecords = _uniqueDays.size > 0 ? totalKg / _uniqueDays.size : 0;
       // Guardar estado para o toggle de modo de média
       const _fmtM = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
       window._chartAvgState = { mediaPeriod: _mediaMensal, mediaRecords: _mediaRecords, mesSorted, fmtM: _fmtM };
@@ -5506,12 +5507,12 @@ ${recipeSections}
         const valEl = document.getElementById('kpi-media-mensal');
         const lblEl = document.getElementById('kpi-media-label');
         if (valEl) valEl.textContent = s.fmtM(avg) + ' kg';
-        if (lblEl) lblEl.textContent = mode === 'records' ? 'Média kg/registro' : 'Média kg/mês';
+        if (lblEl) lblEl.textContent = mode === 'records' ? 'Média kg/dia com envio' : 'Média kg/mês';
         // Atualizar linha de média no gráfico
         const ch = _charts?.porMes;
         if (ch && ch.data.datasets[1]) {
           ch.data.datasets[1].data  = s.mesSorted.map(() => +avg.toFixed(2));
-          ch.data.datasets[1].label = `${mode === 'records' ? 'Média/registro' : 'Média/mês'} (${s.fmtM(avg)} kg)`;
+          ch.data.datasets[1].label = `${mode === 'records' ? 'Média/dia c/ envio' : 'Média/mês'} (${s.fmtM(avg)} kg)`;
           ch.update();
         }
       });
