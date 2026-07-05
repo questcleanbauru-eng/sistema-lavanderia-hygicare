@@ -5283,12 +5283,21 @@ ${recipeSections}
         _chartPeriodMonths = (ly - fy) * 12 + (lm - fm) + 1;
       }
       _mediaMensal = _chartPeriodMonths > 0 ? totalKg / _chartPeriodMonths : 0;
-      // Atualizar KPI de média agora que temos o valor
+      const _mediaRecords = records.length > 0 ? totalKg / records.length : 0;
+      // Guardar estado para o toggle de modo de média
+      const _fmtM = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
+      window._chartAvgState = { mediaPeriod: _mediaMensal, mediaRecords: _mediaRecords, mesSorted, fmtM: _fmtM };
+      // Resetar toggle para modo padrão (÷ Meses) e atualizar KPI
+      document.querySelectorAll('.avg-mode-btn').forEach(b => {
+        const on = b.dataset.avg === 'period';
+        b.style.background   = on ? '#2563eb' : '#f8fafc';
+        b.style.color        = on ? '#fff'     : '#64748b';
+        b.style.borderColor  = on ? '#bfdbfe'  : '#e2e8f0';
+      });
+      const _lblMedia = document.getElementById('kpi-media-label');
+      if (_lblMedia) _lblMedia.textContent = 'Média kg/mês';
       const _elMedia = document.getElementById('kpi-media-mensal');
-      if (_elMedia) {
-        const fmtM = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
-        _elMedia.textContent = fmtM(_mediaMensal) + ' kg';
-      }
+      if (_elMedia) _elMedia.textContent = _fmtM(_mediaMensal) + ' kg';
       const ctxM = document.getElementById('chart-por-mes');
       if (ctxM) _charts.porMes = new Chart(ctxM, {
         type: 'line',
@@ -5477,6 +5486,35 @@ ${recipeSections}
       document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
       document.querySelector('[data-preset="year"]')?.classList.add('active');
       renderCharts();
+    });
+
+    // Toggle modo de média (÷ Meses / ÷ Registros)
+    document.querySelectorAll('.avg-mode-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const mode = this.dataset.avg;
+        const s = window._chartAvgState;
+        if (!s) return;
+        const avg = mode === 'records' ? s.mediaRecords : s.mediaPeriod;
+        // Atualizar visual dos botões
+        document.querySelectorAll('.avg-mode-btn').forEach(b => {
+          const on = b.dataset.avg === mode;
+          b.style.background  = on ? '#2563eb' : '#f8fafc';
+          b.style.color       = on ? '#fff'     : '#64748b';
+          b.style.borderColor = on ? '#bfdbfe'  : '#e2e8f0';
+        });
+        // Atualizar KPI
+        const valEl = document.getElementById('kpi-media-mensal');
+        const lblEl = document.getElementById('kpi-media-label');
+        if (valEl) valEl.textContent = s.fmtM(avg) + ' kg';
+        if (lblEl) lblEl.textContent = mode === 'records' ? 'Média kg/registro' : 'Média kg/mês';
+        // Atualizar linha de média no gráfico
+        const ch = _charts?.porMes;
+        if (ch && ch.data.datasets[1]) {
+          ch.data.datasets[1].data  = s.mesSorted.map(() => +avg.toFixed(2));
+          ch.data.datasets[1].label = `${mode === 'records' ? 'Média/registro' : 'Média/mês'} (${s.fmtM(avg)} kg)`;
+          ch.update();
+        }
+      });
     });
 
     // Botão Relatório Resumo (tela de gráficos)
