@@ -1675,6 +1675,17 @@ ${kpisHtml}
               role: du.role || 'vendedor', name: du.name, sellerName: du.sellerName || du.name };
             if (idx >= 0) window.USERS[idx] = mapped; else window.USERS.push(mapped);
           });
+          // Atualizar currentUser com dados frescos (ex: sellers_access, permissions, manager)
+          if (currentUser) {
+            const me = allDbUsers.find(u => u.username === currentUser.username);
+            if (me) {
+              currentUser.sellers_access = me.sellers_access || '';
+              currentUser.permissions    = me.permissions    || '';
+              currentUser.manager        = me.manager        || '';
+              currentUser.sellerName     = me.sellerName     || me.name || '';
+              localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
+            }
+          }
           refreshSellerSelect();
           await renderUsersList();
         }
