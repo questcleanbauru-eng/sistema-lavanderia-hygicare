@@ -2291,6 +2291,11 @@ ${kpisHtml}
     async function renderMachinesList(filter = '', clientFilter = 0) {
       let machines = await getAll('machines');
       const clients  = await getAll('clients');
+      // Para não-admin: restringir máquinas aos clientes acessíveis
+      if (currentUser && currentUser.role !== 'admin') {
+        const cIds = new Set(clients.map(c => Number(c.id)));
+        machines = machines.filter(m => cIds.has(Number(m.client_id)));
+      }
       const countEl  = document.getElementById('machines-count');
       if (countEl) countEl.textContent = machines.length;
 
@@ -2375,8 +2380,15 @@ ${kpisHtml}
     async function renderProcessesList(filter = '', machineFilter = 0) {
       await refreshMachinesForProcessSelect();
       let processes = await getAll('processes');
-      const machines = await getAll('machines');
-      const clients  = await getAll('clients');
+      let machines  = await getAll('machines');
+      const clients = await getAll('clients');
+      // Para não-admin: restringir máquinas/processos aos clientes acessíveis
+      if (currentUser && currentUser.role !== 'admin') {
+        const cIds = new Set(clients.map(c => Number(c.id)));
+        machines  = machines.filter(m => cIds.has(Number(m.client_id)));
+        const mIds = new Set(machines.map(m => Number(m.id)));
+        processes = processes.filter(p => mIds.has(Number(p.machine_id)));
+      }
       const countEl  = document.getElementById('processes-count');
       if (countEl) countEl.textContent = processes.length;
 
