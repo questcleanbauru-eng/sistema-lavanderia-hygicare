@@ -672,11 +672,16 @@ ${printScript}
       });
       // FAB: oculto na tela de registro, home, ou sem permissão de envio
       const fab = document.getElementById('fab-btn');
-      if (fab) fab.classList.toggle('hidden', id === 'screen-form' || id === 'screen-home' || !canDo('action_send_record'));
+      if (fab) fab.classList.toggle('hidden', id === 'screen-form' || id === 'screen-home' || !canDo('send_record'));
       // Close drawer if open
       closeDrawer();
     }
     window.show = show;
+
+    // Chaves de ação — separa de chaves de tela
+    const ACTION_KEYS = new Set(['send_record','edit_record','delete_record','pdf_report',
+      'create_client','edit_client','delete_client','create_machine','edit_machine','delete_machine',
+      'create_process','edit_process','delete_process','create_recipe','edit_recipe','edit_vazao']);
 
     // Verifica se o usuário tem permissão para realizar uma ação
     function canDo(action) {
@@ -684,8 +689,8 @@ ${printScript}
       const permsStr = (currentUser.permissions || '').trim();
       if (!permsStr) return true;
       const perms = new Set(permsStr.split(',').map(s => s.trim()).filter(Boolean));
-      // Se nenhuma action_* está definida nas permissões, todas as ações são permitidas
-      if (![...perms].some(p => p.startsWith('action_'))) return true;
+      // Se nenhuma chave de ação está definida, todas as ações são permitidas (backward compat)
+      if (![...perms].some(p => ACTION_KEYS.has(p))) return true;
       return perms.has(action);
     }
     window.canDo = canDo;
@@ -1484,7 +1489,7 @@ ${kpisHtml}
 
     // Abrir formulários
     document.getElementById('btn-new-client').onclick = () => {
-      if (!canDo('action_create_client')) return toast('Sem permissão para criar clientes.', 'error');
+      if (!canDo('create_client')) return toast('Sem permissão para criar clientes.', 'error');
       editClientIdField.value = '';
       document.getElementById('form-client-title').textContent = 'Novo Cliente';
       formClient.reset();
@@ -1506,7 +1511,7 @@ ${kpisHtml}
     }
 
     document.getElementById('btn-new-machine').onclick = () => {
-      if (!canDo('action_create_machine')) return toast('Sem permissão para criar máquinas.', 'error');
+      if (!canDo('create_machine')) return toast('Sem permissão para criar máquinas.', 'error');
       editMachineIdField.value = '';
       document.getElementById('form-machine-title').textContent = 'Nova Máquina';
       machineClientSelect.value = '';
@@ -1515,7 +1520,7 @@ ${kpisHtml}
       formMachineCard.classList.remove('hidden');
     };
     document.getElementById('btn-new-process').onclick = () => {
-      if (!canDo('action_create_process')) return toast('Sem permissão para criar processos.', 'error');
+      if (!canDo('create_process')) return toast('Sem permissão para criar processos.', 'error');
       editProcessIdField.value = '';
       document.getElementById('form-process-title').textContent = 'Novo Processo';
       processMachineSelect.value = '';
@@ -2245,8 +2250,8 @@ ${kpisHtml}
             </div>
           </div>
           <div class="list-item-actions">
-            ${canDo('action_edit_client') ? `<button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>` : ''}
-            ${canDo('action_delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id})">🗑️</button>` : ''}
+            ${canDo('edit_client') ? `<button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>` : ''}
+            ${canDo('delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id})">🗑️</button>` : ''}
           </div>
         </div>`;
     }
@@ -2387,8 +2392,8 @@ ${kpisHtml}
                 </div>
                 <div class="list-item-actions">
                   <button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>
-                  ${canDo('action_edit_machine') ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
-                  ${canDo('action_delete_machine') ? `<button class="btn-danger" onclick="window._deleteMachine(${m.id})">🗑️</button>` : ''}
+                  ${canDo('edit_machine') ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
+                  ${canDo('delete_machine') ? `<button class="btn-danger" onclick="window._deleteMachine(${m.id})">🗑️</button>` : ''}
                 </div>
               </div>
             `).join('')}
@@ -2494,8 +2499,8 @@ ${kpisHtml}
                     </div>
                   </div>
                   <div class="list-item-actions">
-                    ${canDo('action_edit_process') ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
-                    ${canDo('action_delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id})">🗑️</button>` : ''}
+                    ${canDo('edit_process') ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
+                    ${canDo('delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id})">🗑️</button>` : ''}
                   </div>
                 </div>
               `;
@@ -3213,7 +3218,7 @@ ${kpisHtml}
     }
 
     async function saveVazaoReadings() {
-      if (!canDo('action_edit_vazao')) return toast('Sem permissão para salvar leituras de vazão.', 'error');
+      if (!canDo('edit_vazao')) return toast('Sem permissão para salvar leituras de vazão.', 'error');
       const date     = document.getElementById('vazao-date')?.value;
       const clientId = Number(document.getElementById('vazao-client')?.value);
       if (!date || !clientId) return toast('Preencha a data e selecione um cliente', 'warning');
@@ -3864,8 +3869,8 @@ ${kpisHtml}
     document.getElementById('btn-save-recipe')?.addEventListener('click', async () => {
       if (_saving) return;
       const _isEditingRecipe = !!document.getElementById('recipe-edit-id')?.value;
-      if (_isEditingRecipe && !canDo('action_edit_recipe'))   return toast('Sem permissão para editar receitas.', 'error');
-      if (!_isEditingRecipe && !canDo('action_create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
+      if (_isEditingRecipe && !canDo('edit_recipe'))   return toast('Sem permissão para editar receitas.', 'error');
+      if (!_isEditingRecipe && !canDo('create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
       const clientId  = Number(document.getElementById('recipe-client')?.value);
       const name      = (document.getElementById('recipe-name')?.value || '').trim();
       const date      = document.getElementById('recipe-date')?.value;
@@ -4244,7 +4249,7 @@ ${kpisHtml}
     document.getElementById('modal-recipe-view-close2')?.addEventListener('click', () => document.getElementById('modal-recipe-view').classList.add('hidden'));
 
     async function _shareRecipePdf(recipeId) {
-      if (!canDo('action_pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
       const win = window.open('', '_blank', 'width=900,height=700');
       if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
       const allRecipes = await dbGetAll_raw('recipes');
@@ -4325,7 +4330,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
     }
 
     async function _shareClientRecipesPdf(clientId) {
-      if (!canDo('action_pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
       const win = window.open('', '_blank', 'width=950,height=750');
       if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
       clientId = Number(clientId);
@@ -5565,7 +5570,7 @@ ${recipeSections}
     document.getElementById('btn-summary-report')?.addEventListener('click', _printSummaryReport);
 
     async function _printSummaryReport() {
-      if (!canDo('action_pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
       // Abrir janela ANTES dos awaits — mobile bloqueia window.open após async
       const w = window.open('', '_blank');
       if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
@@ -6071,12 +6076,12 @@ ${inactiveSec}
         const el = document.querySelector(`input[name="perm_${k}"]`);
         if (el) el.checked = !u.permissions || savedPerms.has(k);
       });
-      const actionKeys = ['action_send_record','action_edit_record','action_delete_record',
-        'action_create_client','action_edit_client','action_delete_client',
-        'action_create_machine','action_edit_machine','action_delete_machine',
-        'action_create_process','action_edit_process','action_delete_process',
-        'action_create_recipe','action_edit_recipe','action_pdf_report','action_edit_vazao'];
-      const hasAnyAction = [...savedPerms].some(p => p.startsWith('action_'));
+      const actionKeys = ['send_record','edit_record','delete_record',
+        'create_client','edit_client','delete_client',
+        'create_machine','edit_machine','delete_machine',
+        'create_process','edit_process','delete_process',
+        'create_recipe','edit_recipe','pdf_report','edit_vazao'];
+      const hasAnyAction = [...savedPerms].some(p => ACTION_KEYS.has(p));
       actionKeys.forEach(k => {
         const el = document.querySelector(`input[name="perm_${k}"]`);
         if (el) el.checked = !u.permissions || !hasAnyAction || savedPerms.has(k);
@@ -6109,11 +6114,11 @@ ${inactiveSec}
         ? Array.from(document.querySelectorAll('input[name="seller_access"]:checked')).map(el => el.value).join(',')
         : '';
       const permKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes',
-        'action_send_record','action_edit_record','action_delete_record',
-        'action_create_client','action_edit_client','action_delete_client',
-        'action_create_machine','action_edit_machine','action_delete_machine',
-        'action_create_process','action_edit_process','action_delete_process',
-        'action_create_recipe','action_edit_recipe','action_pdf_report','action_edit_vazao'];
+        'send_record','edit_record','delete_record',
+        'create_client','edit_client','delete_client',
+        'create_machine','edit_machine','delete_machine',
+        'create_process','edit_process','delete_process',
+        'create_recipe','edit_recipe','pdf_report','edit_vazao'];
       const permissions = role === 'admin' ? '' :
         permKeys.filter(k => document.querySelector(`input[name="perm_${k}"]`)?.checked).join(',');
 
