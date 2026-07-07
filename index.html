@@ -116,8 +116,9 @@
           <!-- Permissões por tela (oculto para admin) -->
           <div id="permissions-section" style="margin-top:0.8rem;padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">
             <div style="font-weight:600;font-size:0.88rem;color:#1e293b;margin-bottom:10px">🔐 Permissões de acesso</div>
-            <div style="font-size:0.78rem;color:#64748b;margin-bottom:10px">Selecione quais telas este usuário pode acessar:</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+
+            <div style="font-size:0.75rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Telas visíveis</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:12px">
               <label class="perm-check"><input type="checkbox" name="perm_clients"   checked /> 👤 Clientes</label>
               <label class="perm-check"><input type="checkbox" name="perm_machines"  checked /> ⚙️ Máquinas</label>
               <label class="perm-check"><input type="checkbox" name="perm_processes" checked /> 🔄 Processos</label>
@@ -125,9 +126,40 @@
               <label class="perm-check"><input type="checkbox" name="perm_reports"   checked /> 📊 Relatórios</label>
               <label class="perm-check"><input type="checkbox" name="perm_charts"    checked /> 📈 Gráficos</label>
               <label class="perm-check"><input type="checkbox" name="perm_vazao"     checked /> 💧 Vazão</label>
-              <label class="perm-check"><input type="checkbox" name="perm_recipes"  checked /> 📝 Receitas</label>
+              <label class="perm-check"><input type="checkbox" name="perm_recipes"   checked /> 📝 Receitas</label>
               <label class="perm-check"><input type="checkbox" name="perm_users"              /> 👥 Usuários</label>
-              <label class="perm-check perm-only-admin" style="opacity:0.4;pointer-events:none"><input type="checkbox" disabled /> 🛠️ Admin (só admin)</label>
+              <label class="perm-check" style="opacity:0.4;pointer-events:none"><input type="checkbox" disabled /> 🛠️ Admin (só admin)</label>
+            </div>
+
+            <div style="font-size:0.75rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;border-top:1px solid #e2e8f0;padding-top:10px">Ações permitidas</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+              <label class="perm-check" style="grid-column:1/-1;font-size:0.72rem;color:#64748b;font-weight:600;margin-bottom:2px">📋 Registros de Produção</label>
+              <label class="perm-check"><input type="checkbox" name="perm_send_record"   checked /> ✅ Enviar registro</label>
+              <label class="perm-check"><input type="checkbox" name="perm_edit_record"   checked /> ✏️ Editar registro</label>
+              <label class="perm-check"><input type="checkbox" name="perm_delete_record" checked /> 🗑️ Excluir registro</label>
+              <label class="perm-check"><input type="checkbox" name="perm_pdf_report"    checked /> 📄 Gerar PDF</label>
+
+              <label class="perm-check" style="grid-column:1/-1;font-size:0.72rem;color:#64748b;font-weight:600;margin-top:6px;margin-bottom:2px">👤 Clientes</label>
+              <label class="perm-check"><input type="checkbox" name="perm_create_client" checked /> ➕ Criar cliente</label>
+              <label class="perm-check"><input type="checkbox" name="perm_edit_client"   checked /> ✏️ Editar cliente</label>
+              <label class="perm-check"><input type="checkbox" name="perm_delete_client" checked /> 🗑️ Excluir cliente</label>
+
+              <label class="perm-check" style="grid-column:1/-1;font-size:0.72rem;color:#64748b;font-weight:600;margin-top:6px;margin-bottom:2px">⚙️ Máquinas</label>
+              <label class="perm-check"><input type="checkbox" name="perm_create_machine" checked /> ➕ Criar máquina</label>
+              <label class="perm-check"><input type="checkbox" name="perm_edit_machine"   checked /> ✏️ Editar máquina</label>
+              <label class="perm-check"><input type="checkbox" name="perm_delete_machine" checked /> 🗑️ Excluir máquina</label>
+
+              <label class="perm-check" style="grid-column:1/-1;font-size:0.72rem;color:#64748b;font-weight:600;margin-top:6px;margin-bottom:2px">🔄 Processos</label>
+              <label class="perm-check"><input type="checkbox" name="perm_create_process" checked /> ➕ Criar processo</label>
+              <label class="perm-check"><input type="checkbox" name="perm_edit_process"   checked /> ✏️ Editar processo</label>
+              <label class="perm-check"><input type="checkbox" name="perm_delete_process" checked /> 🗑️ Excluir processo</label>
+
+              <label class="perm-check" style="grid-column:1/-1;font-size:0.72rem;color:#64748b;font-weight:600;margin-top:6px;margin-bottom:2px">📝 Receitas</label>
+              <label class="perm-check"><input type="checkbox" name="perm_create_recipe"  checked /> ➕ Criar receita</label>
+              <label class="perm-check"><input type="checkbox" name="perm_edit_recipe"    checked /> ✏️ Editar receita</label>
+
+              <label class="perm-check" style="grid-column:1/-1;font-size:0.72rem;color:#64748b;font-weight:600;margin-top:6px;margin-bottom:2px">💧 Vazão</label>
+              <label class="perm-check"><input type="checkbox" name="perm_edit_vazao"     checked /> ✏️ Salvar leituras</label>
             </div>
           </div>
 
