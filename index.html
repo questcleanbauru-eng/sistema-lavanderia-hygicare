@@ -734,6 +734,15 @@
             <p id="config-saved-msg" class="sync-time-info" style="margin-top:8px"></p>
           </div>
 
+          <!-- Card Layout dos PDFs -->
+          <div class="card" style="margin-top:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+            <div>
+              <h3 style="margin:0 0 0.25rem;font-size:1.05rem;color:#1e40af">🎨 Layout dos Relatórios PDF</h3>
+              <p style="font-size:0.82rem;color:var(--muted);margin:0">Ajuste cor, logo, nome da empresa e rodapé dos PDFs — sincronizado com todos os usuários.</p>
+            </div>
+            <button class="btn-primary" style="font-size:0.88rem;white-space:nowrap" onclick="show('screen-pdf-config');initPdfConfigScreen()">⚙️ Configurar Layout</button>
+          </div>
+
           <!-- Card Cores dos Processos -->
           <div class="card" style="margin-top:1.2rem">
             <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
@@ -908,9 +917,6 @@
         <section id="screen-pdf-reports" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title"><h2>📄 Relatórios PDF</h2></div>
-            <div class="screen-actions">
-              <button class="btn-secondary" style="font-size:0.83rem" onclick="show('screen-pdf-config');initPdfConfigScreen()">⚙️ Layout</button>
-            </div>
           </div>
 
           <!-- Relatório Executivo -->

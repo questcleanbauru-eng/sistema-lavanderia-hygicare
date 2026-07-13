@@ -65,6 +65,41 @@ function getPdfLogoHtml(onDark = true) {
 // Cor principal dos PDFs — lida do localStorage (sinc. via aba Config do GAS)
 function getPdfColor() { return localStorage.getItem('pdf_color') || '#1a3f5c'; }
 
+// Rodapé padrão dos PDFs — usa nome/subtítulo configurados + texto extra opcional
+function getPdfFooterHtml(reportType) {
+  const name   = localStorage.getItem('pdf_company_name')    || 'HYGICARE';
+  const sub    = localStorage.getItem('pdf_company_subtitle') || 'Lavanderia Industrial';
+  const extra  = localStorage.getItem('pdf_footer_text')     || '';
+  const type   = reportType ? ` · ${reportType}` : '';
+  const date   = new Date().toLocaleDateString('pt-BR');
+  return `${escHtml(name)} ${escHtml(sub)}${type} · Gerado em ${date}${extra ? '<br>' + escHtml(extra) : ''}`;
+}
+
+// ---------- SORT ORDER — Máquinas e Processos ----------
+function _getMachOrder()  { try { return JSON.parse(localStorage.getItem('hygicare_machine_order') || '{}'); } catch { return {}; } }
+function _getProcOrder()  { try { return JSON.parse(localStorage.getItem('hygicare_process_order') || '{}'); } catch { return {}; } }
+function _saveMachOrder(o){ localStorage.setItem('hygicare_machine_order', JSON.stringify(o)); }
+function _saveProcOrder(o){ localStorage.setItem('hygicare_process_order', JSON.stringify(o)); }
+function _applyOrder(items, orderObj, groupKey, idKey) {
+  const key = String(groupKey);
+  const arr  = orderObj[key] || [];
+  if (!arr.length) return items;
+  return [...items].sort((a, b) => {
+    const ia = arr.indexOf(Number(a[idKey]));
+    const ib = arr.indexOf(Number(b[idKey]));
+    const pa = ia < 0 ? 9999 : ia;
+    const pb = ib < 0 ? 9999 : ib;
+    return pa - pb;
+  });
+}
+function _swapOrder(arr, idA, idB) {
+  const ia = arr.indexOf(idA), ib = arr.indexOf(idB);
+  if (ia < 0 || ib < 0) return arr;
+  const copy = [...arr];
+  [copy[ia], copy[ib]] = [copy[ib], copy[ia]];
+  return copy;
+}
+
 // ---------- TOAST SYSTEM ----------
 function toast(msg, type = 'info', duration = 3500, action = null) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
@@ -515,7 +550,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const fmt = v => v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
       priceSection = `
 <div class="sec" style="margin-top:8px">
-  <div class="sec-hd" style="background:#263238">FATURAMENTO</div>
+  <div class="sec-hd blue">FATURAMENTO</div>
   <div style="padding:0">
     <div class="price-row">Preço por Kg<span>R$ ${fmt(precoKg)}</span></div>
     <div class="price-row">Total Kg Lavado<span>${fmt(g.totalKg)} kg</span></div>
@@ -609,7 +644,7 @@ tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #d
 ${sectionsHtml}
 
 <div class="sec">
-  <div class="sec-hd gray">TOTAL GERAL</div>
+  <div class="sec-hd blue">TOTAL GERAL</div>
   <div class="sec-body">
     <div class="tbl-area">
       <table>
@@ -629,11 +664,7 @@ ${sectionsHtml}
 
 ${priceSection}
 
-<div class="rpt-footer">
-  <strong>Hygicare Produtos de Higiene Ltda EPP.</strong> — DISTRIBUIDOR AUTORIZADO DIVERSEY<br>
-  Rua Dr. Jose Ranieri, 9-41 Jd. Cruzeiro do Sul — CEP: 17030-370 Bauru/SP &nbsp;|&nbsp; e-mail: comercial@hygicare.com.br &nbsp;|&nbsp; Tel/Fax: (14) 3879-7040<br>
-  CNPJ: 08.159.080/0001-34 &nbsp;|&nbsp; Inscrição Estadual: 209.376.609.111
-</div>
+<div class="rpt-footer">${getPdfFooterHtml('Relatório de Produção')}</div>
 
 <script>
 window.addEventListener('load',function(){
@@ -1137,7 +1168,7 @@ ${kpisHtml}
   <tbody>${pendingRows}</tbody>
 </table>
 
-<div class="footer">Hygicare Lavanderia &nbsp;·&nbsp; Relatório Executivo &nbsp;·&nbsp; ${now}</div>
+<div class="footer">${getPdfFooterHtml('Relatório Executivo')}</div>
 </body></html>`;
 
       win.document.write(html.replaceAll('#1a3f5c', getPdfColor()));
@@ -2094,7 +2125,8 @@ ${kpisHtml}
         addApiCount(1, 'read');
         const rows = res.data || [];
         const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
-          'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text'];
+          'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text',
+          'hygicare_machine_order', 'hygicare_process_order'];
         rows.forEach(row => {
           const key = String(row.chave);
           if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {
@@ -2554,8 +2586,12 @@ ${kpisHtml}
         byClient[clientName].items.push(m);
       }
 
+      const machOrder = _getMachOrder();
+      const canEdit = canDo('edit_machine');
       list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { client, items }], idx) => {
-        const groupId = `mach-group-${idx}`;
+        const groupId  = `mach-group-${idx}`;
+        const clientId = client?.id;
+        const ordered  = _applyOrder(items, machOrder, clientId, 'id');
         return `
         <div class="proc-client-group">
           <div class="client-group-separator" onclick="(function(el){const b=document.getElementById('${groupId}');const open=b.classList.toggle('collapsed');el.querySelector('.cg-chevron').style.transform=open?'rotate(-90deg)':'rotate(0deg)'})(this)" style="cursor:pointer;user-select:none">
@@ -2566,7 +2602,7 @@ ${kpisHtml}
             </div>
           </div>
           <div id="${groupId}">
-            ${items.map(m => `
+            ${ordered.map((m, i) => `
               <div class="list-item" data-machine-id="${m.id}">
                 <div class="list-item-content">
                   <div class="list-item-name">
@@ -2575,8 +2611,12 @@ ${kpisHtml}
                   </div>
                 </div>
                 <div class="list-item-actions">
+                  ${canEdit ? `<div style="display:flex;flex-direction:column;gap:1px">
+                    <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveMachine(${m.id},${clientId},'up')" ${i===0?'disabled':''}>▲</button>
+                    <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveMachine(${m.id},${clientId},'down')" ${i===ordered.length-1?'disabled':''}>▼</button>
+                  </div>` : ''}
                   <button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>
-                  ${canDo('edit_machine') ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
+                  ${canEdit ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
                   ${canDo('delete_machine') ? `<button class="btn-danger" onclick="window._deleteMachine(${m.id}, this)">🗑️</button>` : ''}
                 </div>
               </div>
@@ -2588,6 +2628,25 @@ ${kpisHtml}
 
     document.getElementById('search-machines').addEventListener('input', e => renderMachinesList(e.target.value));
     document.getElementById('filter-machine-client').addEventListener('change', e => renderMachinesList(document.getElementById('search-machines').value, Number(e.target.value)));
+
+    window._moveMachine = async function(machId, clientId, dir) {
+      const machines = await dbGetAll_raw('machines');
+      const clientMachs = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const order = _getMachOrder();
+      const key   = String(clientId);
+      let arr = order[key] || clientMachs.map(m => Number(m.id));
+      // Garantir que todos os IDs do cliente estejam no array
+      clientMachs.forEach(m => { if (!arr.includes(Number(m.id))) arr.push(Number(m.id)); });
+      const idx = arr.indexOf(Number(machId));
+      if (idx < 0) return;
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= arr.length) return;
+      arr = _swapOrder(arr, arr[idx], arr[swapIdx]);
+      order[key] = arr;
+      _saveMachOrder(order);
+      callGAS('upsert', 'Config', { chave: 'hygicare_machine_order', valor: JSON.stringify(order) });
+      await renderMachinesList(document.getElementById('search-machines')?.value || '', Number(document.getElementById('filter-machine-client')?.value || 0));
+    };
 
     // =====================================================
     // RENDER — PROCESSOS
@@ -2657,8 +2716,23 @@ ${kpisHtml}
         byClient[clientName].items.push({ p, machine });
       }
 
+      const procOrder = _getProcOrder();
+      const canEditP  = canDo('edit_process');
       list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { items }], idx) => {
         const groupId = `proc-group-${idx}`;
+        // Agrupar itens por máquina para ordenação por máquina
+        const byMach = {};
+        items.forEach(item => {
+          const mid = String(item.machine?.id || '0');
+          if (!byMach[mid]) byMach[mid] = { machine: item.machine, procs: [] };
+          byMach[mid].procs.push(item.p);
+        });
+        const orderedItems = [];
+        Object.values(byMach).forEach(({ machine, procs }) => {
+          const mid     = String(machine?.id || '0');
+          const ordered = _applyOrder(procs, procOrder, mid, 'id');
+          ordered.forEach(p => orderedItems.push({ p, machine }));
+        });
         return `
         <div class="proc-client-group">
           <div class="client-group-separator" onclick="(function(el){const b=document.getElementById('${groupId}');const open=b.classList.toggle('collapsed');el.querySelector('.cg-chevron').style.transform=open?'rotate(-90deg)':'rotate(0deg)'})(this)" style="cursor:pointer;user-select:none">
@@ -2669,8 +2743,14 @@ ${kpisHtml}
             </div>
           </div>
           <div id="${groupId}">
-            ${items.map(({ p, machine }) => {
+            ${orderedItems.map(({ p, machine }, i) => {
               const capStr = p.capacity ? `${p.capacity} kg` : `${machine?.capacity || 0} kg (da máquina)`;
+              const mid    = machine?.id;
+              // índice dentro da mesma máquina (para habilitar/desabilitar botões)
+              const machProcs = orderedItems.filter(it => Number(it.machine?.id) === Number(mid));
+              const posInMach = machProcs.indexOf(orderedItems[i]);
+              const firstInMach = posInMach === 0;
+              const lastInMach  = posInMach === machProcs.length - 1;
               return `
                 <div class="list-item">
                   <div class="list-item-content">
@@ -2684,7 +2764,11 @@ ${kpisHtml}
                     </div>
                   </div>
                   <div class="list-item-actions">
-                    ${canDo('edit_process') ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
+                    ${canEditP ? `<div style="display:flex;flex-direction:column;gap:1px">
+                      <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveProcess(${p.id},${mid},'up')" ${firstInMach?'disabled':''}>▲</button>
+                      <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveProcess(${p.id},${mid},'down')" ${lastInMach?'disabled':''}>▼</button>
+                    </div>` : ''}
+                    ${canEditP ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
                     ${canDo('delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id}, this)">🗑️</button>` : ''}
                   </div>
                 </div>
@@ -2697,6 +2781,24 @@ ${kpisHtml}
 
     document.getElementById('search-processes').addEventListener('input', e => renderProcessesList(e.target.value));
     document.getElementById('filter-process-machine').addEventListener('change', e => renderProcessesList(document.getElementById('search-processes').value, Number(e.target.value)));
+
+    window._moveProcess = async function(procId, machId, dir) {
+      const allProcs = await dbGetAll_raw('processes');
+      const machProcs = allProcs.filter(p => Number(p.machine_id) === Number(machId));
+      const order = _getProcOrder();
+      const key   = String(machId);
+      let arr = order[key] || machProcs.map(p => Number(p.id));
+      machProcs.forEach(p => { if (!arr.includes(Number(p.id))) arr.push(Number(p.id)); });
+      const idx = arr.indexOf(Number(procId));
+      if (idx < 0) return;
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= arr.length) return;
+      arr = _swapOrder(arr, arr[idx], arr[swapIdx]);
+      order[key] = arr;
+      _saveProcOrder(order);
+      callGAS('upsert', 'Config', { chave: 'hygicare_process_order', valor: JSON.stringify(order) });
+      await renderProcessesList(document.getElementById('search-processes')?.value || '', Number(document.getElementById('filter-process-machine')?.value || 0));
+    };
 
     // =====================================================
     // PRODUÇÃO
@@ -3690,7 +3792,7 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <h2>🔧 Manutenção / Notas</h2>
 <table><thead><tr><th>Data</th><th>Tipo</th><th>Título</th><th>Descrição</th><th>Por</th></tr></thead>
 <tbody>${noteRows}</tbody></table>
-<div class="footer">HYGICARE Lavanderia Industrial · Ficha do Cliente · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+<div class="footer">${getPdfFooterHtml('Ficha do Cliente')}</div>
 </body></html>`;
 
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
@@ -3747,7 +3849,7 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <h2>💧 Relatório de Vazão</h2>
 <table><thead><tr><th>Ponto de Vazão</th><th>Máquina</th><th style="text-align:right">Meta (m³/h)</th><th style="text-align:right">Última Leitura</th><th>Data</th><th>Histórico</th></tr></thead>
 <tbody>${rows}</tbody></table>
-<div class="footer">HYGICARE Lavanderia Industrial · Relatório de Vazão · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+<div class="footer">${getPdfFooterHtml('Relatório de Vazão')}</div>
 </body></html>`;
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
@@ -3824,7 +3926,7 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;paddi
 <tbody>${rows}</tbody>
 <tfoot><tr style="background:#f3f4f6;font-weight:700"><td>TOTAL</td><td></td><td style="text-align:center">${records.length}</td><td style="text-align:right">${fmtKg(totalKg)}</td><td></td></tr></tfoot>
 </table>
-<div class="footer">HYGICARE Lavanderia Industrial · Relatório Agrupado · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+<div class="footer">${getPdfFooterHtml('Relatório Agrupado')}</div>
 </body></html>`;
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
@@ -3876,7 +3978,7 @@ ${client.city?`<div style="font-size:10px;color:#6b7280;margin-top:2px">📍 ${e
 </div><div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
 <h2 style="font-size:11px;color:#1a3f5c;border-bottom:1px solid #d1d5db;padding-bottom:3px;margin-bottom:10px;text-transform:uppercase">⚙️ Máquinas e Processos (${cMachines.length})</h2>
 ${machSections}
-<div class="footer">HYGICARE Lavanderia Industrial · Máquinas e Processos · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+<div class="footer">${getPdfFooterHtml('Máquinas e Processos')}</div>
 </body></html>`;
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
@@ -6863,9 +6965,7 @@ ${(d.byCity || []).length > 1 ? `<div class="sec">
   </table>
 </div>` : ''}
 ${inactiveSec}
-<div class="rpt-footer">
-  <strong>Hygicare</strong> · Sistema de Gestão de Lavanderia · Relatório gerado em ${esc(d.today)}
-</div>
+<div class="rpt-footer">${getPdfFooterHtml('Relatório Resumo')}</div>
 </body>
 </html>`;
     }
