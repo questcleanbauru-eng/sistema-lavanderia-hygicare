@@ -349,12 +349,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _hideAppLoading() {
     const el = document.getElementById('app-loading');
     if (el) el.style.display = 'none';
-    const customLogo = localStorage.getItem('hygicare_logo_b64');
-    if (customLogo) {
-      const imgEl = document.getElementById('login-logo-img');
-      if (imgEl) imgEl.src = customLogo;
-    }
+    _applyCustomLogo();
     loginScreen.style.display = '';
+  }
+
+  function _applyCustomLogo() {
+    const b64 = localStorage.getItem('hygicare_logo_b64');
+    if (!b64) return;
+    ['login-logo-img','loading-logo-img','header-logo-img'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.src = b64;
+    });
   }
 
   function showApp() {
@@ -363,6 +368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     loginScreen.classList.add('hidden');
     loginScreen.style.display = 'none';
     appMain.classList.remove('hidden');
+    _applyCustomLogo();
     userNameSpan.textContent = `👤 ${currentUser.name}`;
     const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', diretor: 'Diretor' }[currentUser.role] || 'Vendedor';
     const _subtitle  = document.getElementById('header-subtitle');

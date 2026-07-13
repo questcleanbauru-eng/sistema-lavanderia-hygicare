@@ -240,7 +240,9 @@
 
     <!-- Tela de carregamento inicial — some após auth.js inicializar -->
     <div id="app-loading" aria-label="Carregando aplicação" aria-live="polite">
-      <div class="app-loading-logo" aria-hidden="true">🧺</div>
+      <div class="app-loading-logo" aria-hidden="true">
+        <img id="loading-logo-img" src="/icon-192.png" alt="Hygicare" style="width:60px;height:60px;border-radius:14px;object-fit:contain">
+      </div>
       <div class="app-loading-bar" role="progressbar" aria-label="Carregando...">
         <div class="app-loading-bar-fill"></div>
       </div>
@@ -266,7 +268,7 @@
       <header>
         <div class="header-top">
           <div class="header-brand">
-            <span class="brand-icon">🧺</span>
+            <img id="header-logo-img" class="brand-icon" src="/icon-192.png" alt="Hygicare" style="height:32px;width:32px;border-radius:7px;object-fit:contain;flex-shrink:0">
             <div>
               <h1>Hygicare Lavanderia</h1>
               <small id="header-subtitle">Sistema de Gestao</small>

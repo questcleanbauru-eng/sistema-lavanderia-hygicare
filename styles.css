@@ -25,7 +25,6 @@
   background: var(--bg);
 }
 .app-loading-logo {
-  font-size: 3rem;
   animation: pulse-logo 1.5s ease-in-out infinite;
 }
 @keyframes pulse-logo { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -258,7 +257,7 @@ header {
   gap: 0.6rem;
   min-width: 0;
 }
-.brand-icon { font-size: 1.6rem; flex-shrink: 0; }
+.brand-icon { flex-shrink: 0; }
 .header-brand h1 {
   font-size: 1.05rem;
   font-weight: 700;
@@ -1330,7 +1329,7 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   /* HEADER mobile — compacto e limpo */
   header { padding: 0 0.85rem; border-bottom: 1px solid var(--border); }
   .header-top { height: 50px; gap: 0.35rem; }
-  .brand-icon { font-size: 1.3rem; flex-shrink: 0; }
+  .brand-icon { flex-shrink: 0; height: 28px; width: 28px; border-radius: 6px; }
   .header-brand { min-width: 0; overflow: hidden; }
   .header-brand h1 { font-size: 0.92rem; line-height: 1.2; }
   #header-subtitle { display: block; font-size: 0.7rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
