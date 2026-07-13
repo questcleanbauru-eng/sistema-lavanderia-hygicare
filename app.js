@@ -2648,7 +2648,7 @@ ${kpisHtml}
                     <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${i===0?'0.3':'1'}" onclick="window._moveMachine(${m.id},${clientId},'up')" ${i===0?'disabled':''}>▲</button>
                     <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${i===ordered.length-1?'0.3':'1'}" onclick="window._moveMachine(${m.id},${clientId},'down')" ${i===ordered.length-1?'disabled':''}>▼</button>
                   </div>` : ''}
-                  <button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>
+                  ${canDo('edit_bomba') ? `<button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>` : ''}
                   ${canEdit ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
                   ${canDo('delete_machine') ? `<button class="btn-danger" onclick="window._deleteMachine(${m.id}, this)">🗑️</button>` : ''}
                 </div>
@@ -4637,6 +4637,7 @@ ${machSections}
     }
 
     window._manageVazoes = async function(machineId, machineName) {
+      if (!canDo('edit_bomba')) return toast('Sem permissão para gerenciar vazões.', 'error');
       const existing = document.getElementById(`vazao-mgr-${machineId}`);
       if (existing) { existing.remove(); return; }
 
@@ -4718,6 +4719,7 @@ ${machSections}
     }
 
     window._deleteVazao = async function(id) {
+      if (!canDo('edit_bomba')) return toast('Sem permissão para excluir vazões.', 'error');
       if (!await confirmAction('Excluir esta vazão? Os registros históricos não serão apagados.', 'Excluir', true)) return;
       await dbDelete('vazoes', id);
       await deleteSheetDB(SHEETS.VAZOES, id);
