@@ -2286,7 +2286,7 @@ ${kpisHtml}
       formClientCard.scrollIntoView({ behavior: 'smooth' });
     }
 
-    async function deleteClient(id) {
+    async function deleteClient(id, el) {
       const records = await dbGetAll_raw('records');
       const hasRecords = records.some(r => Number(r.client_id) === Number(id));
       const msg = hasRecords
@@ -2294,9 +2294,13 @@ ${kpisHtml}
         : 'Excluir este cliente? Todas as máquinas e processos vinculados também serão removidos.';
       if (!await confirmAction(msg, 'Excluir')) return;
 
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
       const gasOk = await deleteSheetDB(SHEETS.CLIENTS, id);
       if (!gasOk && navigator.onLine) {
-        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) return;
+        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
+          if (el) { el.disabled = false; el.textContent = '🗑️'; }
+          return;
+        }
       }
 
       // Excluir localmente em cascata
@@ -2329,16 +2333,20 @@ ${kpisHtml}
       formMachineCard.scrollIntoView({ behavior: 'smooth' });
     }
 
-    async function deleteMachine(id) {
+    async function deleteMachine(id, el) {
       const records = await dbGetAll_raw('records');
       const hasRecords = records.some(r => Number(r.machine_id) === Number(id));
       const msg = hasRecords
         ? '⚠️ Esta máquina possui registros de produção vinculados.\n\nExcluir mesmo assim? Os processos e registros vinculados serão removidos.'
         : 'Excluir esta máquina? Os processos vinculados também serão removidos.';
       if (!await confirmAction(msg, 'Excluir')) return;
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
       const gasOk = await deleteSheetDB(SHEETS.MACHINES, id);
       if (!gasOk && navigator.onLine) {
-        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) return;
+        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
+          if (el) { el.disabled = false; el.textContent = '🗑️'; }
+          return;
+        }
       }
       const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === id);
       for (const p of processes) {
@@ -2364,11 +2372,15 @@ ${kpisHtml}
       formProcessCard.scrollIntoView({ behavior: 'smooth' });
     }
 
-    async function deleteProcess(id) {
+    async function deleteProcess(id, el) {
       if (!await confirmAction('Excluir este processo?', 'Excluir')) return;
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
       const gasOk = await deleteSheetDB(SHEETS.PROCESSES, id);
       if (!gasOk && navigator.onLine) {
-        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) return;
+        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
+          if (el) { el.disabled = false; el.textContent = '🗑️'; }
+          return;
+        }
       }
       await dbDelete('processes', id);
       toast(gasOk ? 'Processo excluído!' : 'Processo excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
@@ -2405,7 +2417,7 @@ ${kpisHtml}
           </div>
           <div class="list-item-actions">
             ${canDo('edit_client') ? `<button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>` : ''}
-            ${canDo('delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id})">🗑️</button>` : ''}
+            ${canDo('delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id}, this)">🗑️</button>` : ''}
           </div>
         </div>`;
     }
@@ -2549,7 +2561,7 @@ ${kpisHtml}
                 <div class="list-item-actions">
                   <button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>
                   ${canDo('edit_machine') ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
-                  ${canDo('delete_machine') ? `<button class="btn-danger" onclick="window._deleteMachine(${m.id})">🗑️</button>` : ''}
+                  ${canDo('delete_machine') ? `<button class="btn-danger" onclick="window._deleteMachine(${m.id}, this)">🗑️</button>` : ''}
                 </div>
               </div>
             `).join('')}
@@ -2657,7 +2669,7 @@ ${kpisHtml}
                   </div>
                   <div class="list-item-actions">
                     ${canDo('edit_process') ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
-                    ${canDo('delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id})">🗑️</button>` : ''}
+                    ${canDo('delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id}, this)">🗑️</button>` : ''}
                   </div>
                 </div>
               `;
@@ -3269,7 +3281,7 @@ ${kpisHtml}
             </div>
             <div class="list-item-actions">
               ${canDo('edit_note')   ? `<button class="btn-edit btn-sm" onclick="window._editNote(${n.id})">✏️ Editar</button>` : ''}
-              ${canDo('delete_note') ? `<button class="btn-danger btn-sm" onclick="window._deleteNote(${n.id})">🗑️</button>` : ''}
+              ${canDo('delete_note') ? `<button class="btn-danger btn-sm" onclick="window._deleteNote(${n.id}, this)">🗑️</button>` : ''}
             </div>
           </div>`;
       }).join('')}</div>`;
@@ -3310,9 +3322,10 @@ ${kpisHtml}
       if (note) _openNoteForm(note);
     };
 
-    window._deleteNote = async function(id) {
+    window._deleteNote = async function(id, el) {
       if (!canDo('delete_note')) return toast('Sem permissão para excluir notas.', 'error');
       if (!await confirmAction('Excluir esta nota? Ação irreversível.', '🗑️ Excluir')) return;
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
       await dbDelete('client_notes', id);
       const ok = await deleteSheetDB(SHEETS.CLIENT_NOTES, id);
       toast(ok ? 'Nota excluída!' : 'Nota excluída localmente', ok ? 'success' : 'warning');
@@ -5370,7 +5383,7 @@ ${recipeSections}
                 <span class="badge badge-gray">${g.rows.length} linha(s)</span>
                 <button class="btn-record-action" style="background:#16a34a;color:#fff" onclick="window._shareGroup('${safeKey}')" title="Compartilhar / Enviar relatório">📤 Enviar</button>
                 ${canDo('edit_record') ? `<button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>` : ''}
-                ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}')" title="Excluir registro">🗑️ Excluir</button>` : ''}
+                ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}', this)" title="Excluir registro">🗑️ Excluir</button>` : ''}
                 <span style="font-size:0.8rem;color:var(--muted)">▼</span>
               </div>
             </div>
@@ -6552,7 +6565,7 @@ ${inactiveSec}
           <div class="list-item-actions">
             <button class="btn-edit" onclick="window._editUser(${u.id})">✏️ Editar</button>
             ${u.username !== currentUser?.username
-              ? `<button class="btn-delete" onclick="window._deleteUser(${u.id}, '${u.username}')">🗑️</button>`
+              ? `<button class="btn-delete" onclick="window._deleteUser(${u.id}, '${u.username}', this)">🗑️</button>`
               : '<span style="font-size:0.75rem;color:#94a3b8">(você)</span>'}
           </div>
         </div>`;
@@ -6648,8 +6661,19 @@ ${inactiveSec}
     };
 
     // Excluir usuário
-    window._deleteUser = async function(id, username) {
+    window._deleteUser = async function(id, username, el) {
+      const allUsers = await dbGetAll_raw('users');
+      const allClients = await dbGetAll_raw('clients');
+      const targetUser = allUsers.find(u => u.id === id);
+      if (targetUser) {
+        const tName = (targetUser.sellerName || targetUser.name || '').toLowerCase();
+        const hasManaged = allUsers.some(u => (u.manager || '').toLowerCase() === tName);
+        if (hasManaged) return toast('Não é possível excluir: este usuário gerencia vendedores no sistema.', 'error', 4000);
+        const hasClients = allClients.some(c => (c.seller || '').toLowerCase() === tName);
+        if (hasClients) return toast('Não é possível excluir: este usuário possui clientes vinculados.', 'error', 4000);
+      }
       if (!confirm(`Excluir o usuário "${username}"? Esta ação não pode ser desfeita.`)) return;
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
       await dbDelete('users', id);
       const ok = await deleteSheetDB(SHEETS.USERS, id);
       toast(ok ? 'Usuário excluído!' : 'Usuário excluído localmente', ok ? 'success' : 'warning');
@@ -6744,7 +6768,7 @@ ${inactiveSec}
       document.getElementById('modal-edit-record').classList.remove('hidden');
     };
 
-    window._deleteRecord = async function(safeKey) {
+    window._deleteRecord = async function(safeKey, el) {
       // Ação destrutiva: exige admin OU permissão explícita (sem backward compat)
       const _hasDeletePerm = currentUser?.role === 'admin' ||
         (currentUser?.permissions || '').split(',').map(s => s.trim()).includes('delete_record');
@@ -6754,6 +6778,7 @@ ${inactiveSec}
         ? `Excluir registros de\n"${gPreview.clientName}" — ${gPreview.period}?\n\nEsta ação não pode ser desfeita.`
         : 'Excluir este grupo de registros? Esta ação não pode ser desfeita.';
       if (!await confirmAction(confirmMsg, '🗑️ Excluir', true)) return;
+      if (el) { el.disabled = true; el.textContent = '⏳ Excluindo...'; }
       const g = _recordGroups?.[safeKey];
       if (!g) return;
       const all = await dbGetAll_raw('records');
