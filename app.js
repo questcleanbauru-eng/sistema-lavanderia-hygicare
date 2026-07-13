@@ -2611,9 +2611,9 @@ ${kpisHtml}
                   </div>
                 </div>
                 <div class="list-item-actions">
-                  ${canEdit ? `<div style="display:flex;flex-direction:column;gap:1px">
-                    <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveMachine(${m.id},${clientId},'up')" ${i===0?'disabled':''}>▲</button>
-                    <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveMachine(${m.id},${clientId},'down')" ${i===ordered.length-1?'disabled':''}>▼</button>
+                  ${canEdit ? `<div style="display:flex;flex-direction:column;gap:2px;align-self:center">
+                    <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${i===0?'0.3':'1'}" onclick="window._moveMachine(${m.id},${clientId},'up')" ${i===0?'disabled':''}>▲</button>
+                    <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${i===ordered.length-1?'0.3':'1'}" onclick="window._moveMachine(${m.id},${clientId},'down')" ${i===ordered.length-1?'disabled':''}>▼</button>
                   </div>` : ''}
                   <button class="btn-secondary btn-sm" onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}')">💧 Vazões</button>
                   ${canEdit ? `<button class="btn-edit" onclick="window._editMachine(${m.id})">✏️ Editar</button>` : ''}
@@ -2764,9 +2764,9 @@ ${kpisHtml}
                     </div>
                   </div>
                   <div class="list-item-actions">
-                    ${canEditP ? `<div style="display:flex;flex-direction:column;gap:1px">
-                      <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveProcess(${p.id},${mid},'up')" ${firstInMach?'disabled':''}>▲</button>
-                      <button class="btn-secondary btn-sm" style="font-size:0.65rem;padding:1px 5px;line-height:1" onclick="window._moveProcess(${p.id},${mid},'down')" ${lastInMach?'disabled':''}>▼</button>
+                    ${canEditP ? `<div style="display:flex;flex-direction:column;gap:2px;align-self:center">
+                      <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${firstInMach?'0.3':'1'}" onclick="window._moveProcess(${p.id},${mid},'up')" ${firstInMach?'disabled':''}>▲</button>
+                      <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${lastInMach?'0.3':'1'}" onclick="window._moveProcess(${p.id},${mid},'down')" ${lastInMach?'disabled':''}>▼</button>
                     </div>` : ''}
                     ${canEditP ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
                     ${canDo('delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id}, this)">🗑️</button>` : ''}
