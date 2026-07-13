@@ -1036,7 +1036,7 @@ ${printScript}
             <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;min-width:120px">
               <div style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden">
-                  <div style="width:${barW}%;background:#2563eb;height:100%;border-radius:4px"></div>
+                  <div style="width:${barW}%;background:#374151;height:100%;border-radius:4px"></div>
                 </div>
                 <span style="font-size:0.72rem;color:#64748b;white-space:nowrap">${pct}%</span>
               </div>
@@ -1067,16 +1067,17 @@ ${printScript}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
-.abar{position:sticky;top:0;z-index:99;background:#1e3a8a;padding:6px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px;border-radius:6px}
+.abar{position:sticky;top:0;z-index:99;background:#374151;padding:6px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px;border-radius:6px}
 .abar button{padding:5px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
-.btn-x{background:#fff;color:#1e3a8a}.btn-p{background:#16a34a;color:#fff}
-.abar-lbl{color:#bfdbfe;font-size:11px;flex:1}
-.doc-hdr{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:20px}
-.doc-hdr h1{font-size:1.3rem;margin-bottom:4px}
-.doc-hdr p{font-size:0.78rem;color:#bfdbfe}
-h2{font-size:0.85rem;font-weight:700;color:#1e40af;margin:20px 0 10px;border-bottom:2px solid #dbeafe;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+.btn-x{background:#fff;color:#374151}.btn-p{background:#16a34a;color:#fff}
+.abar-lbl{color:#d1d5db;font-size:11px;flex:1}
+.doc-hdr{background:#374151;color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+.doc-hdr-logo{font-weight:900;font-size:20px;letter-spacing:.04em}
+.doc-hdr-sub{font-size:10px;opacity:.65;letter-spacing:.06em;text-transform:uppercase;margin-top:2px}
+.doc-hdr-info{text-align:right;font-size:11px;opacity:.75}
+h2{font-size:0.85rem;font-weight:700;color:#374151;margin:20px 0 10px;border-bottom:2px solid #e5e7eb;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
 table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}
-thead th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700}
+thead th{background:#374151;color:#fff;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700}
 .footer{margin-top:24px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
 @media print{.abar{display:none}body{padding:10px}}
 </style></head><body>
@@ -1086,8 +1087,8 @@ thead th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:left;font-siz
   <span class="abar-lbl">Relatório Executivo — Hygicare Lavanderia — ${periodLabel}</span>
 </div>
 <div class="doc-hdr">
-  <h1>📊 Relatório Executivo</h1>
-  <p>Hygicare Lavanderia &nbsp;·&nbsp; ${periodLabel} &nbsp;·&nbsp; Gerado em ${now}</p>
+  <div><div class="doc-hdr-logo">HYGICARE</div><div class="doc-hdr-sub">Lavanderia Industrial</div></div>
+  <div class="doc-hdr-info">📊 Relatório Executivo<br>${periodLabel}<br>${now}</div>
 </div>
 
 ${kpisHtml}
@@ -3161,7 +3162,34 @@ ${kpisHtml}
         return;
       }
 
-      list.innerHTML = overdue.map(({ client, last, daysSince }) => {
+      // Agrupar por vendedor para botões WhatsApp
+      const bySeller = {};
+      overdue.forEach(({ client, last, daysSince }) => {
+        const seller = client.seller || '(Sem vendedor)';
+        if (!bySeller[seller]) bySeller[seller] = [];
+        bySeller[seller].push({ client, last, daysSince });
+      });
+
+      const sellerGroups = Object.keys(bySeller).length > 1
+        ? `<div style="margin-bottom:0.75rem;padding:0.65rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+            <div style="font-size:0.8rem;font-weight:600;color:var(--text);margin-bottom:0.45rem">📱 Compartilhar aviso por vendedor:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:0.4rem">
+              ${Object.entries(bySeller).map(([seller, items]) => {
+                const msg = `*Hygicare — Aviso de Relatórios Pendentes*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
+                  items.map(({client, daysSince}) =>
+                    `• ${client.name}${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias' : 'sem registros'}`
+                  ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.';
+                const encoded = encodeURIComponent(msg);
+                return `<a href="https://wa.me/?text=${encoded}" target="_blank" rel="noopener"
+                  style="display:inline-flex;align-items:center;gap:0.3rem;background:#25D366;color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.65rem;font-size:0.78rem;font-weight:600">
+                  📱 ${escHtml(seller)} (${items.length})
+                </a>`;
+              }).join('')}
+            </div>
+          </div>`
+        : '';
+
+      list.innerHTML = sellerGroups + overdue.map(({ client, last, daysSince }) => {
         const severe = daysSince === null || daysSince > alertDays * 2;
         const clr    = severe ? '#dc2626' : '#d97706';
         const bg     = severe ? '#fef2f2' : '#fffbeb';
@@ -3180,10 +3208,12 @@ ${kpisHtml}
                   <span style="color:var(--muted);margin-left:0.5rem;font-size:0.75rem">Último: ${lastStr}</span>
                 </div>
               </div>
-              <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;flex-shrink:0;white-space:nowrap"
-                onclick="(async()=>{const s=document.getElementById('prod-client');if(s){s.value='${clientId}';s.dispatchEvent(new Event('change'));}show('screen-form')})()">
-                + Registrar
-              </button>
+              <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
+                <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;white-space:nowrap"
+                  onclick="(async()=>{const s=document.getElementById('prod-client');if(s){s.value='${clientId}';s.dispatchEvent(new Event('change'));}show('screen-form')})()">
+                  + Registrar
+                </button>
+              </div>
             </div>
           </div>`;
       }).join('');
@@ -3409,30 +3439,60 @@ ${kpisHtml}
     }
 
     async function initPdfReportsScreen() {
-      // Popula select de clientes
       const clients = await window.getAll('clients');
-      const sel = document.getElementById('pdf-client-select');
-      if (sel) {
-        const cur = sel.value;
-        sel.innerHTML = '<option value="">Selecionar cliente...</option>';
-        [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
-          .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
-        if (cur) sel.value = cur;
-      }
+      const sorted = [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+      const clientOpts = '<option value="">Selecionar cliente...</option>' +
+        sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+
+      ['pdf-client-select','pdf-vazao-client','pdf-mach-client'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const cur = el.value;
+        el.innerHTML = clientOpts;
+        if (cur) el.value = cur;
+      });
+
       // Datas padrão: mês atual
       const now = new Date();
       const yyyy = now.getFullYear();
       const mm = String(now.getMonth() + 1).padStart(2, '0');
       const today = `${yyyy}-${mm}-${String(now.getDate()).padStart(2,'0')}`;
       const monthStart = `${yyyy}-${mm}-01`;
-      const s = document.getElementById('pdf-summary-start');
-      const e = document.getElementById('pdf-summary-end');
-      const cs = document.getElementById('pdf-client-start');
-      const ce = document.getElementById('pdf-client-end');
-      if (s && !s.value) s.value = monthStart;
-      if (e && !e.value) e.value = today;
-      if (cs && !cs.value) cs.value = monthStart;
-      if (ce && !ce.value) ce.value = today;
+      [['pdf-summary-start', monthStart],['pdf-summary-end', today],
+       ['pdf-client-start',  monthStart],['pdf-client-end',  today],
+       ['pdf-group-start',   monthStart],['pdf-group-end',   today]].forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el && !el.value) el.value = val;
+      });
+
+      // Preset date buttons (uma única vez por tela)
+      if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
+        document.getElementById('screen-pdf-reports').dataset.presetsWired = '1';
+        document.getElementById('screen-pdf-reports').addEventListener('click', e => {
+          const btn = e.target.closest('.pdf-preset');
+          if (!btn) return;
+          const grp = btn.dataset.group;
+          const p   = btn.dataset.p;
+          const d   = new Date();
+          const y   = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0');
+          const todayStr = `${y}-${mo}-${String(d.getDate()).padStart(2,'0')}`;
+          let s = '', end = todayStr;
+          if (p === 'month') {
+            s   = `${y}-${mo}-01`;
+          } else if (p === '30d') {
+            const d30 = new Date(d); d30.setDate(d30.getDate()-29);
+            s = `${d30.getFullYear()}-${String(d30.getMonth()+1).padStart(2,'0')}-${String(d30.getDate()).padStart(2,'0')}`;
+          } else if (p === '3m') {
+            const d3m = new Date(d); d3m.setMonth(d3m.getMonth()-2); d3m.setDate(1);
+            s = `${d3m.getFullYear()}-${String(d3m.getMonth()+1).padStart(2,'0')}-01`;
+          } else if (p === 'year') {
+            s = `${y}-01-01`;
+          }
+          const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], group:['pdf-group-start','pdf-group-end'] };
+          const [startId, endId] = map[grp] || [];
+          if (startId) { document.getElementById(startId).value = s; document.getElementById(endId).value = end; }
+        });
+      }
     }
 
     document.getElementById('btn-pdf-client')?.addEventListener('click', async () => {
@@ -3498,21 +3558,23 @@ ${kpisHtml}
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <title>Ficha — ${escHtml(client.name)}</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:16mm 18mm}
-h1{font-size:17px;color:#1e40af;margin-bottom:2px}h2{font-size:12px;color:#1e40af;margin:14px 0 6px;border-bottom:1.5px solid #bfdbfe;padding-bottom:3px}
+h1{font-size:17px;color:#111827;margin-bottom:2px}h2{font-size:12px;color:#374151;margin:14px 0 6px;border-bottom:1.5px solid #d1d5db;padding-bottom:3px}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
-.logo{font-weight:900;font-size:14px;color:#1e40af}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-bottom:10px}
-.ii{font-size:10px}.ii strong{color:#64748b;text-transform:uppercase;font-size:9px;display:block}
-.kpis{display:flex;gap:8px;margin:10px 0 12px}.kpi{background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;text-align:center;flex:1}
-.kv{font-size:17px;font-weight:800;color:#1d4ed8}.kl{font-size:9px;color:#64748b;margin-top:1px;text-transform:uppercase}
-.period{font-size:10px;color:#64748b;margin-bottom:10px}
-table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#1e40af;color:#fff;padding:5px 7px;text-align:left;font-size:9.5px;text-transform:uppercase}
+.logo{font-weight:900;font-size:15px;color:#111827;letter-spacing:.03em}.logo-sub{font-size:9px;color:#6b7280;font-weight:400;letter-spacing:.05em;text-transform:uppercase}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-bottom:10px}
+.ii{font-size:10px}.ii strong{color:#6b7280;text-transform:uppercase;font-size:9px;display:block}
+.kpis{display:flex;gap:8px;margin:10px 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;text-align:center;flex:1}
+.kv{font-size:17px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;margin-top:1px;text-transform:uppercase}
+.period{font-size:10px;color:#6b7280;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#374151;color:#fff;padding:5px 7px;text-align:left;font-size:9.5px;text-transform:uppercase}
 td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
-.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:7px 14px;background:#1e40af;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:7px 14px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.footer{margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
-<button onclick="window.close()" style="padding:7px 14px;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
-<div class="hdr"><div><div class="logo">🧺 Hygicare Lavanderia</div><h1 style="margin-top:6px">${escHtml(client.name)}</h1></div>
-<div style="text-align:right;font-size:10px;color:#64748b">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+<button onclick="window.close()" style="padding:7px 14px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div><div class="logo">HYGICARE</div><div class="logo-sub">Lavanderia Industrial</div><h1 style="margin-top:6px">${escHtml(client.name)}</h1></div>
+<div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
 <div class="info-grid">${infoItems}</div>
 <p class="period">📅 Período: <strong>${periodStr}</strong></p>
 <div class="kpis">
@@ -3527,8 +3589,191 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <h2>🔧 Manutenção / Notas</h2>
 <table><thead><tr><th>Data</th><th>Tipo</th><th>Título</th><th>Descrição</th><th>Por</th></tr></thead>
 <tbody>${noteRows}</tbody></table>
+<div class="footer">HYGICARE Lavanderia Industrial · Ficha do Cliente · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
 
+      w.document.open(); w.document.write(html); w.document.close();
+    });
+
+    // =====================================================
+    // PDF VAZÃO POR CLIENTE (Item 5)
+    // =====================================================
+    document.getElementById('btn-pdf-vazao')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      const clientId = document.getElementById('pdf-vazao-client')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      const [clients, vazoes, vazaoRecs, machines] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('vazoes'),
+        dbGetAll_raw('vazao_records'), dbGetAll_raw('machines'),
+      ]);
+      const client = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) { w.close(); return toast('Cliente não encontrado.', 'error'); }
+      const cVazoes = vazoes.filter(v => Number(v.client_id) === Number(clientId));
+      const machMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
+      const fmtD = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.logo{font-weight:900;font-size:15px;color:#111827}.logo-sub{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
+h1{font-size:15px;color:#111827;margin:6px 0 2px}h2{font-size:11px;color:#374151;margin:12px 0 5px;border-bottom:1px solid #d1d5db;padding-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#374151;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
+td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
+.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+      const rows = cVazoes.map((v, i) => {
+        const vRecs = vazaoRecs.filter(r => Number(r.vazao_id) === Number(v.id));
+        const lastRec = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+        return `<tr style="${i%2===0?'':'background:#f8fafc'}">
+          <td>${escHtml(v.name||'-')}</td>
+          <td>${escHtml(machMap[v.machine_id]||'-')}</td>
+          <td style="text-align:right">${v.target_flow ? Number(v.target_flow).toLocaleString('pt-BR',{maximumFractionDigits:1})+' m³/h' : '-'}</td>
+          <td style="text-align:right">${lastRec ? Number(lastRec.flow).toLocaleString('pt-BR',{maximumFractionDigits:1})+' m³/h' : '-'}</td>
+          <td>${fmtD(lastRec?.date)}</td>
+          <td>${vRecs.length} medições</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:10px">Nenhuma medição cadastrada</td></tr>';
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Vazão — ${escHtml(client.name)}</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div><div class="logo">HYGICARE</div><div class="logo-sub">Lavanderia Industrial</div><h1>${escHtml(client.name)}</h1></div>
+<div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
+<h2>💧 Relatório de Vazão</h2>
+<table><thead><tr><th>Ponto de Vazão</th><th>Máquina</th><th style="text-align:right">Meta (m³/h)</th><th style="text-align:right">Última Leitura</th><th>Data</th><th>Histórico</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<div class="footer">HYGICARE Lavanderia Industrial · Relatório de Vazão · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+</body></html>`;
+      w.document.open(); w.document.write(html); w.document.close();
+    });
+
+    // =====================================================
+    // PDF AGRUPADO POR CIDADE / VENDEDOR (Item 6)
+    // =====================================================
+    document.getElementById('btn-pdf-grouped')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      const groupBy  = document.getElementById('pdf-group-by')?.value || 'city';
+      const startDate = document.getElementById('pdf-group-start')?.value || '';
+      const endDate   = document.getElementById('pdf-group-end')?.value   || '';
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      let [records, clients] = await Promise.all([dbGetAll_raw('records'), dbGetAll_raw('clients')]);
+      // filtro por papel
+      if (currentUser?.role === 'gerente' || currentUser?.role === 'consultor') {
+        const managed = getManagedSellerNames();
+        const myIds = new Set(clients.filter(c => managed.has((c.seller||'').toLowerCase())).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      } else if (currentUser?.role === 'vendedor') {
+        const sn = (currentUser.sellerName||'').toLowerCase();
+        const myIds = new Set(clients.filter(c => (c.seller||'').toLowerCase()===sn).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      }
+      if (startDate) records = records.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   records = records.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+
+      const fmtKg = v => Number(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' kg';
+      const fmtD = d => { if(!d) return '-'; const p=new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
+      const groupLabel = groupBy === 'city' ? 'Cidade' : 'Vendedor';
+      const getKey = cid => { const c=clients.find(cl=>Number(cl.id)===Number(cid)); return groupBy==='city' ? (c?.city||'(Sem cidade)') : (c?.seller||'(Sem vendedor)'); };
+      const groups = {};
+      for (const r of records) {
+        const k = getKey(r.client_id);
+        if (!groups[k]) groups[k] = { kg:0, count:0, clientSet:new Set() };
+        groups[k].kg    += parseFloat(r.total)||0;
+        groups[k].count += 1;
+        groups[k].clientSet.add(String(r.client_id));
+      }
+      const totalKg = Object.values(groups).reduce((s,v)=>s+v.kg,0);
+      const rows = Object.entries(groups).sort((a,b)=>b[1].kg-a[1].kg).map(([k,v],i) => {
+        const pct = totalKg>0?(v.kg/totalKg*100).toFixed(1):'0.0';
+        return `<tr style="${i%2===0?'':'background:#f8fafc'}">
+          <td style="font-weight:600">${escHtml(k)}</td>
+          <td style="text-align:center">${v.clientSet.size}</td>
+          <td style="text-align:center">${v.count}</td>
+          <td style="text-align:right;font-weight:700;color:#16a34a">${fmtKg(v.kg)}</td>
+          <td style="text-align:center">${pct}%</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:10px">Nenhum dado no período</td></tr>';
+      const periodStr = startDate||endDate ? `${fmtD(startDate)} a ${fmtD(endDate)}` : 'Todo o período';
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{background:#374151;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:14px}
+.hdr h1{font-size:16px;margin-bottom:4px}.hdr p{font-size:9px;opacity:.75}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#374151;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
+td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório por ${groupLabel}</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><h1>HYGICARE — Relatório por ${escHtml(groupLabel)}</h1>
+<p>Período: ${escHtml(periodStr)} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</p></div>
+<table><thead><tr><th>${groupLabel}</th><th style="text-align:center">Clientes</th><th style="text-align:center">Registros</th><th style="text-align:right">Total kg</th><th style="text-align:center">%</th></tr></thead>
+<tbody>${rows}</tbody>
+<tfoot><tr style="background:#f3f4f6;font-weight:700"><td>TOTAL</td><td></td><td style="text-align:center">${records.length}</td><td style="text-align:right">${fmtKg(totalKg)}</td><td></td></tr></tfoot>
+</table>
+<div class="footer">HYGICARE Lavanderia Industrial · Relatório Agrupado · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+</body></html>`;
+      w.document.open(); w.document.write(html); w.document.close();
+    });
+
+    // =====================================================
+    // PDF PROCESSOS E MÁQUINAS POR CLIENTE (Item 7)
+    // =====================================================
+    document.getElementById('btn-pdf-machines')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      const clientId = document.getElementById('pdf-mach-client')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      const [clients, machines, processes] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'),
+      ]);
+      const client = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) { w.close(); return toast('Cliente não encontrado.', 'error'); }
+      const cMachines = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.logo{font-weight:900;font-size:15px;color:#111827}.logo-sub{font-size:9px;color:#6b7280;text-transform:uppercase}
+h1{font-size:15px;color:#111827;margin:6px 0 2px}
+.mach-block{margin-bottom:14px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden}
+.mach-hdr{background:#374151;color:#fff;padding:6px 10px;font-weight:700;font-size:11px}
+.mach-sub{font-size:9px;opacity:.75;font-weight:400}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f3f4f6;color:#374151;padding:4px 8px;text-align:left;font-size:9px;text-transform:uppercase;border-bottom:1px solid #d1d5db}
+td{padding:4px 8px;border-bottom:1px solid #f1f5f9}
+.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+      const machSections = cMachines.map(m => {
+        const mProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
+        const procRows = mProcs.map(p => `<tr><td>${escHtml(p.name||'-')}</td><td style="text-align:right">${p.capacity ? Number(p.capacity).toLocaleString('pt-BR')+' kg' : '—'}</td></tr>`).join('')
+          || '<tr><td colspan="2" style="color:#94a3b8;text-align:center;padding:6px">Nenhum processo cadastrado</td></tr>';
+        return `<div class="mach-block">
+          <div class="mach-hdr">⚙️ ${escHtml(m.name||'-')} <span class="mach-sub">· ${m.capacity?Number(m.capacity).toLocaleString('pt-BR')+' kg cap.':''}</span></div>
+          <table><thead><tr><th>Processo</th><th style="text-align:right">Capacidade</th></tr></thead><tbody>${procRows}</tbody></table>
+        </div>`;
+      }).join('') || '<p style="color:#94a3b8;text-align:center;padding:14px">Nenhuma máquina cadastrada para este cliente.</p>';
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Máquinas — ${escHtml(client.name)}</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div><div class="logo">HYGICARE</div><div class="logo-sub">Lavanderia Industrial</div><h1>${escHtml(client.name)}</h1>
+${client.city?`<div style="font-size:10px;color:#6b7280;margin-top:2px">📍 ${escHtml(client.city)}${client.seller?' · 👨‍💼 '+escHtml(client.seller):''}</div>`:''}
+</div><div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
+<h2 style="font-size:11px;color:#374151;border-bottom:1px solid #d1d5db;padding-bottom:3px;margin-bottom:10px;text-transform:uppercase">⚙️ Máquinas e Processos (${cMachines.length})</h2>
+${machSections}
+<div class="footer">HYGICARE Lavanderia Industrial · Máquinas e Processos · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+</body></html>`;
       w.document.open(); w.document.write(html); w.document.close();
     });
 
@@ -6350,10 +6595,10 @@ ${recipeSections}
       const fmtPct = v => (v >= 0 ? '+' : '') + fmt(v, 1) + '%';
 
       const kpiCards = [
-        { label: 'Total Processado',    value: `${fmt(d.totalKg)} kg`,         color: '#1a237e' },
-        { label: 'Relatórios Enviados', value: d.totalRecords,                  color: '#0d47a1' },
-        { label: 'Clientes Ativos',     value: d.activeClients,                 color: '#1565c0' },
-        { label: 'Média kg/mês',        value: `${fmt(d.mediaMensal)} kg`,      color: '#283593' },
+        { label: 'Total Processado',    value: `${fmt(d.totalKg)} kg`,         color: '#111827' },
+        { label: 'Relatórios Enviados', value: d.totalRecords,                  color: '#111827' },
+        { label: 'Clientes Ativos',     value: d.activeClients,                 color: '#111827' },
+        { label: 'Média kg/mês',        value: `${fmt(d.mediaMensal)} kg`,      color: '#111827' },
         { label: 'Cancelamentos',       value: `${fmt(d.cancelPct, 1)}%`,       color: d.cancelPct > 10 ? '#c62828' : '#2e7d32' },
         d.crescimento !== null
           ? { label: 'Crescimento',     value: fmtPct(d.crescimento),           color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' }
@@ -6430,35 +6675,36 @@ ${recipeSections}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
-.hdr{display:flex;align-items:center;background:#1a237e;color:#fff;min-height:60px;padding:0 12px;gap:10px;margin-bottom:8px}
-.hdr-logo{width:40px;height:40px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;text-align:center;line-height:1.3;flex-shrink:0;letter-spacing:.5px;color:#fff}
+.hdr{display:flex;align-items:center;background:#374151;color:#fff;min-height:60px;padding:0 12px;gap:10px;margin-bottom:8px}
+.hdr-logo{font-weight:900;font-size:14px;letter-spacing:.04em;flex-shrink:0;color:#fff}
+.hdr-logo-sub{font-size:8px;opacity:.65;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
 .hdr-c{flex:1;text-align:center;line-height:1.4}
 .hdr-c h1{font-size:16px;font-weight:bold;color:#fff}
-.hdr-info{font-size:9px;color:#c5cae9;margin-top:3px}
+.hdr-info{font-size:9px;color:#d1d5db;margin-top:3px}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}
-.kpi-card{border:1px solid #e0e0e0;border-radius:4px;padding:8px 10px;text-align:center;page-break-inside:avoid}
-.kpi-label{font-size:8px;color:#757575;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.kpi-card{border:1px solid #e5e7eb;border-radius:4px;padding:8px 10px;text-align:center;page-break-inside:avoid;background:#f9fafb}
+.kpi-label{font-size:8px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
 .kpi-value{font-size:15px;font-weight:bold}
-.sec{margin-bottom:8px;border:1px solid #ddd;page-break-inside:avoid}
-.sec-hd{background:#1a237e;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
+.sec{margin-bottom:8px;border:1px solid #e5e7eb;page-break-inside:avoid}
+.sec-hd{background:#374151;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
 table{width:100%;border-collapse:collapse;font-size:9px}
-thead th{background:#e3e8f0;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #ddd;white-space:nowrap}
+thead th{background:#f3f4f6;color:#374151;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #e5e7eb;white-space:nowrap}
 th.tl,td.tl{text-align:left}
 th.tc,td.tc{text-align:center}
-tbody tr:nth-child(even) td{background:#f9f9f9}
-tbody td{padding:3px 6px;border:1px solid #ddd;vertical-align:middle}
-tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #ddd;font-size:9px}
-.inactive-chip{background:#eceff1;border:1px solid #cfd8dc;border-radius:20px;padding:3px 10px;font-size:9px;color:#37474f}
-.filter-info{background:#f8fafc;border:1px solid #e0e0e0;border-radius:4px;padding:6px 12px;font-size:9px;color:#546e7a;margin-bottom:8px}
-.rpt-footer{margin-top:10px;border-top:2px solid #1a237e;padding:7px 0 0;text-align:center;font-size:8px;color:#555;line-height:1.7}
-.rpt-footer strong{color:#1a237e}
+tbody tr:nth-child(even) td{background:#f9fafb}
+tbody td{padding:3px 6px;border:1px solid #e5e7eb;vertical-align:middle}
+tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e5e7eb;font-size:9px}
+.inactive-chip{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:9px;color:#374151}
+.filter-info{background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:6px 12px;font-size:9px;color:#6b7280;margin-bottom:8px}
+.rpt-footer{margin-top:10px;border-top:2px solid #374151;padding:7px 0 0;text-align:center;font-size:8px;color:#6b7280;line-height:1.7}
+.rpt-footer strong{color:#374151}
 @media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:10mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
 @media screen{
-  .action-bar{position:sticky;top:0;z-index:999;background:#1a237e;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .action-bar{position:sticky;top:0;z-index:999;background:#374151;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
   .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
-  .btn-close-rpt{background:#fff;color:#1a237e}
+  .btn-close-rpt{background:#fff;color:#374151}
   .btn-print-rpt{background:#4caf50;color:#fff}
-  .action-bar-label{color:#c5cae9;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+  .action-bar-label{color:#d1d5db;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
   body{max-width:960px;margin:0 auto;padding:0 8px}
 }
 @media screen and (max-width:600px){
@@ -6474,7 +6720,7 @@ tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #d
   <span class="action-bar-label">Relatório Resumo · ${esc(d.periodLabel)}</span>
 </div>
 <div class="hdr">
-  <div class="hdr-logo">HYGIC<br>ARE</div>
+  <div><div class="hdr-logo">HYGICARE</div><div class="hdr-logo-sub">Lavanderia Industrial</div></div>
   <div class="hdr-c">
     <h1>RELATÓRIO RESUMO DE LAVANDERIA</h1>
     <div class="hdr-info">${esc(d.periodLabel)} · Gerado em ${esc(d.today)}</div>

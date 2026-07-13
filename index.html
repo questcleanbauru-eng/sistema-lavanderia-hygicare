@@ -927,7 +927,7 @@
 
           <!-- Relatório Resumo -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#1e40af">📈 Relatório Resumo</h3>
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#374151">📈 Relatório Resumo</h3>
             <p style="font-size:0.82rem;color:#64748b;margin:0 0 0.9rem">Resumo de produção no período com ranking de clientes e processos.</p>
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
               <div class="form-field" style="margin-bottom:0">
@@ -940,11 +940,17 @@
               </div>
               <button id="btn-pdf-summary" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
             </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
+              <button type="button" class="qf-btn pdf-preset" data-group="summary" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="summary" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="summary" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="summary" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+            </div>
           </div>
 
           <!-- Ficha do Cliente -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#1e40af">👤 Ficha do Cliente</h3>
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#374151">👤 Ficha do Cliente</h3>
             <p style="font-size:0.82rem;color:#64748b;margin:0 0 0.9rem">Relatório completo com histórico de produção e manutenção do cliente no período.</p>
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
               <div class="form-field" style="flex:2;min-width:180px;margin-bottom:0">
@@ -962,6 +968,72 @@
                 <input type="date" id="pdf-client-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
               <button id="btn-pdf-client" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar Ficha</button>
+            </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
+              <button type="button" class="qf-btn pdf-preset" data-group="client" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="client" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="client" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="client" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+            </div>
+          </div>
+
+          <!-- Relatório de Vazão por Cliente -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#374151">💧 Relatório de Vazão por Cliente</h3>
+            <p style="font-size:0.82rem;color:#64748b;margin:0 0 0.9rem">Histórico de todas as medições de vazão registradas para o cliente.</p>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="flex:2;min-width:180px;margin-bottom:0">
+                <label style="font-size:0.78rem">Cliente</label>
+                <select id="pdf-vazao-client" class="form-input" style="padding:6px 10px">
+                  <option value="">Selecionar cliente...</option>
+                </select>
+              </div>
+              <button id="btn-pdf-vazao" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
+            </div>
+          </div>
+
+          <!-- Relatório Agrupado -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#374151">📊 Relatório Agrupado</h3>
+            <p style="font-size:0.82rem;color:#64748b;margin:0 0 0.9rem">Produção agrupada por cidade ou vendedor no período selecionado.</p>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">Agrupar por</label>
+                <select id="pdf-group-by" class="form-input" style="padding:6px 10px;width:auto">
+                  <option value="city">Cidade</option>
+                  <option value="seller">Vendedor</option>
+                </select>
+              </div>
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">De</label>
+                <input type="date" id="pdf-group-start" class="form-input" style="padding:6px 10px;width:auto">
+              </div>
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">Até</label>
+                <input type="date" id="pdf-group-end" class="form-input" style="padding:6px 10px;width:auto">
+              </div>
+              <button id="btn-pdf-grouped" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
+            </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
+              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+            </div>
+          </div>
+
+          <!-- Processos e Máquinas por Cliente -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#374151">⚙️ Processos e Máquinas por Cliente</h3>
+            <p style="font-size:0.82rem;color:#64748b;margin:0 0 0.9rem">Lista de todas as máquinas e processos cadastrados para o cliente selecionado.</p>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="flex:2;min-width:180px;margin-bottom:0">
+                <label style="font-size:0.78rem">Cliente</label>
+                <select id="pdf-mach-client" class="form-input" style="padding:6px 10px">
+                  <option value="">Selecionar cliente...</option>
+                </select>
+              </div>
+              <button id="btn-pdf-machines" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
             </div>
           </div>
         </section>
