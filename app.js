@@ -2836,8 +2836,10 @@ ${kpisHtml}
 
     async function renderMachinesAndProcesses(clientId) {
       const allMachines  = await getAll('machines');
-      const machines     = allMachines.filter(m => Number(m.client_id) === Number(clientId));
+      const rawMachines  = allMachines.filter(m => Number(m.client_id) === Number(clientId));
+      const machines     = _applyOrder(rawMachines, _getMachOrder(), clientId, 'id');
       const processes    = await getAll('processes');
+      const procOrder    = _getProcOrder();
       const container    = document.getElementById('machines-list');
       container.innerHTML = '';
 
@@ -2847,7 +2849,8 @@ ${kpisHtml}
       }
 
       for (const m of machines) {
-        const procs = processes.filter(p => Number(p.machine_id) === Number(m.id));
+        const rawProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
+        const procs    = _applyOrder(rawProcs, procOrder, m.id, 'id');
         const block = document.createElement('div');
         block.className = 'machine-block';
         block.dataset.machineId = m.id;
