@@ -280,6 +280,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
       // Salvar lista de usuários para o select de vendedor
       localStorage.setItem('hygicare_users', JSON.stringify(users));
+      localStorage.setItem('_autoSync', '1');
       showApp();
     } else {
       loginError.textContent = '❌ Usuário ou senha incorretos';
@@ -309,7 +310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     loginScreen.style.display = 'none';
     appMain.classList.remove('hidden');
     userNameSpan.textContent = `👤 ${currentUser.name}`;
-    const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' }[currentUser.role] || 'Vendedor';
+    const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', diretor: 'Diretor' }[currentUser.role] || 'Vendedor';
     const _subtitle  = document.getElementById('header-subtitle');
     if (_subtitle) {
       _subtitle.textContent = `${currentUser.name} · ${_roleLabel}`;
@@ -680,8 +681,9 @@ ${printScript}
 
     // Chaves de ação — separa de chaves de tela
     const ACTION_KEYS = new Set(['send_record','edit_record','delete_record','pdf_report',
-      'create_client','edit_client','delete_client','create_machine','edit_machine','delete_machine',
-      'create_process','edit_process','delete_process','create_recipe','edit_recipe','edit_vazao']);
+      'create_client','edit_client','delete_client','create_machine','edit_machine','delete_machine','edit_bomba',
+      'create_process','edit_process','delete_process','create_recipe','edit_recipe','edit_vazao',
+      'create_note','edit_note','delete_note']);
 
     // Verifica se o usuário tem permissão para realizar uma ação
     function canDo(action) {
@@ -709,6 +711,7 @@ ${printScript}
     }
 
     document.getElementById('bnav-more')?.addEventListener('click', openDrawer);
+    document.getElementById('btn-header-menu')?.addEventListener('click', openDrawer);
     drawerOverlay?.addEventListener('click', closeDrawer);
 
     // FAB — atalho para registrar
@@ -746,11 +749,12 @@ ${printScript}
         if (screenId === 'screen-clients')   { await renderClientsList(); await refreshSellerSelect(); }
         if (screenId === 'screen-machines')  await renderMachinesList();
         if (screenId === 'screen-processes') await renderProcessesList();
-        if (screenId === 'screen-vazao')     await initVazaoScreen();
-        if (screenId === 'screen-recipes')   await initRecipesScreen();
-        if (screenId === 'screen-users')     await renderUsersList();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
-        if (screenId === 'screen-alerts')    await renderAlertsScreen();
+        if (screenId === 'screen-vazao')        await initVazaoScreen();
+        if (screenId === 'screen-recipes')      await initRecipesScreen();
+        if (screenId === 'screen-client-notes') await initClientNotesScreen();
+        if (screenId === 'screen-users')        await renderUsersList();
+        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
+        if (screenId === 'screen-alerts')       await renderAlertsScreen();
       });
     });
 
@@ -816,7 +820,7 @@ ${printScript}
       window._getAll_wrapped = true;
       window.getAll = async (store) => {
         const data = await _originalGetAll(store);
-        if (!currentUser || currentUser.role === 'admin') return data;
+        if (!currentUser || currentUser.role === 'admin' || currentUser.role === 'diretor') return data;
         if (store !== 'clients') return data;
         if (currentUser.role === 'gerente' || currentUser.role === 'consultor') {
           const managed = getManagedSellerNames();
@@ -834,8 +838,9 @@ ${printScript}
       'nav-processes': 'screen-processes',
       'nav-charts':    'screen-charts',
       'nav-vazao':     'screen-vazao',
-      'nav-recipes':   'screen-recipes',
-      'nav-form':      'screen-form',
+      'nav-recipes':      'screen-recipes',
+      'nav-client-notes': 'screen-client-notes',
+      'nav-form':         'screen-form',
       'nav-reports':   'screen-reports',
       'nav-alerts':    'screen-alerts',
       'nav-users':     'screen-users',
@@ -851,12 +856,13 @@ ${printScript}
         if (screenId === 'screen-machines')  await renderMachinesList();
         if (screenId === 'screen-processes') await renderProcessesList();
         if (screenId === 'screen-charts')    { await refreshChartsFilters(); await renderCharts(); }
-        if (screenId === 'screen-vazao')     await initVazaoScreen();
-        if (screenId === 'screen-recipes')   await initRecipesScreen();
+        if (screenId === 'screen-vazao')        await initVazaoScreen();
+        if (screenId === 'screen-recipes')      await initRecipesScreen();
+        if (screenId === 'screen-client-notes') await initClientNotesScreen();
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
-        if (screenId === 'screen-alerts')    await renderAlertsScreen();
-        if (screenId === 'screen-users')     await renderUsersList();
+        if (screenId === 'screen-alerts')       await renderAlertsScreen();
+        if (screenId === 'screen-users')        await renderUsersList();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
       });
     });
@@ -983,6 +989,39 @@ ${printScript}
             <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700;color:#16a34a">${fmtKg(v.kg)}</td>
           </tr>`).join('');
 
+      // Resumo por cidade
+      const byCity = {};
+      for (const r of curRecs) {
+        const c = clients.find(cl => String(cl.id) === String(r.client_id));
+        const city = c?.city?.trim() || '(Sem cidade)';
+        if (!byCity[city]) byCity[city] = { kg: 0, count: 0, clientSet: new Set() };
+        byCity[city].kg    += parseFloat(r.total) || 0;
+        byCity[city].count += 1;
+        byCity[city].clientSet.add(String(r.client_id));
+      }
+      const totalKgCity = Object.values(byCity).reduce((s, v) => s + v.kg, 0);
+      const cityRows = Object.entries(byCity)
+        .sort((a, b) => b[1].kg - a[1].kg)
+        .map(([city, v], i) => {
+          const pct = totalKgCity > 0 ? (v.kg / totalKgCity * 100).toFixed(1) : '0.0';
+          const barW = totalKgCity > 0 ? Math.round(v.kg / totalKgCity * 100) : 0;
+          return `
+          <tr style="${i % 2 === 0 ? 'background:#f8fafc' : ''}">
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-weight:600">🏙️ ${city}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center">${fmtNum(v.clientSet.size)}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:center">${fmtNum(v.count)}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700;color:#16a34a">${fmtKg(v.kg)}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;min-width:120px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden">
+                  <div style="width:${barW}%;background:#2563eb;height:100%;border-radius:4px"></div>
+                </div>
+                <span style="font-size:0.72rem;color:#64748b;white-space:nowrap">${pct}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('');
+
       // Receitas pendentes
       const pendingRows = pendingRecipes
         .sort((a,b) => (a.created_at||'') < (b.created_at||'') ? -1 : 1)
@@ -1047,6 +1086,12 @@ ${kpisHtml}
 <table>
   <thead><tr><th>Vendedor</th><th style="text-align:center">Clientes ativos</th><th style="text-align:center">Registros</th><th style="text-align:right">Total kg</th></tr></thead>
   <tbody>${sellerRows || '<tr><td colspan="4" style="padding:14px;text-align:center;color:#94a3b8">Nenhum dado no período</td></tr>'}</tbody>
+</table>
+
+<h2>🏙️ Performance por Cidade</h2>
+<table>
+  <thead><tr><th>Cidade</th><th style="text-align:center">Clientes</th><th style="text-align:center">Registros</th><th style="text-align:right">Total kg</th><th>Participação</th></tr></thead>
+  <tbody>${cityRows || '<tr><td colspan="5" style="padding:14px;text-align:center;color:#94a3b8">Nenhum dado no período</td></tr>'}</tbody>
 </table>
 
 <h2>⏳ Receitas Pendentes de Aprovação</h2>
@@ -1437,28 +1482,41 @@ ${kpisHtml}
     });
 
     // Aplicar permissões de acesso nos itens de navegação
+    // Pode ser chamada múltiplas vezes (ex: após sync atualizar permissões)
     function applyNavPermissions() {
       if (!currentUser || currentUser.role === 'admin') return;
-      // Consultor nunca acessa o admin
-      if (currentUser.role === 'consultor') {
+
+      const map = {
+        clients:      'screen-clients',
+        machines:     'screen-machines',
+        processes:    'screen-processes',
+        form:         'screen-form',
+        reports:      'screen-reports',
+        charts:       'screen-charts',
+        vazao:        'screen-vazao',
+        recipes:      'screen-recipes',
+        client_notes: 'screen-client-notes',
+        users:        'screen-users',
+      };
+
+      // Primeiro restaura visibilidade de todos os itens do mapa
+      Object.values(map).forEach(screenId => {
+        const navId = 'nav-' + screenId.replace('screen-', '');
+        document.getElementById(navId)?.style.removeProperty('display');
+        document.querySelector(`.bnav-btn[data-target="${screenId}"]`)?.style.removeProperty('display');
+        document.querySelector(`.drawer-item[data-target="${screenId}"]`)?.style.removeProperty('display');
+      });
+
+      // Consultor/Diretor nunca acessa o admin
+      if (currentUser.role === 'consultor' || currentUser.role === 'diretor') {
         document.getElementById('nav-admin')?.style.setProperty('display', 'none');
         document.querySelector('.bnav-btn[data-target="screen-admin"]')?.style.setProperty('display', 'none');
         document.querySelector('.drawer-item[data-target="screen-admin"]')?.style.setProperty('display', 'none');
       }
+
       const permsStr = (currentUser.permissions || '').trim();
       if (!permsStr) return; // sem restrições = acesso total
       const allowed = new Set(permsStr.split(',').map(s => s.trim()).filter(Boolean));
-      const map = {
-        clients:   'screen-clients',
-        machines:  'screen-machines',
-        processes: 'screen-processes',
-        form:      'screen-form',
-        reports:   'screen-reports',
-        charts:    'screen-charts',
-        vazao:     'screen-vazao',
-        recipes:   'screen-recipes',
-        users:     'screen-users',
-      };
       Object.entries(map).forEach(([perm, screenId]) => {
         if (allowed.has(perm)) return;
         const navId = 'nav-' + screenId.replace('screen-', '');
@@ -1560,15 +1618,33 @@ ${kpisHtml}
     // --- SELECTS ---
     await refreshClientsSelects();
 
+    // =====================================================
+    // BOTÃO 🔄 ATUALIZAR — economia de API
+    // =====================================================
+
+    // Mapa de sheets individuais — definido ANTES do sync silencioso para evitar TDZ
+    const SHEET_MAP = {
+      clients:       { sheet: SHEETS.CLIENTS,       store: 'clients',       label: 'clientes'        },
+      machines:      { sheet: SHEETS.MACHINES,      store: 'machines',      label: 'máquinas'        },
+      processes:     { sheet: SHEETS.PROCESSES,     store: 'processes',     label: 'processos'       },
+      records:       { sheet: SHEETS.RECORDS,       store: 'records',       label: 'registros'       },
+      users:         { sheet: SHEETS.USERS,         store: 'users',         label: 'usuários'        },
+      vazoes:          { sheet: SHEETS.VAZOES,          store: 'vazoes',          label: 'vazões'           },
+      vazao_records:   { sheet: SHEETS.VAZAO_RECORDS,   store: 'vazao_records',   label: 'leituras vazão'   },
+      recipes:         { sheet: SHEETS.RECIPES,         store: 'recipes',         label: 'receitas'         },
+      recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
+      client_notes:    { sheet: SHEETS.CLIENT_NOTES,    store: 'client_notes',    label: 'histórico clientes' },
+    };
+
     // Sync silencioso na inicialização — preenche IndexedDB a partir do GAS
     // sem exibir diálogos de confirmação, para que dados apareçam automaticamente.
     (async () => {
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
       if (!navigator.onLine) return;
       try {
-        // Sincroniza sempre ao abrir — debounce de 30s apenas para evitar dupla chamada em refresh rápido
-        const lastSync = localStorage.getItem('lastSyncTime');
-        const secsAgo = lastSync ? (Date.now() - new Date(lastSync).getTime()) / 1000 : Infinity;
+        // Usa lastFullSyncTime: sync parcial (só usuários) não bloqueia o sync completo
+        const lastFullSync = localStorage.getItem('lastFullSyncTime');
+        const secsAgo = lastFullSync ? (Date.now() - new Date(lastFullSync).getTime()) / 1000 : Infinity;
         if (secsAgo < 30) return;
 
         const results = await Promise.allSettled(
@@ -1588,13 +1664,32 @@ ${kpisHtml}
         }
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
+        localStorage.setItem('lastFullSyncTime', new Date().toISOString());
         await syncAdminConfig();
+
+        // Atualiza currentUser com dados frescos do banco (permissões, sellerName, etc.)
+        if (currentUser) {
+          const _freshUsers = await _originalGetAll('users');
+          const _me = _freshUsers.find(u => u.username === currentUser.username);
+          if (_me) {
+            currentUser.sellers_access = _me.sellers_access || '';
+            currentUser.permissions    = _me.permissions    || '';
+            currentUser.manager        = _me.manager        || '';
+            currentUser.sellerName     = _me.sellerName     || _me.name || '';
+            localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
+            applyNavPermissions();
+          }
+        }
+
         await refreshClientsSelects();
         await renderClientsList();
         await renderMachinesList();
         await renderProcessesList();
         await refreshReportClientFilter();
         await renderRecordsList();
+        if (!document.getElementById('screen-home')?.classList.contains('hidden')) {
+          await initHomeScreen();
+        }
         await updateSyncStatus();
         toast('✅ Dados sincronizados automaticamente!', 'success', 3000);
         const dbUsers = await _originalGetAll('users');
@@ -1609,24 +1704,7 @@ ${kpisHtml}
       } catch(e) { /* falha silenciosa — usuário pode sincronizar manualmente */ }
     })();
 
-    // =====================================================
-    // BOTÃO 🔄 ATUALIZAR — economia de API
-    // =====================================================
-
-    // Mapa de sheets individuais
-    const SHEET_MAP = {
-      clients:       { sheet: SHEETS.CLIENTS,       store: 'clients',       label: 'clientes'        },
-      machines:      { sheet: SHEETS.MACHINES,      store: 'machines',      label: 'máquinas'        },
-      processes:     { sheet: SHEETS.PROCESSES,     store: 'processes',     label: 'processos'       },
-      records:       { sheet: SHEETS.RECORDS,       store: 'records',       label: 'registros'       },
-      users:         { sheet: SHEETS.USERS,         store: 'users',         label: 'usuários'        },
-      vazoes:          { sheet: SHEETS.VAZOES,          store: 'vazoes',          label: 'vazões'           },
-      vazao_records:   { sheet: SHEETS.VAZAO_RECORDS,   store: 'vazao_records',   label: 'leituras vazão'   },
-      recipes:         { sheet: SHEETS.RECIPES,         store: 'recipes',         label: 'receitas'         },
-      recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
-    };
-
-    async function doRefresh(target = 'all') {
+    async function doRefresh(target = 'all', skipConfirm = false) {
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
         return toast('Configure a URL do Google Apps Script no Painel Admin!', 'warning');
       }
@@ -1634,7 +1712,7 @@ ${kpisHtml}
       const isAll = target === 'all';
       const labelTarget = isAll ? 'Todos os dados' : (SHEET_MAP[target]?.label || target);
 
-      if (isAll) {
+      if (isAll && !skipConfirm) {
         const ok = await confirmAction('Buscar dados atualizados do Google Sheets?\nIsso consome uma chamada de API.', '🔄 Atualizar', false);
         if (!ok) return;
       }
@@ -1669,10 +1747,27 @@ ${kpisHtml}
         }
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());
+        if (isAll) localStorage.setItem('lastFullSyncTime', new Date().toISOString());
         if (isAll) await syncAdminConfig();
 
         // Re-renderizar telas conforme o que foi atualizado
         const updated = isAll ? Object.keys(SHEET_MAP) : [target];
+
+        // Atualizar currentUser ANTES dos re-renders para que canDo() use permissões corretas
+        if ((updated.includes('users') || isAll) && currentUser) {
+          const _freshUsers = await dbGetAll_raw('users');
+          const _me = _freshUsers.find(u => u.username === currentUser.username);
+          if (_me) {
+            currentUser.sellers_access = _me.sellers_access || '';
+            currentUser.permissions    = _me.permissions    || '';
+            currentUser.manager        = _me.manager        || '';
+            currentUser.sellerName     = _me.sellerName     || _me.name || '';
+            localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
+            // Re-aplica restrições de nav com as permissões atualizadas
+            applyNavPermissions();
+          }
+        }
+
         if (updated.includes('clients') || updated.includes('machines') || updated.includes('processes') || isAll) {
           await refreshClientsSelects();
           await renderClientsList();
@@ -1682,6 +1777,10 @@ ${kpisHtml}
         }
         if (updated.includes('records') || isAll) {
           await renderRecordsList();
+          // Atualiza KPIs da home se estiver visível
+          if (!document.getElementById('screen-home')?.classList.contains('hidden')) {
+            await initHomeScreen();
+          }
         }
         if (updated.includes('users') || isAll) {
           const allDbUsers = await dbGetAll_raw('users');
@@ -1695,23 +1794,16 @@ ${kpisHtml}
               role: du.role || 'vendedor', name: du.name, sellerName: du.sellerName || du.name };
             if (idx >= 0) window.USERS[idx] = mapped; else window.USERS.push(mapped);
           });
-          // Atualizar currentUser com dados frescos (ex: sellers_access, permissions, manager)
-          if (currentUser) {
-            const me = allDbUsers.find(u => u.username === currentUser.username);
-            if (me) {
-              currentUser.sellers_access = me.sellers_access || '';
-              currentUser.permissions    = me.permissions    || '';
-              currentUser.manager        = me.manager        || '';
-              currentUser.sellerName     = me.sellerName     || me.name || '';
-              localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
-            }
-          }
+          // currentUser já foi atualizado antes dos re-renders acima
           refreshSellerSelect();
           await renderUsersList();
         }
         if (updated.includes('recipes') || updated.includes('recipe_products') || isAll) {
           await renderRecipesList();
           await updateRecipeBadge();
+        }
+        if ((updated.includes('client_notes') || isAll) && !document.getElementById('screen-client-notes')?.classList.contains('hidden')) {
+          await renderClientNotesList();
         }
         await updateSyncStatus();
 
@@ -1848,6 +1940,23 @@ ${kpisHtml}
         }
         return saved;
       }
+      // Para records: preservar price_kg local se o GAS não devolver o campo
+      // (enquanto a coluna price_kg não existir na planilha)
+      if (storeName === 'records') {
+        const existingRecs = await _originalGetAll('records');
+        const localByIdRec = new Map(existingRecs.map(r => [Number(r.id), r]));
+        await clearStore('records');
+        let saved = 0;
+        for (const item of items) {
+          const n = normalizeItem(item);
+          const local = localByIdRec.get(Number(n.id));
+          if (local?.price_kg && !n.price_kg) n.price_kg = local.price_kg;
+          try { await dbPut('records', n); saved++; }
+          catch (err) { console.warn('⚠️ Erro ao salvar record:', err, n); }
+        }
+        return saved;
+      }
+
       await clearStore(storeName);
       let saved = 0;
       for (const item of items) {
@@ -2257,6 +2366,7 @@ ${kpisHtml}
     }
 
     async function renderClientsList(filter = '') {
+      document.getElementById('btn-new-client')?.classList.toggle('hidden', !canDo('create_client'));
       let clients = await getAll('clients');
       const countEl = document.getElementById('clients-count');
       if (countEl) countEl.textContent = clients.length;
@@ -2320,6 +2430,7 @@ ${kpisHtml}
     // RENDER — MÁQUINAS
     // =====================================================
     async function renderMachinesList(filter = '', clientFilter = 0) {
+      document.getElementById('btn-new-machine')?.classList.toggle('hidden', !canDo('create_machine'));
       let machines = await getAll('machines');
       const clients  = await getAll('clients');
       // Para não-admin: restringir máquinas aos clientes acessíveis
@@ -2409,6 +2520,7 @@ ${kpisHtml}
     // RENDER — PROCESSOS
     // =====================================================
     async function renderProcessesList(filter = '', machineFilter = 0) {
+      document.getElementById('btn-new-process')?.classList.toggle('hidden', !canDo('create_process'));
       await refreshMachinesForProcessSelect();
       let processes = await getAll('processes');
       let machines  = await getAll('machines');
@@ -2679,6 +2791,11 @@ ${kpisHtml}
         return toast('Configure a URL do Google Apps Script no Painel Admin!', 'warning');
       }
 
+      // Captura o preço/kg do cliente no momento do envio (snapshot histórico)
+      const _allClientsSnap = await dbGetAll_raw('clients');
+      const _clientSnap = _allClientsSnap.find(c => Number(c.id) === clientId);
+      const _priceKgSnap = parseFloat(_clientSnap?.price_kg || 0) || 0;
+
       const rows = [];
       document.querySelectorAll('.machine-block').forEach(block => {
         const machineId = Number(block.dataset.machineId);
@@ -2689,7 +2806,7 @@ ${kpisHtml}
           const capacity = parseFloat(row.querySelector('[name="capacity"]').value || 0);
           const total    = parseFloat(row.querySelector('[name="total"]').value || 0);
           if (executed > 0 || canceled > 0) {
-            rows.push({ client_id: clientId, machine_id: machineId, process_id: procId, executed, canceled, capacity, total, date_start: dateStart, date_end: dateEnd, created_at: new Date().toISOString(), synced_at: new Date().toISOString() });
+            rows.push({ client_id: clientId, machine_id: machineId, process_id: procId, executed, canceled, capacity, total, date_start: dateStart, date_end: dateEnd, price_kg: _priceKgSnap || undefined, created_at: new Date().toISOString(), synced_at: new Date().toISOString() });
           }
         });
       });
@@ -2907,7 +3024,7 @@ ${kpisHtml}
     // TELA AVISOS
     // =====================================================
     function updateAlertsBadge(count, alertDays) {
-      ['nav-alerts-badge', 'drawer-alerts-badge'].forEach(id => {
+      ['nav-alerts-badge', 'drawer-alerts-badge', 'bnav-alerts-badge'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.textContent = count;
@@ -3037,6 +3154,201 @@ ${kpisHtml}
       await pull(SHEETS.VAZAO_RECORDS, 'vazao_records');
     }
 
+    // =====================================================
+    // TELA HISTÓRICO DE CLIENTES
+    // =====================================================
+    const NOTE_TYPES = {
+      manutencao: { icon: '🔧', label: 'Manutenção', color: '#2563eb', bg: '#eff6ff' },
+      aviso:      { icon: '⚠️', label: 'Aviso',      color: '#b45309', bg: '#fffbeb' },
+      instalacao: { icon: '🔌', label: 'Instalação', color: '#7c3aed', bg: '#f5f3ff' },
+      lembrete:   { icon: '📌', label: 'Lembrete',   color: '#15803d', bg: '#f0fdf4' },
+    };
+
+    async function renderClientNotesList() {
+      const list = document.getElementById('notes-list');
+      if (!list) return;
+
+      document.getElementById('btn-new-note')?.classList.toggle('hidden', !canDo('create_note'));
+
+      const [allNotes, clients] = await Promise.all([
+        dbGetAll_raw('client_notes'),
+        window.getAll('clients'),
+      ]);
+      const allowedIds = new Set(clients.map(c => String(c.id)));
+      const notes = allNotes.filter(n => allowedIds.has(String(n.client_id)));
+
+      // Popular filtro de clientes
+      const filterClient = document.getElementById('note-filter-client');
+      if (filterClient) {
+        const cur = filterClient.value;
+        filterClient.innerHTML = '<option value="">👤 Todos os clientes</option>';
+        [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+          .forEach(c => { filterClient.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
+        if (cur) filterClient.value = cur;
+      }
+
+      const clientFilter = filterClient?.value || '';
+      const typeFilter   = document.getElementById('note-filter-type')?.value || '';
+      const filtered = notes
+        .filter(n => !clientFilter || String(n.client_id) === clientFilter)
+        .filter(n => !typeFilter   || n.type === typeFilter)
+        .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
+
+      // Atualizar badge de contagem
+      const badge = document.getElementById('notes-count-badge');
+      if (badge) badge.textContent = filtered.length;
+
+      if (!filtered.length) {
+        list.innerHTML = `<div class="empty-state"><div style="font-size:2rem;margin-bottom:0.5rem">📋</div><div style="font-weight:600;margin-bottom:0.25rem">Nenhuma nota encontrada</div><div style="font-size:0.85rem">Crie uma nota para registrar manutenções, avisos e lembretes.</div></div>`;
+        return;
+      }
+
+      list.innerHTML = `<div class="items-list">${filtered.map(n => {
+        const client = clients.find(c => String(c.id) === String(n.client_id));
+        const t = NOTE_TYPES[n.type] || { icon: '📋', label: n.type || '—', color: '#64748b', bg: '#f8fafc' };
+        const badgeClass = { manutencao: 'badge', aviso: 'badge-yellow', instalacao: 'badge', lembrete: 'badge-green' }[n.type] || 'badge-gray';
+        return `
+          <div class="list-item" style="border-left-color:${t.color}">
+            <div class="list-item-content">
+              <div class="list-item-name">
+                <span class="${badgeClass}" style="background:${t.bg};color:${t.color}">${t.icon} ${t.label}</span>
+                ${escHtml(n.title)}
+              </div>
+              <div class="list-item-details">
+                <span class="detail-chip">👤 ${escHtml(client?.name || '—')}</span>
+                <span class="detail-chip">📅 ${fmtDate(n.date)}</span>
+                <span class="detail-chip">✍️ ${escHtml(n.created_by || '—')}</span>
+                ${n.content ? `<span class="detail-chip" style="width:100%;white-space:pre-wrap;line-height:1.5">💬 ${escHtml(n.content)}</span>` : ''}
+              </div>
+            </div>
+            <div class="list-item-actions">
+              ${canDo('edit_note')   ? `<button class="btn-edit btn-sm" onclick="window._editNote(${n.id})">✏️ Editar</button>` : ''}
+              ${canDo('delete_note') ? `<button class="btn-danger btn-sm" onclick="window._deleteNote(${n.id})">🗑️</button>` : ''}
+            </div>
+          </div>`;
+      }).join('')}</div>`;
+    }
+
+    // Filtros disparam re-render
+    document.getElementById('note-filter-client')?.addEventListener('change', renderClientNotesList);
+    document.getElementById('note-filter-type')?.addEventListener('change', renderClientNotesList);
+
+    // Abrir modal de nova nota
+    document.getElementById('btn-new-note')?.addEventListener('click', () => _openNoteForm(null));
+
+    document.getElementById('modal-note-close')?.addEventListener('click',  () => document.getElementById('modal-note').classList.add('hidden'));
+    document.getElementById('modal-note-cancel')?.addEventListener('click', () => document.getElementById('modal-note').classList.add('hidden'));
+
+    async function _openNoteForm(note) {
+      const clients = await window.getAll('clients');
+      const sel = document.getElementById('note-client');
+      if (sel) {
+        sel.innerHTML = '<option value="">-- Selecione --</option>';
+        [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+          .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
+      }
+      document.getElementById('note-edit-id').value  = note?.id || '';
+      document.getElementById('note-client').value   = note?.client_id || '';
+      document.getElementById('note-type').value     = note?.type || 'manutencao';
+      document.getElementById('note-date').value     = note?.date || new Date().toISOString().slice(0,10);
+      document.getElementById('note-title').value    = note?.title || '';
+      document.getElementById('note-content').value  = note?.content || '';
+      document.getElementById('modal-note-title').textContent = note ? '✏️ Editar Nota' : '📋 Nova Nota';
+      document.getElementById('modal-note').classList.remove('hidden');
+    }
+
+    window._editNote = async function(id) {
+      if (!canDo('edit_note')) return toast('Sem permissão para editar notas.', 'error');
+      const notes = await dbGetAll_raw('client_notes');
+      const note  = notes.find(n => Number(n.id) === Number(id));
+      if (note) _openNoteForm(note);
+    };
+
+    window._deleteNote = async function(id) {
+      if (!canDo('delete_note')) return toast('Sem permissão para excluir notas.', 'error');
+      if (!await confirmAction('Excluir esta nota? Ação irreversível.', '🗑️ Excluir')) return;
+      await dbDelete('client_notes', id);
+      const ok = await deleteSheetDB(SHEETS.CLIENT_NOTES, id);
+      toast(ok ? 'Nota excluída!' : 'Nota excluída localmente', ok ? 'success' : 'warning');
+      await renderClientNotesList();
+    };
+
+    // Salvar nota
+    document.getElementById('form-note')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const editId   = document.getElementById('note-edit-id').value;
+      const clientId = Number(document.getElementById('note-client').value);
+      const type     = document.getElementById('note-type').value;
+      const date     = document.getElementById('note-date').value;
+      const title    = document.getElementById('note-title').value.trim();
+      const content  = document.getElementById('note-content').value.trim();
+
+      if (!clientId || !type || !date || !title) return toast('Preencha os campos obrigatórios.', 'warning');
+
+      const btn = document.getElementById('btn-save-note');
+      setSaving(true, btn);
+      try {
+        let saved;
+        if (editId) {
+          const allNotes = await dbGetAll_raw('client_notes');
+          const existing = allNotes.find(n => Number(n.id) === Number(editId));
+          saved = { ...existing, client_id: clientId, type, date, title, content, synced_at: new Date().toISOString() };
+          await dbPut('client_notes', saved);
+          const ok = await patchSheetDB(SHEETS.CLIENT_NOTES, saved.id, saved);
+          toast(ok ? 'Nota atualizada!' : 'Nota atualizada localmente', ok ? 'success' : 'warning');
+        } else {
+          saved = { client_id: clientId, type, date, title, content,
+            created_by: currentUser?.name || currentUser?.username || '',
+            created_at: new Date().toISOString(), synced_at: new Date().toISOString() };
+          const newId = await dbAdd('client_notes', saved);
+          saved.id = newId;
+          await postToSheetDB(SHEETS.CLIENT_NOTES, saved);
+          toast('Nota criada!', 'success');
+        }
+        document.getElementById('modal-note').classList.add('hidden');
+        await renderClientNotesList();
+
+        // Oferecer compartilhamento no WhatsApp
+        const clients = await window.getAll('clients');
+        const client  = clients.find(c => Number(c.id) === Number(clientId));
+        const t = NOTE_TYPES[type] || { icon: '📋', label: type };
+        const msgLines = [
+          `*Hygicare — ${t.icon} ${t.label}*`,
+          `*Cliente:* ${client?.name || '—'}`,
+          `*Data:* ${fmtDate(date)}`,
+          `*Título:* ${title}`,
+        ];
+        if (content) msgLines.push(`*Detalhe:* ${content}`);
+        const waMsg = msgLines.join('\n');
+        document.getElementById('whatsapp-preview').textContent = waMsg;
+        document.getElementById('modal-whatsapp').classList.remove('hidden');
+        document.getElementById('whatsapp-share').onclick = () => {
+          window.open('https://wa.me/?text=' + encodeURIComponent(waMsg), '_blank');
+          document.getElementById('modal-whatsapp').classList.add('hidden');
+        };
+        document.getElementById('whatsapp-skip').onclick = () => {
+          document.getElementById('modal-whatsapp').classList.add('hidden');
+        };
+      } catch(err) {
+        toast('Erro ao salvar nota: ' + err.message, 'error');
+      } finally {
+        setSaving(false, btn);
+      }
+    });
+
+    async function initClientNotesScreen() {
+      const clients = await window.getAll('clients');
+      const sel = document.getElementById('note-filter-client');
+      if (sel) {
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">Todos os clientes</option>';
+        [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+          .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
+        if (cur) sel.value = cur;
+      }
+      await renderClientNotesList();
+    }
+
     async function initHomeScreen() {
       // Saudação
       const now = new Date();
@@ -3048,12 +3360,50 @@ ${kpisHtml}
       const dateEl = document.getElementById('home-date');
       if (dateEl) dateEl.textContent = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-      // KPIs
-      const [records, clients, machines] = await Promise.all([
+      // Atalhos de navegação — filtrados por permissão, mesmo estilo home-action-btn
+      const shortcutsEl = document.getElementById('home-shortcuts');
+      if (shortcutsEl) {
+        const ALL_NAV = [
+          { perm: 'clients',      screen: 'screen-clients',      fn: async () => { await renderClientsList(); await refreshSellerSelect(); }, icon: '👥', label: 'Clientes' },
+          { perm: 'machines',     screen: 'screen-machines',     fn: renderMachinesList,    icon: '⚙️', label: 'Máquinas' },
+          { perm: 'processes',    screen: 'screen-processes',    fn: renderProcessesList,   icon: '🔄', label: 'Processos' },
+          { perm: 'form',         screen: 'screen-form',         fn: _initFormScreen,       icon: '➕', label: 'Produção' },
+          { perm: 'reports',      screen: 'screen-reports',      fn: async () => { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }, icon: '📄', label: 'Relatórios' },
+          { perm: 'charts',       screen: 'screen-charts',       fn: async () => { await refreshChartsFilters(); await renderCharts(); }, icon: '📊', label: 'Gráficos' },
+          { perm: 'vazao',        screen: 'screen-vazao',        fn: initVazaoScreen,       icon: '💧', label: 'Vazão' },
+          { perm: 'recipes',      screen: 'screen-recipes',      fn: initRecipesScreen,     icon: '🗂️', label: 'Receitas' },
+          { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen, icon: '📋', label: 'Histórico' },
+          { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,        icon: '👤', label: 'Usuários', adminOnly: true },
+        ];
+        const permsStr = (currentUser?.permissions || '').trim();
+        const allowed  = permsStr ? new Set(permsStr.split(',').map(s => s.trim())) : null;
+        const isAdmin  = !currentUser || currentUser.role === 'admin';
+        const visible  = ALL_NAV.filter(item => {
+          if (item.adminOnly && !isAdmin) return false;
+          if (!allowed) return true;
+          return allowed.has(item.perm);
+        });
+        shortcutsEl.innerHTML = visible.map(item =>
+          `<button class="home-action-btn" data-screen="${item.screen}">
+            <span style="font-size:1.6rem;line-height:1">${item.icon}</span>
+            <span>${item.label}</span>
+          </button>`
+        ).join('');
+        shortcutsEl.querySelectorAll('.home-action-btn').forEach(btn => {
+          const item = visible.find(v => v.screen === btn.dataset.screen);
+          if (!item) return;
+          btn.addEventListener('click', async () => { show(item.screen); if (item.fn) await item.fn(); });
+        });
+      }
+
+      // KPIs — usar window.getAll para respeitar filtro de vendedor/consultor
+      const [allRecordsRaw, clients, machines] = await Promise.all([
         dbGetAll_raw('records'),
-        dbGetAll_raw('clients'),
+        window.getAll('clients'),
         dbGetAll_raw('machines'),
       ]);
+      const allowedClientIds = new Set(clients.map(c => String(c.id)));
+      const records = allRecordsRaw.filter(r => allowedClientIds.has(String(r.client_id)));
 
       const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const thisMonth = records.filter(r => (r.date_start || '').startsWith(ym));
@@ -3258,6 +3608,9 @@ ${kpisHtml}
           saved++;
         }
         toast(`✅ ${saved} leitura(s) salva(s)!`, 'success');
+        const _allClientsVz = await dbGetAll_raw('clients');
+        const _clientVz = _allClientsVz.find(c => Number(c.id) === clientId);
+        notifyEmail('nova_vazao', { clientName: _clientVz?.name || `#${clientId}`, date, count: saved });
         inputs.forEach(inp => inp.value = '');
         await renderVazaoHistory();
         await renderVazaoLocalHistory(clientId);
@@ -3862,7 +4215,10 @@ ${kpisHtml}
     document.getElementById('btn-add-step')?.addEventListener('click', _addStep);
     document.getElementById('btn-add-step-bottom')?.addEventListener('click', _addStep);
 
-    document.getElementById('btn-new-recipe')?.addEventListener('click', () => _openRecipeForm(null));
+    document.getElementById('btn-new-recipe')?.addEventListener('click', () => {
+      if (!canDo('create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
+      _openRecipeForm(null);
+    });
     document.getElementById('modal-recipe-close')?.addEventListener('click',  () => document.getElementById('modal-recipe').classList.add('hidden'));
     document.getElementById('modal-recipe-cancel')?.addEventListener('click', () => document.getElementById('modal-recipe').classList.add('hidden'));
 
@@ -3939,6 +4295,7 @@ ${kpisHtml}
     async function renderRecipesList() {
       const list = document.getElementById('recipes-list');
       if (!list) return;
+      document.getElementById('btn-new-recipe')?.classList.toggle('hidden', !canDo('create_recipe'));
 
       // Skeleton enquanto carrega
       if (!list.querySelector('.skeleton-card')) {
@@ -4071,7 +4428,7 @@ ${kpisHtml}
               ${!steps.length ? `<span style="font-size:0.7rem;color:var(--muted)">Sem etapas</span>` : ''}
             </div>
             <div style="display:flex;gap:0.3rem">
-              ${!hasPending ? `<button class="btn-edit btn-sm" onclick="window._editRecipeOpen(${r.id})" style="flex:2">✏️ Editar</button>` : ''}
+              ${!hasPending && canDo('edit_recipe') ? `<button class="btn-edit btn-sm" onclick="window._editRecipeOpen(${r.id})" style="flex:2">✏️ Editar</button>` : ''}
               <button class="btn-secondary btn-sm" onclick="window._viewRecipe(${r.id})" style="flex:1">👁️ Ver</button>
               <button class="btn-secondary btn-sm" onclick="window._toggleRecipeMore(${r.id})" style="flex:0 0 2.2rem;padding:0 !important;font-size:1.15rem;font-weight:700;letter-spacing:1px" title="Mais opções">⋯</button>
             </div>
@@ -4758,7 +5115,7 @@ ${recipeSections}
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(client?.price_kg || 0) || null };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
         grouped[key].rows.push({ machineName, procName, executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
@@ -4841,8 +5198,8 @@ ${recipeSections}
                 <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
                 <span class="badge badge-gray">${g.rows.length} linha(s)</span>
                 <button class="btn-record-action" style="background:#16a34a;color:#fff" onclick="window._shareGroup('${safeKey}')" title="Compartilhar / Enviar relatório">📤 Enviar</button>
-                <button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>
-                ${currentUser?.role === 'admin' ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}')" title="Excluir registro">🗑️ Excluir</button>` : ''}
+                ${canDo('edit_record') ? `<button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>` : ''}
+                ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}')" title="Excluir registro">🗑️ Excluir</button>` : ''}
                 <span style="font-size:0.8rem;color:var(--muted)">▼</span>
               </div>
             </div>
@@ -5771,12 +6128,26 @@ ${recipeSections}
         records.map(r => `${r.client_id}|${r.date_start}|${r.date_end}`)
       ).size;
 
+      // Resumo por cidade
+      const _kgCity = {};
+      for (const r of records) {
+        const c = clients.find(cl => Number(cl.id) === Number(r.client_id));
+        const city = c?.city?.trim() || '(Sem cidade)';
+        if (!_kgCity[city]) _kgCity[city] = { kg: 0, count: 0, clientSet: new Set() };
+        _kgCity[city].kg    += parseFloat(r.total) || 0;
+        _kgCity[city].count += 1;
+        _kgCity[city].clientSet.add(String(r.client_id));
+      }
+      const byCity = Object.entries(_kgCity)
+        .map(([city, v]) => [city, { kg: v.kg, count: v.count, clients: v.clientSet.size }])
+        .sort((a, b) => b[1].kg - a[1].kg);
+
       const html = _buildSummaryHtml({
         periodLabel, clientLabel, sellerLabel,
         totalKg, totalRecords: totalSubmissoes, activeClients: clientsSet.size,
         cancelPct, ticketMedio: totalSubmissoes > 0 ? totalKg / totalSubmissoes : 0,
         mediaMensal, crescimento,
-        byClient, byProcess, byMonthWithGrowth, inactiveClients,
+        byClient, byProcess, byMonthWithGrowth, inactiveClients, byCity,
         today: new Date().toLocaleDateString('pt-BR')
       });
 
@@ -5835,6 +6206,17 @@ ${recipeSections}
       const monthFooter = d.byMonthWithGrowth.length > 1
         ? `<tfoot><tr><td class="tl" style="font-weight:bold">Média do período</td><td class="tc" style="font-weight:bold;color:#b45309">${fmt(d.mediaMensal)} kg/mês</td><td></td></tr></tfoot>`
         : '';
+
+      const cityRows = (d.byCity || []).map(([city, v], i) => {
+        const pct = d.totalKg > 0 ? (v.kg / d.totalKg * 100).toFixed(1) : '0.0';
+        return `<tr>
+          <td class="tc">${i+1}</td>
+          <td class="tl">${esc(city)}</td>
+          <td class="tc">${v.clients}</td>
+          <td class="tc">${fmt(v.kg)} kg</td>
+          <td class="tc">${pct}%</td>
+        </tr>`;
+      }).join('');
 
       let inactiveSec = '';
       if (d.inactiveClients.length > 0) {
@@ -5935,6 +6317,13 @@ tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #d
     ${monthFooter}
   </table>
 </div>
+${(d.byCity || []).length > 1 ? `<div class="sec">
+  <div class="sec-hd">TOTAIS POR CIDADE</div>
+  <table>
+    <thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Cidade</th><th class="tc">Clientes</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead>
+    <tbody>${cityRows}</tbody>
+  </table>
+</div>` : ''}
 ${inactiveSec}
 <div class="rpt-footer">
   <strong>Hygicare</strong> · Sistema de Gestão de Lavanderia · Relatório gerado em ${esc(d.today)}
@@ -5964,7 +6353,7 @@ ${inactiveSec}
         list.innerHTML = '<div class="empty-state">👤 Nenhum usuário encontrado.</div>';
         return;
       }
-      const roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor' };
+      const roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', diretor: 'Diretor' };
       const roleClass = { admin: 'role-admin', gerente: 'role-gerente', vendedor: 'role-vendedor', consultor: 'role-consultor' };
       list.innerHTML = filtered.map(u => {
         const managedBy = u.role === 'vendedor' && u.manager ? `· 👔 ${u.manager}` : '';
@@ -6071,16 +6460,17 @@ ${inactiveSec}
       if (u.role === 'consultor') await populateSellersCheckboxes(u.sellers_access || '');
       // Restaurar checkboxes de permissão
       const savedPerms = new Set((u.permissions || '').split(',').map(s => s.trim()).filter(Boolean));
-      const screenKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes'];
+      const screenKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes'];
       screenKeys.forEach(k => {
         const el = document.querySelector(`input[name="perm_${k}"]`);
         if (el) el.checked = !u.permissions || savedPerms.has(k);
       });
       const actionKeys = ['send_record','edit_record','delete_record',
         'create_client','edit_client','delete_client',
-        'create_machine','edit_machine','delete_machine',
+        'create_machine','edit_machine','delete_machine','edit_bomba',
         'create_process','edit_process','delete_process',
-        'create_recipe','edit_recipe','pdf_report','edit_vazao'];
+        'create_recipe','edit_recipe','pdf_report','edit_vazao',
+        'create_note','edit_note','delete_note'];
       const hasAnyAction = [...savedPerms].some(p => ACTION_KEYS.has(p));
       actionKeys.forEach(k => {
         const el = document.querySelector(`input[name="perm_${k}"]`);
@@ -6113,12 +6503,13 @@ ${inactiveSec}
       const sellers_access = role === 'consultor'
         ? Array.from(document.querySelectorAll('input[name="seller_access"]:checked')).map(el => el.value).join(',')
         : '';
-      const permKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes',
+      const permKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes',
         'send_record','edit_record','delete_record',
         'create_client','edit_client','delete_client',
-        'create_machine','edit_machine','delete_machine',
+        'create_machine','edit_machine','delete_machine','edit_bomba',
         'create_process','edit_process','delete_process',
-        'create_recipe','edit_recipe','pdf_report','edit_vazao'];
+        'create_recipe','edit_recipe','pdf_report','edit_vazao',
+        'create_note','edit_note','delete_note'];
       const permissions = role === 'admin' ? '' :
         permKeys.filter(k => document.querySelector(`input[name="perm_${k}"]`)?.checked).join(',');
 
@@ -6173,6 +6564,7 @@ ${inactiveSec}
     // EDITAR / EXCLUIR REGISTROS
     // =====================================================
     window._editRecord = async function(safeKey) {
+      if (!canDo('edit_record')) return toast('Sem permissão para editar registros.', 'error');
       const g = _recordGroups?.[safeKey];
       if (!g) return toast('Registro não encontrado', 'error');
       document.getElementById('edit-record-key').value = safeKey;
@@ -6192,7 +6584,7 @@ ${inactiveSec}
     };
 
     window._deleteRecord = async function(safeKey) {
-      if (currentUser?.role !== 'admin') return toast('Apenas administradores podem excluir registros', 'warning');
+      if (!canDo('delete_record')) return toast('Sem permissão para excluir registros.', 'warning');
       const gPreview = _recordGroups?.[safeKey];
       const confirmMsg = gPreview
         ? `Excluir registros de\n"${gPreview.clientName}" — ${gPreview.period}?\n\nEsta ação não pode ser desfeita.`
@@ -6297,6 +6689,9 @@ ${inactiveSec}
       } else if (tipo === 'novo_processo') {
         subject = `[Hygicare] Novo processo cadastrado — ${dados.name}`;
         body = `Olá,\n\nUm novo processo foi cadastrado.\n\nProcesso: ${dados.name}\nMáquina: ${dados.machineName}\nUsuário: ${currentUser?.name}\nData: ${new Date().toLocaleString('pt-BR')}`;
+      } else if (tipo === 'nova_vazao') {
+        subject = `[Hygicare] Leitura de vazão registrada — ${dados.clientName}`;
+        body = `Olá,\n\nUma leitura de vazão foi salva no sistema.\n\nCliente: ${dados.clientName}\nData: ${dados.date}\nLeituras: ${dados.count} resultado(s)\nUsuário: ${currentUser?.name}\nRegistrado em: ${new Date().toLocaleString('pt-BR')}`;
       }
       if (!subject) return;
       // Mostrar toast com link mailto
@@ -6311,6 +6706,16 @@ ${inactiveSec}
       setTimeout(() => el.remove(), 12000);
     }
     window.notifyEmail = notifyEmail;
+
+    // Auto-sync no login: sincroniza users primeiro (permissões imediatas), depois tudo
+    if (localStorage.getItem('_autoSync')) {
+      localStorage.removeItem('_autoSync');
+      setTimeout(async () => {
+        toast('Atualizando permissões...', 'info', 2000);
+        await doRefresh('users', true);   // permissões aplicadas em segundos
+        doRefresh('all', true);           // resto dos dados em background
+      }, 400);
+    }
 
   } // fim initApp()
 
