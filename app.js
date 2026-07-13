@@ -685,6 +685,12 @@ ${printScript}
       'create_process','edit_process','delete_process','create_recipe','edit_recipe','edit_vazao',
       'create_note','edit_note','delete_note']);
 
+    // Chaves de tela — fonte única para formulário de usuário e applyNavPermissions
+    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes'];
+
+    // Mutex: impede dois syncs completos simultâneos (IIFE de startup + _autoSync)
+    let _fullSyncRunning = false;
+
     // Verifica se o usuário tem permissão para realizar uma ação
     function canDo(action) {
       if (!currentUser || currentUser.role === 'admin') return true;
@@ -1499,8 +1505,8 @@ ${kpisHtml}
         users:        'screen-users',
       };
 
-      // Primeiro restaura visibilidade de todos os itens do mapa
-      Object.values(map).forEach(screenId => {
+      // Primeiro restaura visibilidade de todos os itens do mapa (incluindo nav-admin)
+      [...Object.values(map), 'screen-admin'].forEach(screenId => {
         const navId = 'nav-' + screenId.replace('screen-', '');
         document.getElementById(navId)?.style.removeProperty('display');
         document.querySelector(`.bnav-btn[data-target="${screenId}"]`)?.style.removeProperty('display');
@@ -1653,12 +1659,14 @@ ${kpisHtml}
     (async () => {
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return;
       if (!navigator.onLine) return;
+      if (_fullSyncRunning) return;
       try {
         // Usa lastFullSyncTime: sync parcial (só usuários) não bloqueia o sync completo
         const lastFullSync = localStorage.getItem('lastFullSyncTime');
         const secsAgo = lastFullSync ? (Date.now() - new Date(lastFullSync).getTime()) / 1000 : Infinity;
         if (secsAgo < 30) return;
 
+        _fullSyncRunning = true;
         const results = await Promise.allSettled(
           Object.values(SHEET_MAP).map(s =>
             fetch(`${gasApiUrl()}?sheet=${s.sheet}`)
@@ -1714,6 +1722,7 @@ ${kpisHtml}
         });
         localStorage.setItem('hygicare_users', JSON.stringify(dbUsers));
       } catch(e) { /* falha silenciosa — usuário pode sincronizar manualmente */ }
+      finally { _fullSyncRunning = false; }
     })();
 
     async function doRefresh(target = 'all', skipConfirm = false) {
@@ -1724,10 +1733,16 @@ ${kpisHtml}
       const isAll = target === 'all';
       const labelTarget = isAll ? 'Todos os dados' : (SHEET_MAP[target]?.label || target);
 
+      if (isAll && _fullSyncRunning) {
+        return toast('Sincronização já em andamento...', 'info', 2000);
+      }
+
       if (isAll && !skipConfirm) {
         const ok = await confirmAction('Buscar dados atualizados do Google Sheets?\nIsso consome uma chamada de API.', '🔄 Atualizar', false);
         if (!ok) return;
       }
+
+      if (isAll) _fullSyncRunning = true;
 
       const btn = document.getElementById('btn-refresh-data');
       btn.disabled = true;
@@ -1826,6 +1841,7 @@ ${kpisHtml}
         const msg = err instanceof TypeError ? '❌ Sem conexão com a internet.' : `❌ Erro: ${err.message || err}`;
         toast(msg, 'error', 6000);
       } finally {
+        if (isAll) _fullSyncRunning = false;
         btn.disabled = false;
         btn.textContent = '🔄 Atualizar';
       }
@@ -6473,19 +6489,12 @@ ${inactiveSec}
       if (u.role === 'consultor') await populateSellersCheckboxes(u.sellers_access || '');
       // Restaurar checkboxes de permissão
       const savedPerms = new Set((u.permissions || '').split(',').map(s => s.trim()).filter(Boolean));
-      const screenKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes'];
-      screenKeys.forEach(k => {
+      SCREEN_PERM_KEYS.forEach(k => {
         const el = document.querySelector(`input[name="perm_${k}"]`);
         if (el) el.checked = !u.permissions || savedPerms.has(k);
       });
-      const actionKeys = ['send_record','edit_record','delete_record',
-        'create_client','edit_client','delete_client',
-        'create_machine','edit_machine','delete_machine','edit_bomba',
-        'create_process','edit_process','delete_process',
-        'create_recipe','edit_recipe','pdf_report','edit_vazao',
-        'create_note','edit_note','delete_note'];
       const hasAnyAction = [...savedPerms].some(p => ACTION_KEYS.has(p));
-      actionKeys.forEach(k => {
+      [...ACTION_KEYS].forEach(k => {
         const el = document.querySelector(`input[name="perm_${k}"]`);
         if (el) el.checked = !u.permissions || !hasAnyAction || savedPerms.has(k);
       });
@@ -6516,15 +6525,8 @@ ${inactiveSec}
       const sellers_access = role === 'consultor'
         ? Array.from(document.querySelectorAll('input[name="seller_access"]:checked')).map(el => el.value).join(',')
         : '';
-      const permKeys = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes',
-        'send_record','edit_record','delete_record',
-        'create_client','edit_client','delete_client',
-        'create_machine','edit_machine','delete_machine','edit_bomba',
-        'create_process','edit_process','delete_process',
-        'create_recipe','edit_recipe','pdf_report','edit_vazao',
-        'create_note','edit_note','delete_note'];
       const permissions = role === 'admin' ? '' :
-        permKeys.filter(k => document.querySelector(`input[name="perm_${k}"]`)?.checked).join(',');
+        [...SCREEN_PERM_KEYS, ...ACTION_KEYS].filter(k => document.querySelector(`input[name="perm_${k}"]`)?.checked).join(',');
 
       if (!name || !username) return toast('Preencha nome e usuário', 'warning');
 
