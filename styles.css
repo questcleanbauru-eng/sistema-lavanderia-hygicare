@@ -532,7 +532,8 @@ main { max-width: 1100px; margin: 0 auto; }
   margin-bottom: 0.4rem;
 }
 .form-field input,
-.form-field select {
+.form-field select,
+.form-field textarea {
   width: 100%;
   padding: 0.8rem 1rem;
   border: 2px solid var(--border);
@@ -541,10 +542,13 @@ main { max-width: 1100px; margin: 0 auto; }
   color: var(--text);
   background: #f8fafc;
   min-height: 50px;
+  font-family: inherit;
   transition: all 0.2s;
 }
+.form-field textarea { min-height: unset; resize: vertical; line-height: 1.5; }
 .form-field input:focus,
-.form-field select:focus {
+.form-field select:focus,
+.form-field textarea:focus {
   outline: none;
   border-color: var(--primary);
   background: white;
@@ -1123,6 +1127,7 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 .role-vendedor { background: #dcfce7; color: #15803d; }
 .role-gerente  { background: #fef3c7; color: #b45309; }
 .role-consultor{ background: #f3e8ff; color: #7e22ce; }
+.role-diretor  { background: #fee2e2; color: #b91c1c; }
 
 /* ── Checkboxes de permissão ── */
 .perm-check {
@@ -1360,7 +1365,9 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .form-field { margin-bottom: 0.65rem; }
   .form-field label { font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-bottom: 0.3rem; }
   .form-field input,
-  .form-field select { padding: 0.7rem 0.85rem; font-size: 1rem; min-height: 48px; }
+  .form-field select,
+  .form-field textarea { padding: 0.7rem 0.85rem; font-size: 1rem; min-height: 48px; }
+  .form-field textarea { min-height: unset; }
   .form-field input[type="date"] {
     -webkit-appearance: none;
     appearance: none;
@@ -1626,6 +1633,9 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .drawer-divider { height: 1px; background: #e2e8f0; margin: 0.4rem 0; }
 }
 
+/* Mobile-only header drawer trigger */
+.hdr-mobile-menu { display: none; }
+
 /* Bottom nav hidden on desktop */
 .bottom-nav { display: none; }
 .drawer-overlay, .drawer { display: none; }
@@ -1818,6 +1828,7 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 @media (max-width: 640px) {
   .bottom-nav { display: flex; }
   .drawer-overlay, .drawer { display: block; }
+  .hdr-mobile-menu { display: inline-flex; }
 }
 
 /* --- Tablet (641px a 767px) --- */

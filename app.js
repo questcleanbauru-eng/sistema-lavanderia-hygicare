@@ -1517,6 +1517,10 @@ ${kpisHtml}
       const permsStr = (currentUser.permissions || '').trim();
       if (!permsStr) return; // sem restrições = acesso total
       const allowed = new Set(permsStr.split(',').map(s => s.trim()).filter(Boolean));
+      // Se permissions tem SOMENTE chaves de ação (sem chaves de tela), não oculta nav
+      const screenKeys = new Set(Object.keys(map));
+      const hasAnyScreenKey = [...allowed].some(p => screenKeys.has(p));
+      if (!hasAnyScreenKey) return;
       Object.entries(map).forEach(([perm, screenId]) => {
         if (allowed.has(perm)) return;
         const navId = 'nav-' + screenId.replace('screen-', '');
@@ -1524,6 +1528,14 @@ ${kpisHtml}
         document.querySelector(`.bnav-btn[data-target="${screenId}"]`)?.style.setProperty('display', 'none');
         document.querySelector(`.drawer-item[data-target="${screenId}"]`)?.style.setProperty('display', 'none');
       });
+      // Atualiza visibilidade do FAB com permissões atualizadas
+      const _fab = document.getElementById('fab-btn');
+      if (_fab) {
+        const _activeScreen = [...document.querySelectorAll('.screen')].find(s => !s.classList.contains('hidden'))?.id;
+        _fab.classList.toggle('hidden',
+          _activeScreen === 'screen-form' || _activeScreen === 'screen-home' || !canDo('send_record')
+        );
+      }
     }
     applyNavPermissions();
 
@@ -2762,6 +2774,7 @@ ${kpisHtml}
     }
 
     document.getElementById('save-production').addEventListener('click', async () => {
+      if (!canDo('send_record')) return toast('Sem permissão para registrar produção.', 'error');
       const clientId = Number(prodClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
       const periodoOn = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
@@ -3373,7 +3386,7 @@ ${kpisHtml}
           { perm: 'vazao',        screen: 'screen-vazao',        fn: initVazaoScreen,       icon: '💧', label: 'Vazão' },
           { perm: 'recipes',      screen: 'screen-recipes',      fn: initRecipesScreen,     icon: '🗂️', label: 'Receitas' },
           { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen, icon: '📋', label: 'Histórico' },
-          { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,        icon: '👤', label: 'Usuários', adminOnly: true },
+          { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,        icon: '👤', label: 'Usuários' },
         ];
         const permsStr = (currentUser?.permissions || '').trim();
         const allowed  = permsStr ? new Set(permsStr.split(',').map(s => s.trim())) : null;
@@ -6354,7 +6367,7 @@ ${inactiveSec}
         return;
       }
       const roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', diretor: 'Diretor' };
-      const roleClass = { admin: 'role-admin', gerente: 'role-gerente', vendedor: 'role-vendedor', consultor: 'role-consultor' };
+      const roleClass = { admin: 'role-admin', gerente: 'role-gerente', vendedor: 'role-vendedor', consultor: 'role-consultor', diretor: 'role-diretor' };
       list.innerHTML = filtered.map(u => {
         const managedBy = u.role === 'vendedor' && u.manager ? `· 👔 ${u.manager}` : '';
         const managedCount = u.role === 'gerente'
@@ -6584,7 +6597,10 @@ ${inactiveSec}
     };
 
     window._deleteRecord = async function(safeKey) {
-      if (!canDo('delete_record')) return toast('Sem permissão para excluir registros.', 'warning');
+      // Ação destrutiva: exige admin OU permissão explícita (sem backward compat)
+      const _hasDeletePerm = currentUser?.role === 'admin' ||
+        (currentUser?.permissions || '').split(',').map(s => s.trim()).includes('delete_record');
+      if (!_hasDeletePerm) return toast('Sem permissão para excluir registros.', 'warning');
       const gPreview = _recordGroups?.[safeKey];
       const confirmMsg = gPreview
         ? `Excluir registros de\n"${gPreview.clientName}" — ${gPreview.period}?\n\nEsta ação não pode ser desfeita.`
