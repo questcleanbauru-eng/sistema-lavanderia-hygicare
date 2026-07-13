@@ -3444,7 +3444,7 @@ ${kpisHtml}
       const totalKg  = cRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
       const totalPcs = cRecords.reduce((s, r) => s + (Number(r.capacity) || 0), 0);
 
-      const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '-';
+      const fmtDate = d => { if (!d) return '-'; const p = new Date(d.length <= 10 ? d + 'T00:00:00' : d); return isNaN(p) ? '-' : p.toLocaleDateString('pt-BR'); };
       const fmtKg   = n => Number(n).toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' kg';
       const periodStr = (startDate || endDate)
         ? `${startDate ? fmtDate(startDate) : 'início'} a ${endDate ? fmtDate(endDate) : 'hoje'}`
