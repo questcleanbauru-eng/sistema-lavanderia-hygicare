@@ -6832,7 +6832,8 @@ ${recipeSections}
         const [ly, lm] = monthsSorted[monthsSorted.length - 1][0].split('-').map(Number);
         _periodMonths = (ly - fy) * 12 + (lm - fm) + 1;
       }
-      const mediaMensal = _periodMonths > 0 ? totalKg / _periodMonths : 0;
+      const mediaMensal  = _periodMonths      > 0 ? totalKg / _periodMonths      : 0;
+      const mediaByDados = monthsSorted.length > 0 ? totalKg / monthsSorted.length : 0;
       const byMonthWithGrowth = monthsSorted.map(([, d], i) => {
         const prev   = i > 0 ? monthsSorted[i-1][1].kg : null;
         const growth = prev && prev > 0 ? ((d.kg - prev) / prev) * 100 : null;
@@ -6887,7 +6888,7 @@ ${recipeSections}
         periodLabel, clientLabel, sellerLabel,
         totalKg, totalRecords: totalSubmissoes, activeClients: clientsSet.size,
         cancelPct, ticketMedio: totalSubmissoes > 0 ? totalKg / totalSubmissoes : 0,
-        mediaMensal, crescimento,
+        mediaMensal, mediaByDados, crescimento,
         byClient, byProcess, byMonthWithGrowth, inactiveClients, byCity,
         today: new Date().toLocaleDateString('pt-BR')
       });
@@ -6906,7 +6907,7 @@ ${recipeSections}
         { label: 'Total Processado',    value: `${fmt(d.totalKg)} kg`,         color: '#111827' },
         { label: 'Relatórios Enviados', value: d.totalRecords,                  color: '#111827' },
         { label: 'Clientes Ativos',     value: d.activeClients,                 color: '#111827' },
-        { label: 'Média kg/mês',        value: `${fmt(d.mediaMensal)} kg`,      color: '#111827' },
+        { label: 'Média kg/mês',        html: `<div style="line-height:1.5">${fmt(d.mediaMensal)} kg <span style="font-size:0.65em;color:#6b7280;font-weight:400">÷ meses período</span></div><div style="line-height:1.4;font-size:0.88em;color:#b45309">${fmt(d.mediaByDados)} kg <span style="font-size:0.65em;color:#6b7280;font-weight:400">÷ meses c/ envio</span></div>`,  color: '#111827' },
         { label: 'Cancelamentos',       value: `${fmt(d.cancelPct, 1)}%`,       color: d.cancelPct > 10 ? '#c62828' : '#2e7d32' },
         d.crescimento !== null
           ? { label: 'Crescimento',     value: fmtPct(d.crescimento),           color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' }
@@ -6914,7 +6915,7 @@ ${recipeSections}
       ];
 
       const kpiHtml = kpiCards.map(k =>
-        `<div class="kpi-card"><div class="kpi-label">${esc(k.label)}</div><div class="kpi-value" style="color:${k.color}">${esc(String(k.value))}</div></div>`
+        `<div class="kpi-card"><div class="kpi-label">${esc(k.label)}</div><div class="kpi-value" style="color:${k.color}">${k.html || esc(String(k.value))}</div></div>`
       ).join('');
 
       const clientRows = d.byClient.map(([name, c], i) => {
@@ -6945,7 +6946,10 @@ ${recipeSections}
         return `<tr><td class="tl">${esc(m.label)}</td><td class="tc">${fmt(m.kg)} kg</td><td class="tc">${gHtml}</td></tr>`;
       }).join('');
       const monthFooter = d.byMonthWithGrowth.length > 1
-        ? `<tfoot><tr><td class="tl" style="font-weight:bold">Média do período</td><td class="tc" style="font-weight:bold;color:#b45309">${fmt(d.mediaMensal)} kg/mês</td><td></td></tr></tfoot>`
+        ? `<tfoot>
+            <tr><td class="tl" style="font-weight:bold;color:#374151">Média ÷ meses período</td><td class="tc" style="font-weight:bold;color:#374151">${fmt(d.mediaMensal)} kg/mês</td><td></td></tr>
+            <tr><td class="tl" style="font-weight:bold;color:#b45309">Média ÷ meses c/ envio</td><td class="tc" style="font-weight:bold;color:#b45309">${fmt(d.mediaByDados)} kg/mês</td><td></td></tr>
+           </tfoot>`
         : '';
 
       const cityRows = (d.byCity || []).map(([city, v], i) => {
