@@ -55,10 +55,15 @@ function escHtml(str) {
 function getPdfLogoHtml(onDark = true) {
   const b64 = localStorage.getItem('hygicare_logo_b64');
   if (b64) return `<img src="${b64}" style="height:38px;max-width:130px;object-fit:contain;display:block">`;
-  const clr = onDark ? '#fff' : '#1a3f5c';
-  const sub = onDark ? 'rgba(255,255,255,0.65)' : '#6b7280';
-  return `<div style="font-weight:900;font-size:16px;color:${clr};letter-spacing:.04em;line-height:1.1">HYGICARE<div style="font-size:8px;color:${sub};text-transform:uppercase;letter-spacing:.07em;font-weight:400;margin-top:1px">Lavanderia Industrial</div></div>`;
+  const name = localStorage.getItem('pdf_company_name') || 'HYGICARE';
+  const sub  = localStorage.getItem('pdf_company_subtitle') || 'Lavanderia Industrial';
+  const clr  = onDark ? '#fff' : getPdfColor();
+  const subClr = onDark ? 'rgba(255,255,255,0.65)' : '#6b7280';
+  return `<div style="font-weight:900;font-size:16px;color:${clr};letter-spacing:.04em;line-height:1.1">${escHtml(name)}<div style="font-size:8px;color:${subClr};text-transform:uppercase;letter-spacing:.07em;font-weight:400;margin-top:1px">${escHtml(sub)}</div></div>`;
 }
+
+// Cor principal dos PDFs — lida do localStorage (sinc. via aba Config do GAS)
+function getPdfColor() { return localStorage.getItem('pdf_color') || '#1a3f5c'; }
 
 // ---------- TOAST SYSTEM ----------
 function toast(msg, type = 'info', duration = 3500, action = null) {
@@ -875,6 +880,7 @@ ${printScript}
         if (screenId === 'screen-recipes')      await initRecipesScreen();
         if (screenId === 'screen-client-notes') await initClientNotesScreen();
         if (screenId === 'screen-pdf-reports')  await initPdfReportsScreen();
+        if (screenId === 'screen-pdf-config')   await initPdfConfigScreen();
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
@@ -1134,7 +1140,7 @@ ${kpisHtml}
 <div class="footer">Hygicare Lavanderia &nbsp;·&nbsp; Relatório Executivo &nbsp;·&nbsp; ${now}</div>
 </body></html>`;
 
-      win.document.write(html);
+      win.document.write(html.replaceAll('#1a3f5c', getPdfColor()));
       win.document.close();
     });
 
@@ -2087,7 +2093,8 @@ ${kpisHtml}
         const res = await r.json();
         addApiCount(1, 'read');
         const rows = res.data || [];
-        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days'];
+        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
+          'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text'];
         rows.forEach(row => {
           const key = String(row.chave);
           if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {
@@ -3224,7 +3231,9 @@ ${kpisHtml}
       }).join('');
     }
 
-    window.renderAlertsScreen = renderAlertsScreen;
+    window.renderAlertsScreen    = renderAlertsScreen;
+    window.initPdfReportsScreen  = initPdfReportsScreen;
+    window.initPdfConfigScreen   = initPdfConfigScreen;
 
     // =====================================================
     // TELA VAZÃO
@@ -3470,15 +3479,6 @@ ${kpisHtml}
         if (el && !el.value) el.value = val;
       });
 
-      // Logo preview
-      const _logoPreview = document.getElementById('pdf-logo-preview');
-      if (_logoPreview) {
-        const _b64 = localStorage.getItem('hygicare_logo_b64');
-        _logoPreview.innerHTML = _b64
-          ? `<img src="${_b64}" style="max-width:100%;max-height:100%;object-fit:contain">`
-          : 'Sem logo';
-      }
-
       // Preset date buttons (uma única vez por tela)
       if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
         document.getElementById('screen-pdf-reports').dataset.presetsWired = '1';
@@ -3506,29 +3506,94 @@ ${kpisHtml}
           const [startId, endId] = map[grp] || [];
           if (startId) { document.getElementById(startId).value = s; document.getElementById(endId).value = end; }
         });
-
-        // Logo upload
-        document.getElementById('pdf-logo-input')?.addEventListener('change', e => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => {
-            localStorage.setItem('hygicare_logo_b64', reader.result);
-            const prev = document.getElementById('pdf-logo-preview');
-            if (prev) prev.innerHTML = `<img src="${reader.result}" style="max-width:100%;max-height:100%;object-fit:contain">`;
-            toast('Logo salvo! Será exibido em todos os PDFs.', 'success');
-          };
-          reader.readAsDataURL(file);
-        });
-        document.getElementById('pdf-logo-clear')?.addEventListener('click', () => {
-          localStorage.removeItem('hygicare_logo_b64');
-          const prev = document.getElementById('pdf-logo-preview');
-          if (prev) prev.innerHTML = 'Sem logo';
-          const inp = document.getElementById('pdf-logo-input');
-          if (inp) inp.value = '';
-          toast('Logo removido.', 'info');
-        });
       }
+    }
+
+    // Comprime imagem antes de salvar no localStorage / GAS
+    function _compressImage(file, maxW, maxH, quality) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = ev => {
+          const img = new Image();
+          img.onerror = reject;
+          img.onload = () => {
+            const scale = Math.min(1, maxW / img.width, maxH / img.height);
+            const w = Math.round(img.width * scale);
+            const h = Math.round(img.height * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Tela de configurações de layout dos PDFs
+    async function initPdfConfigScreen() {
+      const b64 = localStorage.getItem('hygicare_logo_b64');
+      const prev = document.getElementById('pdf-cfg-logo-preview');
+      if (prev) prev.innerHTML = b64
+        ? `<img src="${b64}" style="max-width:100%;max-height:100%;object-fit:contain">`
+        : '<span style="color:var(--text-muted,#9ca3af);font-size:.82rem">Sem logo</span>';
+
+      const colorEl  = document.getElementById('pdf-cfg-color');
+      const nameEl   = document.getElementById('pdf-cfg-company-name');
+      const subEl    = document.getElementById('pdf-cfg-company-sub');
+      const footerEl = document.getElementById('pdf-cfg-footer-text');
+      if (colorEl)  colorEl.value  = localStorage.getItem('pdf_color') || '#1a3f5c';
+      if (nameEl)   nameEl.value   = localStorage.getItem('pdf_company_name') || 'HYGICARE';
+      if (subEl)    subEl.value    = localStorage.getItem('pdf_company_subtitle') || 'Lavanderia Industrial';
+      if (footerEl) footerEl.value = localStorage.getItem('pdf_footer_text') || '';
+
+      const screen = document.getElementById('screen-pdf-config');
+      if (!screen || screen.dataset.cfgWired) return;
+      screen.dataset.cfgWired = '1';
+
+      document.getElementById('pdf-cfg-logo-input')?.addEventListener('change', async e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const compressed = await _compressImage(file, 400, 160, 0.9);
+          localStorage.setItem('hygicare_logo_b64', compressed);
+          callGAS('upsert', 'Config', { chave: 'hygicare_logo_b64', valor: compressed });
+          const prev = document.getElementById('pdf-cfg-logo-preview');
+          if (prev) prev.innerHTML = `<img src="${compressed}" style="max-width:100%;max-height:100%;object-fit:contain">`;
+          toast('Logo salvo e sincronizado com todos os usuários!', 'success');
+        } catch { toast('Erro ao processar imagem.', 'error'); }
+      });
+
+      document.getElementById('pdf-cfg-logo-clear')?.addEventListener('click', () => {
+        localStorage.removeItem('hygicare_logo_b64');
+        callGAS('upsert', 'Config', { chave: 'hygicare_logo_b64', valor: '' });
+        const prev = document.getElementById('pdf-cfg-logo-preview');
+        if (prev) prev.innerHTML = '<span style="color:var(--text-muted,#9ca3af);font-size:.82rem">Sem logo</span>';
+        const inp = document.getElementById('pdf-cfg-logo-input');
+        if (inp) inp.value = '';
+        toast('Logo removido.', 'info', 2000);
+      });
+
+      document.getElementById('pdf-cfg-save')?.addEventListener('click', () => {
+        const color  = document.getElementById('pdf-cfg-color')?.value  || '#1a3f5c';
+        const name   = (document.getElementById('pdf-cfg-company-name')?.value  || '').trim() || 'HYGICARE';
+        const sub    = (document.getElementById('pdf-cfg-company-sub')?.value   || '').trim() || 'Lavanderia Industrial';
+        const footer = (document.getElementById('pdf-cfg-footer-text')?.value   || '').trim();
+
+        localStorage.setItem('pdf_color', color);
+        localStorage.setItem('pdf_company_name', name);
+        localStorage.setItem('pdf_company_subtitle', sub);
+        localStorage.setItem('pdf_footer_text', footer);
+
+        callGAS('upsert', 'Config', { chave: 'pdf_color',            valor: color  });
+        callGAS('upsert', 'Config', { chave: 'pdf_company_name',     valor: name   });
+        callGAS('upsert', 'Config', { chave: 'pdf_company_subtitle', valor: sub    });
+        callGAS('upsert', 'Config', { chave: 'pdf_footer_text',      valor: footer });
+
+        toast('Configurações de PDF salvas e sincronizadas!', 'success');
+      });
     }
 
     document.getElementById('btn-pdf-client')?.addEventListener('click', async () => {
@@ -3628,7 +3693,7 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <div class="footer">HYGICARE Lavanderia Industrial · Ficha do Cliente · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
 
-      w.document.open(); w.document.write(html); w.document.close();
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
 
     // =====================================================
@@ -3684,7 +3749,7 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <tbody>${rows}</tbody></table>
 <div class="footer">HYGICARE Lavanderia Industrial · Relatório de Vazão · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
-      w.document.open(); w.document.write(html); w.document.close();
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
 
     // =====================================================
@@ -3761,7 +3826,7 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;paddi
 </table>
 <div class="footer">HYGICARE Lavanderia Industrial · Relatório Agrupado · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
-      w.document.open(); w.document.write(html); w.document.close();
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
 
     // =====================================================
@@ -3813,7 +3878,7 @@ ${client.city?`<div style="font-size:10px;color:#6b7280;margin-top:2px">📍 ${e
 ${machSections}
 <div class="footer">HYGICARE Lavanderia Industrial · Máquinas e Processos · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
-      w.document.open(); w.document.write(html); w.document.close();
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
 
     async function initHomeScreen() {
@@ -5704,7 +5769,7 @@ ${recipeSections}
         if (!g) return;
         const win = window.open('', '_blank', 'width=1000,height=750');
         if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
-        win.document.write(buildReportHtml(g, true));
+        win.document.write(buildReportHtml(g, true).replaceAll('#1a3f5c', getPdfColor()));
         win.document.close();
       };
 
@@ -5714,7 +5779,7 @@ ${recipeSections}
         if (!g) return;
         const win = window.open('', '_blank', 'width=1000,height=750');
         if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
-        win.document.write(buildReportHtml(g, true));
+        win.document.write(buildReportHtml(g, true).replaceAll('#1a3f5c', getPdfColor()));
         win.document.close();
         toast('Abrindo relatório — use Imprimir → Salvar como PDF', 'info');
       };
@@ -6624,7 +6689,7 @@ ${recipeSections}
       });
 
       w.document.open();
-      w.document.write(html);
+      w.document.write(html.replaceAll('#1a3f5c', getPdfColor()));
       w.document.close();
     }
 

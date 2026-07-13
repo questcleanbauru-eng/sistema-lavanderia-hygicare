@@ -908,21 +908,8 @@
         <section id="screen-pdf-reports" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title"><h2>📄 Relatórios PDF</h2></div>
-          </div>
-
-          <!-- Logo da empresa -->
-          <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.3rem;font-size:0.95rem;color:#1a3f5c">🏷️ Logo da Empresa nos PDFs</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.75rem">Faça upload do logo para aparecer em todos os relatórios PDF gerados.</p>
-            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
-              <div id="pdf-logo-preview" style="width:110px;height:48px;border:1.5px dashed #d1d5db;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:#9ca3af;padding:4px;background:#f9fafb;flex-shrink:0">Sem logo</div>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
-                <label class="btn-primary" style="cursor:pointer;font-size:0.83rem;padding:0.38rem 0.8rem;display:inline-flex;align-items:center;gap:0.3rem">
-                  📁 Carregar imagem
-                  <input type="file" id="pdf-logo-input" accept="image/*" style="display:none">
-                </label>
-                <button id="pdf-logo-clear" class="btn-secondary" style="font-size:0.83rem">✕ Remover</button>
-              </div>
+            <div class="screen-actions">
+              <button class="btn-secondary" style="font-size:0.83rem" onclick="show('screen-pdf-config');initPdfConfigScreen()">⚙️ Layout</button>
             </div>
           </div>
 
@@ -1053,6 +1040,67 @@
             </div>
           </div>
         </section>
+
+        <!-- ===== TELA CONFIG PDF ===== -->
+        <section id="screen-pdf-config" class="screen hidden">
+          <div class="screen-header">
+            <div class="screen-title"><h2>⚙️ Layout dos PDFs</h2></div>
+            <div class="screen-actions">
+              <button class="btn-secondary" style="font-size:0.83rem" onclick="show('screen-pdf-reports');initPdfReportsScreen()">← Relatórios</button>
+            </div>
+          </div>
+
+          <!-- Logo -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.3rem;font-size:0.95rem">🏷️ Logo da Empresa</h3>
+            <p style="font-size:0.8rem;color:var(--text-muted,#64748b);margin:0 0 0.75rem">Carregada uma vez e sincronizada com todos os usuários via Google Sheets.</p>
+            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+              <div id="pdf-cfg-logo-preview" style="width:160px;height:64px;border:1.5px dashed #d1d5db;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:6px;background:#f9fafb;flex-shrink:0;overflow:hidden">
+                <span style="color:#9ca3af;font-size:.82rem">Sem logo</span>
+              </div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                <label class="btn-primary" style="cursor:pointer;font-size:0.83rem;padding:0.38rem 0.8rem;display:inline-flex;align-items:center;gap:0.3rem">
+                  📁 Carregar imagem
+                  <input type="file" id="pdf-cfg-logo-input" accept="image/*" style="display:none">
+                </label>
+                <button id="pdf-cfg-logo-clear" class="btn-secondary" style="font-size:0.83rem">✕ Remover</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Identidade -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.75rem;font-size:0.95rem">🎨 Identidade Visual</h3>
+            <div class="form-row" style="margin-bottom:0.75rem">
+              <div class="form-field">
+                <label>Cor principal dos PDFs</label>
+                <div style="display:flex;gap:0.6rem;align-items:center">
+                  <input type="color" id="pdf-cfg-color" value="#1a3f5c" style="width:48px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px">
+                  <span style="font-size:0.8rem;color:var(--text-muted,#6b7280)">Cor dos cabeçalhos e destaques</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label>Nome da empresa</label>
+                <input id="pdf-cfg-company-name" class="form-input" placeholder="HYGICARE" maxlength="60">
+              </div>
+              <div class="form-field">
+                <label>Subtítulo</label>
+                <input id="pdf-cfg-company-sub" class="form-input" placeholder="Lavanderia Industrial" maxlength="80">
+              </div>
+            </div>
+            <div class="form-field" style="margin-top:0.75rem">
+              <label>Rodapé extra (endereço, CNPJ, etc.)</label>
+              <textarea id="pdf-cfg-footer-text" class="form-input" rows="2" placeholder="Ex: Rua Exemplo, 123 — Curitiba/PR · CNPJ 00.000.000/0001-00" maxlength="200" style="resize:vertical;min-height:56px"></textarea>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end">
+            <button id="pdf-cfg-save" class="btn-primary">💾 Salvar e Sincronizar</button>
+          </div>
+        </section>
+
       </main>
 
       <!-- FAB — Registrar -->
