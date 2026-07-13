@@ -1857,3 +1857,31 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .pca-grid { grid-template-columns: 1fr; }
 }
 
+/* ===== NAV DESKTOP — compacto para caber todos os itens em telas menores ===== */
+@media (max-width: 1380px) and (min-width: 641px) {
+  .nav-btn { padding: 0.5rem 0.65rem; font-size: 0.78rem; }
+}
+@media (max-width: 1100px) and (min-width: 641px) {
+  .nav-btn { padding: 0.45rem 0.45rem; font-size: 0.72rem; }
+}
+
+/* ===== TELA RELATÓRIOS PDF — inputs empilhados no mobile ===== */
+@media (max-width: 640px) {
+  #screen-pdf-reports .card > div[style*="flex"] {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  #screen-pdf-reports .form-field {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+  }
+  #screen-pdf-reports input[type="date"],
+  #screen-pdf-reports select.form-input {
+    width: 100% !important;
+  }
+  #screen-pdf-reports .btn-primary {
+    width: 100%;
+    margin-top: 0.15rem;
+  }
+}
