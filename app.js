@@ -716,7 +716,22 @@ ${printScript}
     const screens = document.querySelectorAll('.screen');
     const navBtns = document.querySelectorAll('.nav-btn');
 
+    function _clearEditMode() {
+      if (!_editingRecord) return;
+      _editingRecord = null;
+      prodClientSelect.disabled = false;
+      const banner = document.getElementById('edit-mode-banner');
+      if (banner) banner.style.display = 'none';
+      const titleEl = document.getElementById('screen-form-title');
+      if (titleEl) titleEl.textContent = '📝 Gerar Relatório';
+      const cardTitle = document.getElementById('prod-card-title');
+      if (cardTitle) cardTitle.textContent = 'Novo Registro';
+      const saveBtn = document.getElementById('save-production');
+      if (saveBtn) saveBtn.textContent = '💾 Salvar';
+    }
+
     function show(id) {
+      if (id !== 'screen-form') _clearEditMode();
       screens.forEach(s => s.classList.add('hidden'));
       document.getElementById(id).classList.remove('hidden');
       navBtns.forEach(b => {
@@ -827,6 +842,7 @@ ${printScript}
     // Estado compartilhado entre funções (sem poluir window)
     let _shareCtx      = null;
     let _recordGroups  = {};
+    let _editingRecord = null;
     let _saving        = false;
 
     function setSaving(active, triggerBtn = null, loadingText = '⏳ Salvando...') {
@@ -2933,36 +2949,88 @@ ${kpisHtml}
     async function _initFormScreen() {
       const periodoOn = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
       const endField  = document.getElementById('prod-date-end-field');
-      if (endField) endField.style.display = periodoOn ? '' : 'none';
+      const startEl   = document.getElementById('prod-date-start');
+      const endEl     = document.getElementById('prod-date-end');
+      const banner    = document.getElementById('edit-mode-banner');
+      const saveBtn   = document.getElementById('save-production');
+      const titleEl   = document.getElementById('screen-form-title');
+      const cardTitle = document.getElementById('prod-card-title');
 
-      const today    = new Date().toISOString().slice(0, 10);
-      const startEl  = document.getElementById('prod-date-start');
-      const endEl    = document.getElementById('prod-date-end');
-      if (periodoOn) {
-        if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
-        if (endEl   && !endEl.value)   endEl.value   = today;
+      if (_editingRecord) {
+        // ── MODO EDIÇÃO ─────────────────────────────────────
+        if (titleEl)   titleEl.textContent  = '✏️ Editar Relatório';
+        if (cardTitle) cardTitle.textContent = 'Editar Registro';
+        if (saveBtn)   saveBtn.textContent   = '💾 Salvar Edição';
+        if (banner) {
+          banner.style.display = '';
+          banner.innerHTML = `✏️ Editando: <strong>${escHtml(_editingRecord.clientName)}</strong> &nbsp;·&nbsp; ${escHtml(_editingRecord.period)}&nbsp;&nbsp;<button onclick="window._cancelEdit()" style="font-size:0.8rem;padding:2px 10px;border:1px solid #d97706;border-radius:6px;background:#fff7ed;color:#92400e;cursor:pointer;font-weight:600;margin-left:0.5rem">✕ Cancelar edição</button>`;
+        }
+
+        // Pré-selecionar cliente (bloqueado)
+        prodClientSelect.value    = String(_editingRecord.clientId);
+        prodClientSelect.disabled = true;
+
+        // Datas do registro
+        if (startEl) startEl.value = _editingRecord.dateStartRaw || '';
+        const hasRange = _editingRecord.dateEndRaw && _editingRecord.dateEndRaw !== _editingRecord.dateStartRaw;
+        if (endField) endField.style.display = hasRange ? '' : 'none';
+        if (endEl)    endEl.value = hasRange ? (_editingRecord.dateEndRaw || '') : '';
+
+        // Renderiza todas as máquinas + processos
+        await renderMachinesAndProcesses(_editingRecord.clientId);
+
+        // Pré-preenche valores existentes
+        _editingRecord.rows.forEach(row => {
+          const processRow = document.querySelector(`.process-row[data-process-id="${row.procId}"]`);
+          if (!processRow) return;
+          const execIn = processRow.querySelector('[name="executed"]');
+          const cancIn = processRow.querySelector('[name="canceled"]');
+          if (execIn) { execIn.value = row.executed; execIn.dispatchEvent(new Event('input')); }
+          if (cancIn) { cancIn.value = row.canceled; cancIn.dispatchEvent(new Event('input')); }
+        });
+
       } else {
-        if (startEl && !startEl.value) startEl.value = today;
-        if (endEl) endEl.value = '';
-      }
+        // ── MODO NOVO REGISTRO ──────────────────────────────
+        if (titleEl)   titleEl.textContent  = '📝 Gerar Relatório';
+        if (cardTitle) cardTitle.textContent = 'Novo Registro';
+        if (saveBtn)   saveBtn.textContent   = '💾 Salvar';
+        if (banner)    banner.style.display  = 'none';
+        prodClientSelect.disabled = false;
+        if (endField) endField.style.display = periodoOn ? '' : 'none';
 
-      const clientId = Number(document.getElementById('prod-client-select')?.value);
-      if (clientId) await renderMachinesAndProcesses(clientId);
+        const today = new Date().toISOString().slice(0, 10);
+        if (periodoOn) {
+          if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
+          if (endEl   && !endEl.value)   endEl.value   = today;
+        } else {
+          if (startEl && !startEl.value) startEl.value = today;
+          if (endEl) endEl.value = '';
+        }
+
+        const clientId = Number(prodClientSelect.value);
+        if (clientId) await renderMachinesAndProcesses(clientId);
+      }
     }
+
+    window._cancelEdit = function() {
+      _clearEditMode();
+      show('screen-reports');
+      renderRecordsList();
+    };
 
     document.getElementById('save-production').addEventListener('click', async () => {
       if (!canDo('send_record')) return toast('Sem permissão para registrar produção.', 'error');
-      const clientId = Number(prodClientSelect.value);
+      const clientId  = Number(prodClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
-      const periodoOn = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
+      const isEditMode = !!_editingRecord;
+      const editGroup  = _editingRecord;
+      const periodoOn  = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
       let dateStart = document.getElementById('prod-date-start').value;
-      let dateEnd   = periodoOn ? document.getElementById('prod-date-end').value : dateStart;
+      let dateEnd   = (periodoOn || isEditMode) ? (document.getElementById('prod-date-end').value || dateStart) : dateStart;
       if (!dateStart) return toast('Preencha a data', 'warning');
-      if (periodoOn && !dateEnd) return toast('Preencha a data fim', 'warning');
 
-      // Auto-corrigir sobreposição: se date_start bate com o date_end do último
-      // lote salvo para este cliente, avança 1 dia automaticamente
-      {
+      // Auto-corrigir sobreposição apenas em modo criação
+      if (!isEditMode) {
         const prev = (await dbGetAll_raw('records'))
           .filter(r => Number(r.client_id) === clientId && r.date_end);
         if (prev.length) {
@@ -3025,6 +3093,19 @@ ${kpisHtml}
       logLine('📋', `${rows.length} linha(s) a enviar...`);
 
       try {
+        // ── MODO EDIÇÃO: apaga registros antigos antes de reinserir ──
+        if (isEditMode && editGroup) {
+          const oldRecs = (await dbGetAll_raw('records')).filter(r =>
+            Number(r.client_id) === editGroup.clientId &&
+            (r.date_start || '').slice(0, 10) === editGroup.dateStartRaw &&
+            (r.date_end   || '').slice(0, 10) === editGroup.dateEndRaw
+          );
+          logLine('🗑️', `Removendo ${oldRecs.length} linha(s) antigas...`);
+          for (const r of oldRecs) {
+            await dbDelete('records', r.id);
+            await deleteSheetDB(SHEETS.RECORDS, r.id);
+          }
+        }
         let synced = 0;
         for (const r of rows) {
           const machine = allMachines.find(m => Number(m.id) === Number(r.machine_id));
@@ -3056,13 +3137,20 @@ ${kpisHtml}
         localStorage.setItem('lastSyncTime', new Date().toISOString());
         localStorage.setItem('hygicare_last_client', String(clientId));
         await updateSyncStatus();
-        await renderRecordsList();
 
         const allClients = await dbGetAll_raw('clients');
         const c = allClients.find(c => Number(c.id) === clientId);
         const clientName = c?.name || `#${clientId}`;
 
-        toast(`✅ ${synced} registro(s) enviados com sucesso!`, 'success', 5000);
+        if (isEditMode) {
+          _clearEditMode();
+          toast(`✅ Edição salva com sucesso!`, 'success', 5000);
+          await renderRecordsList();
+          show('screen-reports');
+        } else {
+          await renderRecordsList();
+          toast(`✅ ${synced} registro(s) enviados com sucesso!`, 'success', 5000);
+        }
 
         // Notificação ao vendedor — opt-in via toast (WhatsApp + E-mail)
         const sellerEmail = c?.email_seller || localStorage.getItem('hygicare_cfg_notify_email') || '';
@@ -5765,7 +5853,7 @@ ${recipeSections}
 
         const key = `${clientName}|||${period}`;
         if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
-        grouped[key].rows.push({ machineName, procName, executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
+        grouped[key].rows.push({ machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
 
@@ -7216,20 +7304,9 @@ ${inactiveSec}
       if (!canDo('edit_record')) return toast('Sem permissão para editar registros.', 'error');
       const g = _recordGroups?.[safeKey];
       if (!g) return toast('Registro não encontrado', 'error');
-      document.getElementById('edit-record-key').value = safeKey;
-      const [ds, de] = (g.period || '').split(' → ');
-      document.getElementById('edit-record-date-start').value = ds?.trim() || '';
-      document.getElementById('edit-record-date-end').value   = de?.trim() || '';
-      // Montar linhas editáveis
-      document.getElementById('edit-record-rows').innerHTML = g.rows.map((row, i) => `
-        <div class="form-row" style="background:#f8fafc;border-radius:8px;padding:0.6rem;margin-bottom:0.4rem">
-          <div class="form-field" style="flex:2"><label>Máquina/Processo</label>
-            <input readonly value="${row.machineName} / ${row.procName}" style="background:#e2e8f0" /></div>
-          <div class="form-field"><label>Executados</label><input type="number" id="edit-row-exec-${i}" value="${row.executed}" /></div>
-          <div class="form-field"><label>Cancelados</label><input type="number" id="edit-row-canc-${i}" value="${row.canceled}" /></div>
-        </div>
-      `).join('');
-      document.getElementById('modal-edit-record').classList.remove('hidden');
+      _editingRecord = { safeKey, ...g };
+      show('screen-form');
+      await _initFormScreen();
     };
 
     window._deleteRecord = async function(safeKey, el) {
