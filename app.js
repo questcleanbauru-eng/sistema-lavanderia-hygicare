@@ -893,11 +893,24 @@ ${printScript}
       prevCutoff.setDate(prevCutoff.getDate() - days);
       const prevCutoffISO = prevCutoff.toISOString().slice(0, 10);
 
-      const [records, clients, recipes] = await Promise.all([
+      let [records, clients, recipes] = await Promise.all([
         dbGetAll_raw('records'),
         dbGetAll_raw('clients'),
         dbGetAll_raw('recipes'),
       ]);
+
+      // Filtro por papel — gerente/consultor vê só seus vendedores; vendedor vê só seus clientes
+      if (currentUser?.role === 'gerente' || currentUser?.role === 'consultor') {
+        const managed = getManagedSellerNames();
+        const myIds = new Set(clients.filter(c => managed.has((c.seller||'').toLowerCase())).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      } else if (currentUser?.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName || '').toLowerCase();
+        const myIds = new Set(clients.filter(c => (c.seller||'').toLowerCase() === sellerName).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      }
 
       // Formatação pt-BR
       const fmtKg  = n => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' kg';
