@@ -1857,12 +1857,15 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .pca-grid { grid-template-columns: 1fr; }
 }
 
-/* ===== NAV DESKTOP — compacto para caber todos os itens em telas menores ===== */
-@media (max-width: 1380px) and (min-width: 641px) {
-  .nav-btn { padding: 0.5rem 0.65rem; font-size: 0.78rem; }
+/* ===== NAV DESKTOP — compacto para caber todos os itens ===== */
+@media (max-width: 1600px) and (min-width: 641px) {
+  .nav-btn { padding: 0.48rem 0.55rem; font-size: 0.76rem; }
+}
+@media (max-width: 1300px) and (min-width: 641px) {
+  .nav-btn { padding: 0.44rem 0.42rem; font-size: 0.71rem; }
 }
 @media (max-width: 1100px) and (min-width: 641px) {
-  .nav-btn { padding: 0.45rem 0.45rem; font-size: 0.72rem; }
+  .nav-btn { padding: 0.42rem 0.35rem; font-size: 0.67rem; }
 }
 
 /* ===== TELA RELATÓRIOS PDF — inputs empilhados no mobile ===== */
