@@ -3583,7 +3583,7 @@ ${kpisHtml}
        ['pdf-client-start',  monthStart],['pdf-client-end',  today],
        ['pdf-group-start',   monthStart],['pdf-group-end',   today]].forEach(([id, val]) => {
         const el = document.getElementById(id);
-        if (el && !el.value) el.value = val;
+        if (el) el.value = val;
       });
 
       // Preset date buttons (uma única vez por tela)
