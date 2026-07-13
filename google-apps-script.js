@@ -480,18 +480,21 @@ function doPost(e) {
       items.forEach(item => {
         if (!item.created_at && !isConfig) item.created_at = new Date().toISOString();
 
-        // Config: upsert por 'chave'
+        // Config: upsert por 'chave' — deduplica linhas com mesma chave
         if (isConfig && item.chave) {
           const allData  = sheet.getDataRange().getValues();
           const chaveIdx = allData.length > 0 ? allData[0].map(String).indexOf('chave') : -1;
-          let rowNum = -1;
+          const matchRows = []; // todos os números de linha (1-based) com essa chave
           if (chaveIdx >= 0) {
             for (let i = 1; i < allData.length; i++) {
-              if (String(allData[i][chaveIdx]) === String(item.chave)) { rowNum = i + 1; break; }
+              if (String(allData[i][chaveIdx]) === String(item.chave)) matchRows.push(i + 1);
             }
           }
-          if (rowNum > 0) {
-            sheet.getRange(rowNum, 1, 1, headers.length).setValues([objToRow(headers, item)]);
+          if (matchRows.length > 0) {
+            // Atualiza a primeira linha encontrada
+            sheet.getRange(matchRows[0], 1, 1, headers.length).setValues([objToRow(headers, item)]);
+            // Remove duplicatas em ordem reversa (evita deslocamento de índices)
+            for (let d = matchRows.length - 1; d >= 1; d--) sheet.deleteRow(matchRows[d]);
             results.push({ chave: item.chave, op: 'updated' });
           } else {
             sheet.appendRow(objToRow(headers, item));
