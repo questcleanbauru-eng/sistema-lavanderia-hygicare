@@ -28,7 +28,7 @@ const HEADERS = {
   Processos:      ['id','name','machine_id','capacity','created_at'],
   Registros:      ['id','client_id','machine_id','process_id','executed',
                    'canceled','capacity','total','date_start','date_end',
-                   'created_at','synced_at'],
+                   'price_kg','created_at','synced_at'],
   Usuarios:       ['id','name','username','password','role','email',
                    'active','sellerName','manager','permissions','sellers_access','created_at'],
   Vazoes:         ['id','machine_id','name','unit','created_at'],
@@ -38,6 +38,7 @@ const HEADERS = {
                     'replaces_id','edit_notes','rejection_notes',
                     'approved_by','approved_at','steps','created_at'],
   ReceitaProdutos: ['id','name','category','created_at'],
+  ClienteNotas:    ['id','client_id','type','title','content','date','created_by','created_at','synced_at'],
   Config:          ['chave','valor'],
 };
 
@@ -225,6 +226,7 @@ const SHEET_LABELS = {
   VazaoRegistros:  'Leitura de Vazão',
   Receitas:        'Receita',
   ReceitaProdutos: 'Produto de Receita',
+  ClienteNotas:    'Nota de Cliente',
   Config:          'Configuração',
 };
 

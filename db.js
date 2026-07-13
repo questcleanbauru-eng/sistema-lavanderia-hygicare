@@ -1,6 +1,6 @@
 // db.js - simples wrapper IndexedDB usando idb-like minimal
 const DB_NAME = 'lavanderia_db_v1';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 let dbPromise;
 
 function openDB(){
@@ -20,6 +20,7 @@ function openDB(){
       if(!db.objectStoreNames.contains('vazao_records'))  db.createObjectStore('vazao_records',  {keyPath: 'id', autoIncrement: true});
       if(!db.objectStoreNames.contains('recipes'))        db.createObjectStore('recipes',        {keyPath: 'id', autoIncrement: true});
       if(!db.objectStoreNames.contains('recipe_products'))db.createObjectStore('recipe_products',{keyPath: 'id', autoIncrement: true});
+      if(!db.objectStoreNames.contains('client_notes'))   db.createObjectStore('client_notes',   {keyPath: 'id', autoIncrement: true});
 
       // v4 → v5: popular machine_ids a partir de machine_id nas receitas existentes
       if (e.oldVersion >= 1 && e.oldVersion < 5 && db.objectStoreNames.contains('recipes')) {
