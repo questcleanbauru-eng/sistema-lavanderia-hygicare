@@ -910,9 +910,25 @@
             <div class="screen-title"><h2>📄 Relatórios PDF</h2></div>
           </div>
 
+          <!-- Logo da empresa -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.3rem;font-size:0.95rem;color:#1a3f5c">🏷️ Logo da Empresa nos PDFs</h3>
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.75rem">Faça upload do logo para aparecer em todos os relatórios PDF gerados.</p>
+            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+              <div id="pdf-logo-preview" style="width:110px;height:48px;border:1.5px dashed #d1d5db;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:#9ca3af;padding:4px;background:#f9fafb;flex-shrink:0">Sem logo</div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                <label class="btn-primary" style="cursor:pointer;font-size:0.83rem;padding:0.38rem 0.8rem;display:inline-flex;align-items:center;gap:0.3rem">
+                  📁 Carregar imagem
+                  <input type="file" id="pdf-logo-input" accept="image/*" style="display:none">
+                </label>
+                <button id="pdf-logo-clear" class="btn-secondary" style="font-size:0.83rem">✕ Remover</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Relatório Executivo -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#1e40af">📊 Relatório Executivo</h3>
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;color:#1a3f5c">📊 Relatório Executivo</h3>
             <p style="font-size:0.82rem;color:#64748b;margin:0 0 0.9rem">KPIs gerais, ranking de clientes, performance por vendedor e receitas pendentes.</p>
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">
               <button id="btn-pdf-executive" class="btn-primary" style="font-size:0.88rem">📄 Gerar PDF</button>

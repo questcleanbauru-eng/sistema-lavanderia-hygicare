@@ -51,6 +51,15 @@ function escHtml(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Retorna HTML do logo para PDFs. onDark=true → texto branco (para fundo escuro)
+function getPdfLogoHtml(onDark = true) {
+  const b64 = localStorage.getItem('hygicare_logo_b64');
+  if (b64) return `<img src="${b64}" style="height:38px;max-width:130px;object-fit:contain;display:block">`;
+  const clr = onDark ? '#fff' : '#1a3f5c';
+  const sub = onDark ? 'rgba(255,255,255,0.65)' : '#6b7280';
+  return `<div style="font-weight:900;font-size:16px;color:${clr};letter-spacing:.04em;line-height:1.1">HYGICARE<div style="font-size:8px;color:${sub};text-transform:uppercase;letter-spacing:.07em;font-weight:400;margin-top:1px">Lavanderia Industrial</div></div>`;
+}
+
 // ---------- TOAST SYSTEM ----------
 function toast(msg, type = 'info', duration = 3500, action = null) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
@@ -524,15 +533,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
-.hdr{display:flex;align-items:center;background:#1a237e;color:#fff;min-height:60px;max-height:60px;padding:0 10px;gap:10px;margin-bottom:8px}
+.hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:60px;max-height:60px;padding:0 10px;gap:10px;margin-bottom:8px}
 .hdr-logo{width:40px;height:40px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;text-align:center;line-height:1.3;flex-shrink:0;letter-spacing:.5px}
 .hdr-c{flex:1;text-align:center;line-height:1.3}
 .hdr-c h1{font-size:18px;font-weight:bold;color:#fff;letter-spacing:.3px}
 .hdr-info{font-size:10px;color:#c5cae9;margin-top:4px}
 .hdr-sub{font-size:9px;color:#9fa8da;margin-top:2px}
 .sec{margin-bottom:8px;border:1px solid #ddd;page-break-inside:avoid}
-.sec-hd{background:#1a237e;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
-.blue{background:#1a237e}.gray{background:#37474f}
+.sec-hd{background:#1a3f5c;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
+.blue{background:#1a3f5c}.gray{background:#37474f}
 .sec-body{display:flex;align-items:stretch}
 .tbl-area{flex:0 0 75%;width:75%}
 .chart-area{flex:0 0 25%;width:25%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 8px;border-left:1px solid #ddd;gap:5px}
@@ -551,13 +560,13 @@ tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #d
 .maint-txt{color:#9e9e9e;font-style:italic;font-size:10px;text-align:center;padding:20px 4px}
 .price-row{display:flex;justify-content:space-between;align-items:center;padding:5px 14px;border-bottom:1px solid #eee;font-size:10px}
 .price-row:last-child{border-bottom:none}
-.rpt-footer{margin-top:10px;border-top:2px solid #1a237e;padding:7px 0 0;text-align:center;font-size:8px;color:#555;line-height:1.7;page-break-inside:avoid}
-.rpt-footer strong{color:#1a237e;font-size:8.5px}
+.rpt-footer{margin-top:10px;border-top:2px solid #1a3f5c;padding:7px 0 0;text-align:center;font-size:8px;color:#555;line-height:1.7;page-break-inside:avoid}
+.rpt-footer strong{color:#1a3f5c;font-size:8.5px}
 @media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:10mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
 @media screen{
-  .action-bar{position:sticky;top:0;z-index:999;background:#1a237e;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .action-bar{position:sticky;top:0;z-index:999;background:#1a3f5c;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
   .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
-  .btn-close-rpt{background:#fff;color:#1a237e}
+  .btn-close-rpt{background:#fff;color:#1a3f5c}
   .btn-print-rpt{background:#4caf50;color:#fff}
   .action-bar-label{color:#c5cae9;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
 }
@@ -584,13 +593,12 @@ tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #d
   <span class="action-bar-label">${esc(g.clientName)} · ${esc(g.period)}</span>
 </div>
 <div class="hdr">
-  <div class="hdr-logo" style="width:50px;height:42px;font-size:7px;letter-spacing:.3px">HYGICARE</div>
+  <div style="flex-shrink:0">${getPdfLogoHtml(true)}</div>
   <div class="hdr-c">
     <h1>${esc(g.clientName)}</h1>
     <div class="hdr-info">Período: ${esc(g.period)}${daysLabel?'&nbsp;&nbsp;|&nbsp;&nbsp;'+daysLabel:''}</div>
     <div class="hdr-sub">Relatório de Produção &nbsp;·&nbsp; Emitido em ${today} &nbsp;·&nbsp; Hygicare Lavanderia</div>
   </div>
-  <div class="hdr-logo" style="width:50px;height:42px;font-size:7px;letter-spacing:.3px">HC LAV</div>
 </div>
 
 ${sectionsHtml}
@@ -1036,7 +1044,7 @@ ${printScript}
             <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;min-width:120px">
               <div style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden">
-                  <div style="width:${barW}%;background:#374151;height:100%;border-radius:4px"></div>
+                  <div style="width:${barW}%;background:#1a3f5c;height:100%;border-radius:4px"></div>
                 </div>
                 <span style="font-size:0.72rem;color:#64748b;white-space:nowrap">${pct}%</span>
               </div>
@@ -1067,17 +1075,17 @@ ${printScript}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
-.abar{position:sticky;top:0;z-index:99;background:#374151;padding:6px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px;border-radius:6px}
+.abar{position:sticky;top:0;z-index:99;background:#1a3f5c;padding:6px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px;border-radius:6px}
 .abar button{padding:5px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
-.btn-x{background:#fff;color:#374151}.btn-p{background:#16a34a;color:#fff}
+.btn-x{background:#fff;color:#1a3f5c}.btn-p{background:#16a34a;color:#fff}
 .abar-lbl{color:#d1d5db;font-size:11px;flex:1}
-.doc-hdr{background:#374151;color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+.doc-hdr{background:#1a3f5c;color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
 .doc-hdr-logo{font-weight:900;font-size:20px;letter-spacing:.04em}
 .doc-hdr-sub{font-size:10px;opacity:.65;letter-spacing:.06em;text-transform:uppercase;margin-top:2px}
 .doc-hdr-info{text-align:right;font-size:11px;opacity:.75}
-h2{font-size:0.85rem;font-weight:700;color:#374151;margin:20px 0 10px;border-bottom:2px solid #e5e7eb;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+h2{font-size:0.85rem;font-weight:700;color:#1a3f5c;margin:20px 0 10px;border-bottom:2px solid #e5e7eb;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
 table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}
-thead th{background:#374151;color:#fff;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700}
+thead th{background:#1a3f5c;color:#fff;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700}
 .footer{margin-top:24px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
 @media print{.abar{display:none}body{padding:10px}}
 </style></head><body>
@@ -1087,7 +1095,7 @@ thead th{background:#374151;color:#fff;padding:7px 10px;text-align:left;font-siz
   <span class="abar-lbl">Relatório Executivo — Hygicare Lavanderia — ${periodLabel}</span>
 </div>
 <div class="doc-hdr">
-  <div><div class="doc-hdr-logo">HYGICARE</div><div class="doc-hdr-sub">Lavanderia Industrial</div></div>
+  <div>${getPdfLogoHtml(true)}</div>
   <div class="doc-hdr-info">📊 Relatório Executivo<br>${periodLabel}<br>${now}</div>
 </div>
 
@@ -3162,60 +3170,57 @@ ${kpisHtml}
         return;
       }
 
-      // Agrupar por vendedor para botões WhatsApp
+      // Agrupar por vendedor
       const bySeller = {};
-      overdue.forEach(({ client, last, daysSince }) => {
-        const seller = client.seller || '(Sem vendedor)';
+      overdue.forEach(item => {
+        const seller = item.client.seller || '(Sem vendedor)';
         if (!bySeller[seller]) bySeller[seller] = [];
-        bySeller[seller].push({ client, last, daysSince });
+        bySeller[seller].push(item);
       });
 
-      const sellerGroups = Object.keys(bySeller).length > 1
-        ? `<div style="margin-bottom:0.75rem;padding:0.65rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:10px">
-            <div style="font-size:0.8rem;font-weight:600;color:var(--text);margin-bottom:0.45rem">📱 Compartilhar aviso por vendedor:</div>
-            <div style="display:flex;flex-wrap:wrap;gap:0.4rem">
-              ${Object.entries(bySeller).map(([seller, items]) => {
-                const msg = `*Hygicare — Aviso de Relatórios Pendentes*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
-                  items.map(({client, daysSince}) =>
-                    `• ${client.name}${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias' : 'sem registros'}`
-                  ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.';
-                const encoded = encodeURIComponent(msg);
-                return `<a href="https://wa.me/?text=${encoded}" target="_blank" rel="noopener"
-                  style="display:inline-flex;align-items:center;gap:0.3rem;background:#25D366;color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.65rem;font-size:0.78rem;font-weight:600">
-                  📱 ${escHtml(seller)} (${items.length})
-                </a>`;
-              }).join('')}
-            </div>
-          </div>`
-        : '';
+      list.innerHTML = Object.entries(bySeller).map(([seller, items]) => {
+        const waMsg = `*Hygicare — Aviso de Relatórios Pendentes*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
+          items.map(({client, daysSince}) =>
+            `• ${client.name}${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias' : 'sem registros'}`
+          ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.';
+        const waLink = `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
-      list.innerHTML = sellerGroups + overdue.map(({ client, last, daysSince }) => {
-        const severe = daysSince === null || daysSince > alertDays * 2;
-        const clr    = severe ? '#dc2626' : '#d97706';
-        const bg     = severe ? '#fef2f2' : '#fffbeb';
-        const border = severe ? '#ef4444' : '#f59e0b';
-        const lastStr   = last ? fmtDate(last) : 'Nunca';
-        const daysLabel = daysSince !== null ? `${daysSince} dias sem relatório` : 'Sem registros';
-        const clientId  = client.id;
-        return `
-          <div style="background:${bg};border:1px solid ${border};border-left:4px solid ${border};border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.4rem">
+        const cardsHtml = items.map(({ client, last, daysSince }) => {
+          const severe    = daysSince === null || daysSince > alertDays * 2;
+          const clr       = severe ? '#dc2626' : '#d97706';
+          const bg        = severe ? '#fef2f2' : '#fffbeb';
+          const border    = severe ? '#ef4444' : '#f59e0b';
+          const lastStr   = last ? fmtDate(last) : 'Nunca';
+          const daysLabel = daysSince !== null ? `${daysSince} dias sem relatório` : 'Sem registros';
+          const clientId  = client.id;
+          return `<div style="background:${bg};border:1px solid ${border};border-left:4px solid ${border};border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.35rem">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
               <div style="min-width:0">
                 <div style="font-weight:700;font-size:0.92rem;color:var(--text)">👤 ${escHtml(client.name)}</div>
-                ${client.city ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">📍 ${escHtml(client.city)}${client.seller ? ` · 👨‍💼 ${escHtml(client.seller)}` : ''}</div>` : ''}
-                <div style="font-size:0.8rem;margin-top:0.35rem">
+                ${client.city ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">📍 ${escHtml(client.city)}</div>` : ''}
+                <div style="font-size:0.8rem;margin-top:0.3rem">
                   <span style="color:${clr};font-weight:700">⏱ ${daysLabel}</span>
                   <span style="color:var(--muted);margin-left:0.5rem;font-size:0.75rem">Último: ${lastStr}</span>
                 </div>
               </div>
-              <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
-                <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;white-space:nowrap"
-                  onclick="(async()=>{const s=document.getElementById('prod-client');if(s){s.value='${clientId}';s.dispatchEvent(new Event('change'));}show('screen-form')})()">
-                  + Registrar
-                </button>
-              </div>
+              <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;flex-shrink:0;white-space:nowrap"
+                onclick="(async()=>{const s=document.getElementById('prod-client');if(s){s.value='${clientId}';s.dispatchEvent(new Event('change'));}show('screen-form')})()">
+                + Registrar
+              </button>
             </div>
           </div>`;
+        }).join('');
+
+        return `<div style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
+            <div style="font-weight:700;font-size:0.88rem;color:var(--text)">👨‍💼 ${escHtml(seller)} <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(${items.length} cliente${items.length!==1?'s':''})</span></div>
+            <a href="${waLink}" target="_blank" rel="noopener"
+              style="display:inline-flex;align-items:center;gap:0.3rem;background:#25D366;color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;flex-shrink:0">
+              📱 WhatsApp
+            </a>
+          </div>
+          ${cardsHtml}
+        </div>`;
       }).join('');
     }
 
@@ -3465,6 +3470,15 @@ ${kpisHtml}
         if (el && !el.value) el.value = val;
       });
 
+      // Logo preview
+      const _logoPreview = document.getElementById('pdf-logo-preview');
+      if (_logoPreview) {
+        const _b64 = localStorage.getItem('hygicare_logo_b64');
+        _logoPreview.innerHTML = _b64
+          ? `<img src="${_b64}" style="max-width:100%;max-height:100%;object-fit:contain">`
+          : 'Sem logo';
+      }
+
       // Preset date buttons (uma única vez por tela)
       if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
         document.getElementById('screen-pdf-reports').dataset.presetsWired = '1';
@@ -3491,6 +3505,28 @@ ${kpisHtml}
           const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], group:['pdf-group-start','pdf-group-end'] };
           const [startId, endId] = map[grp] || [];
           if (startId) { document.getElementById(startId).value = s; document.getElementById(endId).value = end; }
+        });
+
+        // Logo upload
+        document.getElementById('pdf-logo-input')?.addEventListener('change', e => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            localStorage.setItem('hygicare_logo_b64', reader.result);
+            const prev = document.getElementById('pdf-logo-preview');
+            if (prev) prev.innerHTML = `<img src="${reader.result}" style="max-width:100%;max-height:100%;object-fit:contain">`;
+            toast('Logo salvo! Será exibido em todos os PDFs.', 'success');
+          };
+          reader.readAsDataURL(file);
+        });
+        document.getElementById('pdf-logo-clear')?.addEventListener('click', () => {
+          localStorage.removeItem('hygicare_logo_b64');
+          const prev = document.getElementById('pdf-logo-preview');
+          if (prev) prev.innerHTML = 'Sem logo';
+          const inp = document.getElementById('pdf-logo-input');
+          if (inp) inp.value = '';
+          toast('Logo removido.', 'info');
         });
       }
     }
@@ -3558,7 +3594,7 @@ ${kpisHtml}
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <title>Ficha — ${escHtml(client.name)}</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:16mm 18mm}
-h1{font-size:17px;color:#111827;margin-bottom:2px}h2{font-size:12px;color:#374151;margin:14px 0 6px;border-bottom:1.5px solid #d1d5db;padding-bottom:3px}
+h1{font-size:17px;color:#111827;margin-bottom:2px}h2{font-size:12px;color:#1a3f5c;margin:14px 0 6px;border-bottom:1.5px solid #d1d5db;padding-bottom:3px}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
 .logo{font-weight:900;font-size:15px;color:#111827;letter-spacing:.03em}.logo-sub{font-size:9px;color:#6b7280;font-weight:400;letter-spacing:.05em;text-transform:uppercase}
 .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-bottom:10px}
@@ -3566,14 +3602,14 @@ h1{font-size:17px;color:#111827;margin-bottom:2px}h2{font-size:12px;color:#37415
 .kpis{display:flex;gap:8px;margin:10px 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;text-align:center;flex:1}
 .kv{font-size:17px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;margin-top:1px;text-transform:uppercase}
 .period{font-size:10px;color:#6b7280;margin-bottom:10px}
-table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#374151;color:#fff;padding:5px 7px;text-align:left;font-size:9.5px;text-transform:uppercase}
+table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#1a3f5c;color:#fff;padding:5px 7px;text-align:left;font-size:9.5px;text-transform:uppercase}
 td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
-.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:7px 14px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:7px 14px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
 .footer{margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
 <button onclick="window.close()" style="padding:7px 14px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
-<div class="hdr"><div><div class="logo">HYGICARE</div><div class="logo-sub">Lavanderia Industrial</div><h1 style="margin-top:6px">${escHtml(client.name)}</h1></div>
+<div class="hdr"><div>${getPdfLogoHtml(false)}<h1 style="margin-top:6px;font-size:17px;color:#111827">${escHtml(client.name)}</h1></div>
 <div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
 <div class="info-grid">${infoItems}</div>
 <p class="period">📅 Período: <strong>${periodStr}</strong></p>
@@ -3616,11 +3652,11 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
       const machMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
       const fmtD = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
       const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
-.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
 .logo{font-weight:900;font-size:15px;color:#111827}.logo-sub{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
-h1{font-size:15px;color:#111827;margin:6px 0 2px}h2{font-size:11px;color:#374151;margin:12px 0 5px;border-bottom:1px solid #d1d5db;padding-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
-table{width:100%;border-collapse:collapse;font-size:10px}th{background:#374151;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
+h1{font-size:15px;color:#111827;margin:6px 0 2px}h2{font-size:11px;color:#1a3f5c;margin:12px 0 5px;border-bottom:1px solid #d1d5db;padding-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
@@ -3641,7 +3677,7 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <style>${CSS}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
 <button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
-<div class="hdr"><div><div class="logo">HYGICARE</div><div class="logo-sub">Lavanderia Industrial</div><h1>${escHtml(client.name)}</h1></div>
+<div class="hdr"><div>${getPdfLogoHtml(false)}<h1 style="margin-top:5px">${escHtml(client.name)}</h1></div>
 <div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
 <h2>💧 Relatório de Vazão</h2>
 <table><thead><tr><th>Ponto de Vazão</th><th>Máquina</th><th style="text-align:right">Meta (m³/h)</th><th style="text-align:right">Última Leitura</th><th>Data</th><th>Histórico</th></tr></thead>
@@ -3704,18 +3740,21 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
       }).join('') || '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:10px">Nenhum dado no período</td></tr>';
       const periodStr = startDate||endDate ? `${fmtD(startDate)} a ${fmtD(endDate)}` : 'Todo o período';
       const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
-.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
-.hdr{background:#374151;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:14px}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{background:#1a3f5c;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:14px}
 .hdr h1{font-size:16px;margin-bottom:4px}.hdr p{font-size:9px;opacity:.75}
-table{width:100%;border-collapse:collapse;font-size:10px}th{background:#374151;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório por ${groupLabel}</title>
 <style>${CSS}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
 <button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
-<div class="hdr"><h1>HYGICARE — Relatório por ${escHtml(groupLabel)}</h1>
-<p>Período: ${escHtml(periodStr)} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</p></div>
+<div class="hdr" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <div>${getPdfLogoHtml(true)}</div>
+  <div style="text-align:right"><div style="font-size:14px;font-weight:700;color:#fff">Relatório por ${escHtml(groupLabel)}</div>
+  <div style="font-size:9px;color:rgba(255,255,255,.7);margin-top:2px">Período: ${escHtml(periodStr)} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div></div>
+</div>
 <table><thead><tr><th>${groupLabel}</th><th style="text-align:center">Clientes</th><th style="text-align:center">Registros</th><th style="text-align:right">Total kg</th><th style="text-align:center">%</th></tr></thead>
 <tbody>${rows}</tbody>
 <tfoot><tr style="background:#f3f4f6;font-weight:700"><td>TOTAL</td><td></td><td style="text-align:center">${records.length}</td><td style="text-align:right">${fmtKg(totalKg)}</td><td></td></tr></tfoot>
@@ -3743,14 +3782,14 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;paddi
       if (!client) { w.close(); return toast('Cliente não encontrado.', 'error'); }
       const cMachines = machines.filter(m => Number(m.client_id) === Number(clientId));
       const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
-.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#374151;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
 .logo{font-weight:900;font-size:15px;color:#111827}.logo-sub{font-size:9px;color:#6b7280;text-transform:uppercase}
 h1{font-size:15px;color:#111827;margin:6px 0 2px}
 .mach-block{margin-bottom:14px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden}
-.mach-hdr{background:#374151;color:#fff;padding:6px 10px;font-weight:700;font-size:11px}
+.mach-hdr{background:#1a3f5c;color:#fff;padding:6px 10px;font-weight:700;font-size:11px}
 .mach-sub{font-size:9px;opacity:.75;font-weight:400}
-table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f3f4f6;color:#374151;padding:4px 8px;text-align:left;font-size:9px;text-transform:uppercase;border-bottom:1px solid #d1d5db}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f3f4f6;color:#1a3f5c;padding:4px 8px;text-align:left;font-size:9px;text-transform:uppercase;border-bottom:1px solid #d1d5db}
 td{padding:4px 8px;border-bottom:1px solid #f1f5f9}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
@@ -3767,10 +3806,10 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}
 <style>${CSS}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
 <button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
-<div class="hdr"><div><div class="logo">HYGICARE</div><div class="logo-sub">Lavanderia Industrial</div><h1>${escHtml(client.name)}</h1>
+<div class="hdr"><div>${getPdfLogoHtml(false)}<h1 style="margin-top:5px">${escHtml(client.name)}</h1>
 ${client.city?`<div style="font-size:10px;color:#6b7280;margin-top:2px">📍 ${escHtml(client.city)}${client.seller?' · 👨‍💼 '+escHtml(client.seller):''}</div>`:''}
 </div><div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
-<h2 style="font-size:11px;color:#374151;border-bottom:1px solid #d1d5db;padding-bottom:3px;margin-bottom:10px;text-transform:uppercase">⚙️ Máquinas e Processos (${cMachines.length})</h2>
+<h2 style="font-size:11px;color:#1a3f5c;border-bottom:1px solid #d1d5db;padding-bottom:3px;margin-bottom:10px;text-transform:uppercase">⚙️ Máquinas e Processos (${cMachines.length})</h2>
 ${machSections}
 <div class="footer">HYGICARE Lavanderia Industrial · Máquinas e Processos · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
 </body></html>`;
@@ -4852,7 +4891,7 @@ ${machSections}
               <span style="font-size:0.7rem;color:var(--muted);margin-left:auto">${r.created_by||'—'}</span>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:0.2rem 0.4rem;margin-bottom:0.45rem">
-              ${steps.slice(0,5).map(s => `<span style="font-size:0.7rem;background:#f1f5f9;border-radius:5px;padding:1px 6px;border:1px solid var(--border);color:#374151"><strong>${s.n}.</strong> ${s.operation||'—'}</span>`).join('')}
+              ${steps.slice(0,5).map(s => `<span style="font-size:0.7rem;background:#f1f5f9;border-radius:5px;padding:1px 6px;border:1px solid var(--border);color:#1a3f5c"><strong>${s.n}.</strong> ${s.operation||'—'}</span>`).join('')}
               ${steps.length > 5 ? `<span style="font-size:0.7rem;color:var(--muted)">+${steps.length-5} mais</span>` : ''}
               ${!steps.length ? `<span style="font-size:0.7rem;color:var(--muted)">Sem etapas</span>` : ''}
             </div>
@@ -6675,7 +6714,7 @@ ${recipeSections}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
-.hdr{display:flex;align-items:center;background:#374151;color:#fff;min-height:60px;padding:0 12px;gap:10px;margin-bottom:8px}
+.hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:60px;padding:0 12px;gap:10px;margin-bottom:8px}
 .hdr-logo{font-weight:900;font-size:14px;letter-spacing:.04em;flex-shrink:0;color:#fff}
 .hdr-logo-sub{font-size:8px;opacity:.65;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
 .hdr-c{flex:1;text-align:center;line-height:1.4}
@@ -6686,23 +6725,23 @@ body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
 .kpi-label{font-size:8px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
 .kpi-value{font-size:15px;font-weight:bold}
 .sec{margin-bottom:8px;border:1px solid #e5e7eb;page-break-inside:avoid}
-.sec-hd{background:#374151;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
+.sec-hd{background:#1a3f5c;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
 table{width:100%;border-collapse:collapse;font-size:9px}
-thead th{background:#f3f4f6;color:#374151;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #e5e7eb;white-space:nowrap}
+thead th{background:#f3f4f6;color:#1a3f5c;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #e5e7eb;white-space:nowrap}
 th.tl,td.tl{text-align:left}
 th.tc,td.tc{text-align:center}
 tbody tr:nth-child(even) td{background:#f9fafb}
 tbody td{padding:3px 6px;border:1px solid #e5e7eb;vertical-align:middle}
 tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e5e7eb;font-size:9px}
-.inactive-chip{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:9px;color:#374151}
+.inactive-chip{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:9px;color:#1a3f5c}
 .filter-info{background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:6px 12px;font-size:9px;color:#6b7280;margin-bottom:8px}
-.rpt-footer{margin-top:10px;border-top:2px solid #374151;padding:7px 0 0;text-align:center;font-size:8px;color:#6b7280;line-height:1.7}
-.rpt-footer strong{color:#374151}
+.rpt-footer{margin-top:10px;border-top:2px solid #1a3f5c;padding:7px 0 0;text-align:center;font-size:8px;color:#6b7280;line-height:1.7}
+.rpt-footer strong{color:#1a3f5c}
 @media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:10mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
 @media screen{
-  .action-bar{position:sticky;top:0;z-index:999;background:#374151;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .action-bar{position:sticky;top:0;z-index:999;background:#1a3f5c;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
   .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
-  .btn-close-rpt{background:#fff;color:#374151}
+  .btn-close-rpt{background:#fff;color:#1a3f5c}
   .btn-print-rpt{background:#4caf50;color:#fff}
   .action-bar-label{color:#d1d5db;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
   body{max-width:960px;margin:0 auto;padding:0 8px}
@@ -6720,7 +6759,7 @@ tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e
   <span class="action-bar-label">Relatório Resumo · ${esc(d.periodLabel)}</span>
 </div>
 <div class="hdr">
-  <div><div class="hdr-logo">HYGICARE</div><div class="hdr-logo-sub">Lavanderia Industrial</div></div>
+  <div style="flex-shrink:0">${getPdfLogoHtml(true)}</div>
   <div class="hdr-c">
     <h1>RELATÓRIO RESUMO DE LAVANDERIA</h1>
     <div class="hdr-info">${esc(d.periodLabel)} · Gerado em ${esc(d.today)}</div>
