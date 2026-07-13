@@ -903,7 +903,13 @@ ${printScript}
           const managed = getManagedSellerNames();
           return data.filter(c => managed.has((c.seller || '').toLowerCase()));
         }
-        return data.filter(c => (c.seller || '').toLowerCase() === (currentUser.sellerName || '').toLowerCase());
+        const filtered = data.filter(c => (c.seller || '').toLowerCase() === (currentUser.sellerName || '').toLowerCase());
+        if (filtered.length === 0 && data.length > 0 && currentUser.sellerName) {
+          const sellers = [...new Set(data.map(c => c.seller).filter(Boolean))].slice(0, 5).join(', ');
+          console.warn(`[Hygicare] Vendedor "${currentUser.sellerName}" não encontrou clientes. Vendedores na base: ${sellers}`);
+          setTimeout(() => toast(`⚠️ Nenhum cliente encontrado para o vendedor "${currentUser.sellerName}". Verifique o campo Seller nas planilhas.`, 'warning', 10000), 2000);
+        }
+        return filtered;
       };
     }
 
