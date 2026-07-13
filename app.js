@@ -3869,7 +3869,7 @@ h1{font-size:17px;color:#111827;margin-bottom:2px}h2{font-size:12px;color:#1a3f5
 .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-bottom:10px}
 .ii{font-size:10px}.ii strong{color:#6b7280;text-transform:uppercase;font-size:9px;display:block}
 .kpis{display:flex;gap:8px;margin:10px 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;text-align:center;flex:1}
-.kv{font-size:17px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;margin-top:1px;text-transform:uppercase}
+.kv{font-size:17px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;margin-top:1px;text-transform:uppercase}.kd{font-size:8px;color:#9ca3af;margin-top:2px;font-style:italic}
 .period{font-size:10px;color:#6b7280;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#1a3f5c;color:#fff;padding:5px 7px;text-align:left;font-size:9.5px;text-transform:uppercase}
 td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
@@ -3883,10 +3883,10 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <div class="info-grid">${infoItems}</div>
 <p class="period">📅 Período: <strong>${periodStr}</strong></p>
 <div class="kpis">
-<div class="kpi"><div class="kv">${cRecords.length}</div><div class="kl">Registros</div></div>
-<div class="kpi"><div class="kv">${fmtKg(totalKg)}</div><div class="kl">Total kg</div></div>
-<div class="kpi"><div class="kv">${totalPcs.toLocaleString('pt-BR')}</div><div class="kl">Peças</div></div>
-<div class="kpi"><div class="kv">${cNotes.length}</div><div class="kl">Notas</div></div>
+<div class="kpi"><div class="kv">${cRecords.length}</div><div class="kl">Registros</div><div class="kd">relatórios enviados</div></div>
+<div class="kpi"><div class="kv">${fmtKg(totalKg)}</div><div class="kl">Total kg</div><div class="kd">peso total processado</div></div>
+<div class="kpi"><div class="kv">${totalPcs.toLocaleString('pt-BR')}</div><div class="kl">Peças</div><div class="kd">itens/enxovais processados</div></div>
+<div class="kpi"><div class="kv">${cNotes.length}</div><div class="kl">Notas</div><div class="kd">ocorrências e manutenções</div></div>
 </div>
 <h2>📋 Histórico de Produção</h2>
 <table><thead><tr><th>Data</th><th>Máquina</th><th>Processo</th><th style="text-align:right">Peças</th><th style="text-align:right">Total kg</th><th>Status</th></tr></thead>
