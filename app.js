@@ -686,7 +686,7 @@ ${printScript}
       'create_note','edit_note','delete_note']);
 
     // Chaves de tela — fonte única para formulário de usuário e applyNavPermissions
-    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes'];
+    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports'];
 
     // Mutex: impede dois syncs completos simultâneos (IIFE de startup + _autoSync)
     let _fullSyncRunning = false;
@@ -845,8 +845,9 @@ ${printScript}
       'nav-charts':    'screen-charts',
       'nav-vazao':     'screen-vazao',
       'nav-recipes':      'screen-recipes',
-      'nav-client-notes': 'screen-client-notes',
-      'nav-form':         'screen-form',
+      'nav-client-notes':  'screen-client-notes',
+      'nav-pdf-reports':   'screen-pdf-reports',
+      'nav-form':          'screen-form',
       'nav-reports':   'screen-reports',
       'nav-alerts':    'screen-alerts',
       'nav-users':     'screen-users',
@@ -865,6 +866,7 @@ ${printScript}
         if (screenId === 'screen-vazao')        await initVazaoScreen();
         if (screenId === 'screen-recipes')      await initRecipesScreen();
         if (screenId === 'screen-client-notes') await initClientNotesScreen();
+        if (screenId === 'screen-pdf-reports')  await initPdfReportsScreen();
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
@@ -878,11 +880,12 @@ ${printScript}
       document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
     }
 
-    document.getElementById('btn-admin-report-pdf')?.addEventListener('click', async () => {
+    document.getElementById('btn-pdf-executive')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
       const win = window.open('', '_blank', 'width=1000,height=750');
       if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
 
-      const days = Number(document.getElementById('admin-report-period')?.value || 30);
+      const days = Number(document.getElementById('pdf-report-period')?.value || 30);
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       const cutoffISO = cutoff.toISOString().slice(0, 10);
@@ -1502,6 +1505,7 @@ ${kpisHtml}
         vazao:        'screen-vazao',
         recipes:      'screen-recipes',
         client_notes: 'screen-client-notes',
+        pdf_reports:  'screen-pdf-reports',
         users:        'screen-users',
       };
 
@@ -3378,6 +3382,130 @@ ${kpisHtml}
       await renderClientNotesList();
     }
 
+    async function initPdfReportsScreen() {
+      // Popula select de clientes
+      const clients = await window.getAll('clients');
+      const sel = document.getElementById('pdf-client-select');
+      if (sel) {
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">Selecionar cliente...</option>';
+        [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+          .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
+        if (cur) sel.value = cur;
+      }
+      // Datas padrão: mês atual
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const today = `${yyyy}-${mm}-${String(now.getDate()).padStart(2,'0')}`;
+      const monthStart = `${yyyy}-${mm}-01`;
+      const s = document.getElementById('pdf-summary-start');
+      const e = document.getElementById('pdf-summary-end');
+      const cs = document.getElementById('pdf-client-start');
+      const ce = document.getElementById('pdf-client-end');
+      if (s && !s.value) s.value = monthStart;
+      if (e && !e.value) e.value = today;
+      if (cs && !cs.value) cs.value = monthStart;
+      if (ce && !ce.value) ce.value = today;
+    }
+
+    document.getElementById('btn-pdf-client')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      const clientId = document.getElementById('pdf-client-select')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const startDate = document.getElementById('pdf-client-start')?.value || '';
+      const endDate   = document.getElementById('pdf-client-end')?.value   || '';
+
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc"><p style="color:#546e7a;font-size:1rem">⏳ Gerando ficha...</p></body></html>');
+
+      const [clients, records, machines, processes, notes] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('records'),
+        dbGetAll_raw('machines'), dbGetAll_raw('processes'),
+        dbGetAll_raw('client_notes'),
+      ]);
+
+      const client = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) { w.close(); return toast('Cliente não encontrado.', 'error'); }
+
+      let cRecords = records.filter(r => Number(r.client_id) === Number(clientId));
+      if (startDate) cRecords = cRecords.filter(r => (r.date_start||r.created_at||'').slice(0,10) >= startDate);
+      if (endDate)   cRecords = cRecords.filter(r => (r.date_start||r.created_at||'').slice(0,10) <= endDate);
+      cRecords.sort((a,b) => (a.date_start||'').localeCompare(b.date_start||''));
+
+      let cNotes = notes.filter(n => Number(n.client_id) === Number(clientId));
+      if (startDate) cNotes = cNotes.filter(n => (n.date||'').slice(0,10) >= startDate);
+      if (endDate)   cNotes = cNotes.filter(n => (n.date||'').slice(0,10) <= endDate);
+      cNotes.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+      const machineMap  = Object.fromEntries(machines.map(m => [m.id, m.name]));
+      const processMap  = Object.fromEntries(processes.map(p => [p.id, p.name]));
+      const totalKg  = cRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
+      const totalPcs = cRecords.reduce((s, r) => s + (Number(r.capacity) || 0), 0);
+
+      const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '-';
+      const fmtKg   = n => Number(n).toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' kg';
+      const periodStr = (startDate || endDate)
+        ? `${startDate ? fmtDate(startDate) : 'início'} a ${endDate ? fmtDate(endDate) : 'hoje'}`
+        : 'Todo o período';
+
+      const noteTypeLabel = {manutencao:'🔧 Manutenção', aviso:'⚠️ Aviso', instalacao:'🔌 Instalação', lembrete:'📌 Lembrete'};
+
+      const recordRows = cRecords.map(r =>
+        `<tr><td>${fmtDate(r.date_start||r.created_at)}</td><td>${escHtml(machineMap[r.machine_id]||'-')}</td><td>${escHtml(processMap[r.process_id]||'-')}</td><td style="text-align:right">${(Number(r.capacity)||0).toLocaleString('pt-BR')}</td><td style="text-align:right">${fmtKg(r.total)}</td><td>${r.executed?'✅ Exec.':r.canceled?'❌ Canc.':'⏳ Pend.'}</td></tr>`
+      ).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:12px">Nenhum registro no período</td></tr>';
+
+      const noteRows = cNotes.map(n =>
+        `<tr><td>${fmtDate(n.date)}</td><td>${noteTypeLabel[n.type]||n.type||'-'}</td><td><strong>${escHtml(n.title||'-')}</strong></td><td style="max-width:220px">${escHtml(n.content||'-')}</td><td>${escHtml(n.created_by||'-')}</td></tr>`
+      ).join('') || '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:12px">Nenhuma nota no período</td></tr>';
+
+      const infoItems = [
+        client.cnpj    ? `<div class="ii"><strong>CNPJ/CPF</strong>${escHtml(client.cnpj)}</div>` : '',
+        client.phone   ? `<div class="ii"><strong>Telefone</strong>${escHtml(client.phone)}</div>` : '',
+        client.address ? `<div class="ii"><strong>Endereço</strong>${escHtml(client.address)}</div>` : '',
+        client.city    ? `<div class="ii"><strong>Cidade</strong>${escHtml(client.city)}</div>` : '',
+        client.seller  ? `<div class="ii"><strong>Consultor</strong>${escHtml(client.seller)}</div>` : '',
+        client.email   ? `<div class="ii"><strong>E-mail</strong>${escHtml(client.email)}</div>` : '',
+      ].filter(Boolean).join('');
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Ficha — ${escHtml(client.name)}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:16mm 18mm}
+h1{font-size:17px;color:#1e40af;margin-bottom:2px}h2{font-size:12px;color:#1e40af;margin:14px 0 6px;border-bottom:1.5px solid #bfdbfe;padding-bottom:3px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.logo{font-weight:900;font-size:14px;color:#1e40af}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-bottom:10px}
+.ii{font-size:10px}.ii strong{color:#64748b;text-transform:uppercase;font-size:9px;display:block}
+.kpis{display:flex;gap:8px;margin:10px 0 12px}.kpi{background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;text-align:center;flex:1}
+.kv{font-size:17px;font-weight:800;color:#1d4ed8}.kl{font-size:9px;color:#64748b;margin-top:1px;text-transform:uppercase}
+.period{font-size:10px;color:#64748b;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#1e40af;color:#fff;padding:5px 7px;text-align:left;font-size:9.5px;text-transform:uppercase}
+td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:7px 14px;background:#1e40af;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:7px 14px;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div><div class="logo">🧺 Hygicare Lavanderia</div><h1 style="margin-top:6px">${escHtml(client.name)}</h1></div>
+<div style="text-align:right;font-size:10px;color:#64748b">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+<div class="info-grid">${infoItems}</div>
+<p class="period">📅 Período: <strong>${periodStr}</strong></p>
+<div class="kpis">
+<div class="kpi"><div class="kv">${cRecords.length}</div><div class="kl">Registros</div></div>
+<div class="kpi"><div class="kv">${fmtKg(totalKg)}</div><div class="kl">Total kg</div></div>
+<div class="kpi"><div class="kv">${totalPcs.toLocaleString('pt-BR')}</div><div class="kl">Peças</div></div>
+<div class="kpi"><div class="kv">${cNotes.length}</div><div class="kl">Notas</div></div>
+</div>
+<h2>📋 Histórico de Produção</h2>
+<table><thead><tr><th>Data</th><th>Máquina</th><th>Processo</th><th style="text-align:right">Peças</th><th style="text-align:right">Total kg</th><th>Status</th></tr></thead>
+<tbody>${recordRows}</tbody></table>
+<h2>🔧 Manutenção / Notas</h2>
+<table><thead><tr><th>Data</th><th>Tipo</th><th>Título</th><th>Descrição</th><th>Por</th></tr></thead>
+<tbody>${noteRows}</tbody></table>
+</body></html>`;
+
+      w.document.open(); w.document.write(html); w.document.close();
+    });
+
     async function initHomeScreen() {
       // Saudação
       const now = new Date();
@@ -3401,8 +3529,9 @@ ${kpisHtml}
           { perm: 'charts',       screen: 'screen-charts',       fn: async () => { await refreshChartsFilters(); await renderCharts(); }, icon: '📊', label: 'Gráficos' },
           { perm: 'vazao',        screen: 'screen-vazao',        fn: initVazaoScreen,       icon: '💧', label: 'Vazão' },
           { perm: 'recipes',      screen: 'screen-recipes',      fn: initRecipesScreen,     icon: '🗂️', label: 'Receitas' },
-          { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen, icon: '📋', label: 'Histórico' },
-          { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,        icon: '👤', label: 'Usuários' },
+          { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen,  icon: '📋', label: 'Histórico' },
+          { perm: 'pdf_reports',  screen: 'screen-pdf-reports',  fn: initPdfReportsScreen,   icon: '📄', label: 'Rel. PDF' },
+          { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
         ];
         const permsStr = (currentUser?.permissions || '').trim();
         const allowed  = permsStr ? new Set(permsStr.split(',').map(s => s.trim())) : null;
@@ -5952,10 +6081,14 @@ ${recipeSections}
       });
     });
 
-    // Botão Relatório Resumo (tela de gráficos)
-    document.getElementById('btn-summary-report')?.addEventListener('click', _printSummaryReport);
+    // Botão Relatório Resumo (nova tela de relatórios PDF)
+    document.getElementById('btn-pdf-summary')?.addEventListener('click', () => {
+      const s = document.getElementById('pdf-summary-start')?.value || '';
+      const e = document.getElementById('pdf-summary-end')?.value   || '';
+      _printSummaryReport(s, e);
+    });
 
-    async function _printSummaryReport() {
+    async function _printSummaryReport(overrideStart, overrideEnd) {
       if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
       // Abrir janela ANTES dos awaits — mobile bloqueia window.open após async
       const w = window.open('', '_blank');
@@ -5981,9 +6114,9 @@ ${recipeSections}
         records = records.filter(r => myClientIds.has(Number(r.client_id)));
       }
 
-      // Período — mesma lógica de renderCharts
-      const dateStart = document.getElementById('chart-date-start')?.value || '';
-      const dateEnd   = document.getElementById('chart-date-end')?.value   || '';
+      // Período — usa override (tela PDF) ou fallback para filtros de gráficos
+      const dateStart = overrideStart || document.getElementById('chart-date-start')?.value || '';
+      const dateEnd   = overrideEnd   || document.getElementById('chart-date-end')?.value   || '';
       const now  = new Date();
       const yyyy = now.getFullYear();
       const mm   = String(now.getMonth() + 1).padStart(2, '0');
