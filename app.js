@@ -349,6 +349,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _hideAppLoading() {
     const el = document.getElementById('app-loading');
     if (el) el.style.display = 'none';
+    const customLogo = localStorage.getItem('hygicare_logo_b64');
+    if (customLogo) {
+      const imgEl = document.getElementById('login-logo-img');
+      if (imgEl) imgEl.src = customLogo;
+    }
     loginScreen.style.display = '';
   }
 

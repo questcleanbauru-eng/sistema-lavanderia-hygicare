@@ -162,8 +162,7 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 .login-logo {
-  font-size: 4rem;
-  margin-bottom: 1.2rem;
+  margin-bottom: 1.4rem;
   display: block;
 }
 .login-card h1 {
