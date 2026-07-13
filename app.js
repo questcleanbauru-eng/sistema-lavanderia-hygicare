@@ -3314,6 +3314,11 @@ ${kpisHtml}
       if (widget)    widget.style.display = count > 0 ? '' : 'none';
       if (homeCount) homeCount.textContent = count;
       if (homeDays && alertDays) homeDays.textContent = alertDays;
+      // Badge nativo no ícone do PWA (Android Chrome / iOS Safari 16.4+)
+      if ('setAppBadge' in navigator) {
+        if (count > 0) navigator.setAppBadge(count).catch(() => {});
+        else           navigator.clearAppBadge().catch(() => {});
+      }
     }
 
     async function _computeOverdue() {
@@ -5966,6 +5971,8 @@ ${recipeSections}
           ${groupsHtml}
         `;
       }).join('');
+
+      refreshAlertsBadge();
 
       // ---- Imprimir um grupo ----
       window._printGroup = function(safeKey) {
