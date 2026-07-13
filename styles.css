@@ -1631,6 +1631,12 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .drawer-item:active { background: #f1f5f9; }
   .drawer-item-danger { color: #ef4444; font-weight: 600; }
   .drawer-divider { height: 1px; background: #e2e8f0; margin: 0.4rem 0; }
+
+  /* Impede zoom automático do iOS/Android ao focar campos — mínimo 16px */
+  input, select, textarea,
+  .form-input, .filter-select, .filter-input {
+    font-size: 16px !important;
+  }
 }
 
 /* Mobile-only header drawer trigger */
