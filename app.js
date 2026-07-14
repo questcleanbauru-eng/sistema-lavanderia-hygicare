@@ -4562,8 +4562,11 @@ ${machSections}
             <div class="vazao-mach-block-hdr">
               <span>⚙️ ${m.name}</span>
               ${has ? `<span style="font-size:0.75rem;color:var(--primary);font-weight:600">💧 ${mv.length} vazão(ões)</span>` : '<span style="font-size:0.75rem;color:#b45309;font-weight:600">⚠️ Sem vazões</span>'}
-              <button onclick="window._toggleVazaoMaint(${m.id},'${m.name.replace(/'/g,"\\'")}')" style="margin-left:auto;background:none;border:1px solid #d97706;color:#d97706;border-radius:6px;padding:2px 9px;font-size:0.75rem;cursor:pointer;font-weight:600" title="Registrar manutenção nesta máquina">🔧 Manutenção</button>
+              <button id="btn-maint-${m.id}" data-maint-on="0" data-mach-name="${m.name.replace(/"/g,'&quot;')}"
+                onclick="window._toggleVazaoMaint(${m.id})"
+                style="margin-left:auto;background:none;border:1px solid #d97706;color:#d97706;border-radius:6px;padding:2px 9px;font-size:0.75rem;cursor:pointer;font-weight:600">🔧 Manutenção</button>
             </div>
+            <div id="vazao-mach-inputs-${m.id}">
             ${has
               ? `<table class="proc-table" style="width:100%">
                   <thead><tr>
@@ -4575,6 +4578,7 @@ ${machSections}
                 </table>`
               : `<div style="padding:0.6rem 0.5rem;color:#92400e;font-size:0.85rem">Configure as vazões desta máquina em <strong>⚙️ Máquinas</strong>.</div>`
             }
+            </div>
           </div>`;
       }).join('');
 
@@ -4590,23 +4594,24 @@ ${machSections}
       await renderVazaoLocalHistory(clientId);
     }
 
-    window._toggleVazaoMaint = async function(machineId, machineName) {
-      const date     = document.getElementById('vazao-date')?.value;
-      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
-      if (!date || !clientId) return toast('Preencha a data e selecione um cliente', 'warning');
-      const fmtD = d => { const p = new Date(d+'T00:00:00'); return isNaN(p)?d:p.toLocaleDateString('pt-BR'); };
-      if (!await confirmAction(`Registrar manutenção em ${machineName} na data ${fmtD(date)}?`, 'Registrar 🔧', false)) return;
-      const record = {
-        date, client_id: clientId, machine_id: machineId,
-        vazao_name: '__manutencao__', vazao_unit: '', value: null,
-        user: currentUser?.name || currentUser?.username || '',
-        created_at: new Date().toISOString()
-      };
-      const id = await dbAdd('vazao_records', record);
-      record.id = id;
-      await postToSheetDB(SHEETS.VAZAO_RECORDS, record);
-      toast('🔧 Manutenção registrada!', 'success');
-      await renderVazaoLocalHistory(clientId);
+    window._toggleVazaoMaint = function(machineId) {
+      const btn    = document.getElementById(`btn-maint-${machineId}`);
+      const inputs = document.getElementById(`vazao-mach-inputs-${machineId}`);
+      if (!btn) return;
+      const active = btn.dataset.maintOn === '1';
+      if (active) {
+        btn.dataset.maintOn = '0';
+        btn.style.background = 'none';
+        btn.style.color = '#d97706';
+        btn.textContent = '🔧 Manutenção';
+        if (inputs) inputs.style.display = '';
+      } else {
+        btn.dataset.maintOn = '1';
+        btn.style.background = '#d97706';
+        btn.style.color = '#fff';
+        btn.textContent = '🔧 Em manutenção';
+        if (inputs) inputs.style.display = 'none';
+      }
     };
 
     function _showVazaoWhatsapp(clientName, date, rows, machineMap) {
@@ -4663,7 +4668,8 @@ ${machSections}
         });
       });
 
-      if (!rows.length) return toast('Informe pelo menos um resultado', 'warning');
+      const maintBtns = [...document.querySelectorAll('[id^="btn-maint-"][data-maint-on="1"]')];
+      if (!rows.length && !maintBtns.length) return toast('Informe pelo menos um resultado ou marque uma manutenção', 'warning');
       if (_saving) return;
 
       const btn = document.getElementById('btn-save-vazao');
@@ -4684,7 +4690,23 @@ ${machSections}
           await postToSheetDB(SHEETS.VAZAO_RECORDS, record);
           saved++;
         }
-        toast(`✅ ${saved} leitura(s) salva(s)!`, 'success');
+        // Salvar flags de manutenção
+        let maintSaved = 0;
+        for (const btn of maintBtns) {
+          const mId = Number(btn.id.replace('btn-maint-', ''));
+          const mrec = {
+            date, client_id: clientId, machine_id: mId,
+            vazao_name: '__manutencao__', vazao_unit: '', value: null,
+            user: currentUser?.name || currentUser?.username || '',
+            created_at: new Date().toISOString()
+          };
+          const mid2 = await dbAdd('vazao_records', mrec);
+          mrec.id = mid2;
+          await postToSheetDB(SHEETS.VAZAO_RECORDS, mrec);
+          maintSaved++;
+        }
+        const maintMsg = maintSaved ? ` + ${maintSaved} manutenção(ões)` : '';
+        toast(`✅ ${saved} leitura(s)${maintMsg} salva(s)!`, 'success');
         const _allClientsVz = await dbGetAll_raw('clients');
         const _clientVz = _allClientsVz.find(c => Number(c.id) === clientId);
         const _clientName = _clientVz?.name || `#${clientId}`;
@@ -4886,28 +4908,21 @@ ${machSections}
         const machineId = items[0]?.machineId || 0;
         return `
         <div class="vazao-hist-mach-label">⚙️ ${machineName}</div>
-        ${items.map(item => {
-          // Manutenção: badge especial
-          if (item.vazaoName === '__manutencao__') {
-            const maintRows = item.readings.map(r => `
-              <div style="display:flex;align-items:center;gap:0.5rem;padding:3px 0">
-                <span style="font-size:0.75rem;color:#92400e;min-width:60px">${fmtDate(r.date)}</span>
-                <span style="font-size:0.82rem;color:#92400e;flex:1">Manutenção realizada</span>
-                ${canEdit ? `<button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--danger)" title="Excluir">🗑️</button>` : ''}
-              </div>`).join('');
-            return `<div class="vazao-hist-item" style="background:#fffbeb;border-color:#fde68a;flex-direction:column;gap:0.25rem">
-              <div style="display:flex;align-items:center;gap:0.4rem">
-                <span style="font-size:0.9rem">🔧</span>
-                <span style="font-size:0.85rem;font-weight:700;color:#92400e">Manutenção</span>
-                <span style="font-size:0.75rem;color:#b45309;margin-left:auto">${item.readings.length}x no período</span>
-              </div>
-              ${item.readings.length > 1 ? `
-                <details style="margin-top:2px">
-                  <summary style="font-size:0.73rem;color:#d97706;cursor:pointer;list-style:none">📋 ${item.readings.length} registros</summary>
-                  <div style="padding:4px 0 0 4px">${maintRows}</div>
-                </details>` : `<div style="padding:0 0 0 4px">${maintRows}</div>`}
-            </div>`;
-          }
+        ${(() => {
+          const maintItem = items.find(i => i.vazaoName === '__manutencao__');
+          const pumpItems = items.filter(i => i.vazaoName !== '__manutencao__');
+          const maintDates = maintItem ? maintItem.readings : [];
+          const maintBlock = maintDates.length ? `
+            <div style="padding:4px 8px 4px 4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+              ${maintDates.map(r => `
+                <span style="display:inline-flex;align-items:center;gap:4px;background:#fef9c3;border:1px solid #fde68a;border-radius:5px;padding:2px 7px;font-size:0.75rem;color:#92400e;font-weight:600">
+                  🔧 Em manutenção — ${fmtDate(r.date)}
+                  ${canEdit ? `<button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:none;cursor:pointer;font-size:0.72rem;color:#b91c1c;line-height:1;padding:0 0 0 4px" title="Excluir">✕</button>` : ''}
+                </span>`).join('')}
+            </div>` : '';
+          // Se a máquina tem apenas manutenção (sem bombas com leituras), mostra card simples
+          if (!pumpItems.length) return maintBlock || '';
+          return pumpItems.map(item => {
           const latest = item.readings[0];
           const prev   = item.readings[1];
           let delta = '';
@@ -4941,8 +4956,10 @@ ${machSections}
                   <summary style="font-size:0.73rem;color:var(--primary);cursor:pointer;list-style:none">📋 ${item.readings.length} leituras</summary>
                   <div style="padding:4px 0 0 4px">${readingRows}</div>
                 </details>` : `<div style="padding:0 0 0 4px">${readingRows}</div>`}
+              ${maintBlock}
             </div>`;
-        }).join('')}
+          }).join('');
+          })()}
       `;
       }).join('');
     }
