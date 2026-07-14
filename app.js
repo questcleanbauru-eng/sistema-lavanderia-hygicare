@@ -847,6 +847,14 @@ ${printScript}
 
     function setSaving(active, triggerBtn = null, loadingText = '⏳ Salvando...') {
       _saving = active;
+      // Overlay spinner
+      const ov = document.getElementById('save-overlay');
+      const ovTxt = document.getElementById('save-overlay-text');
+      if (ov) ov.style.display = active ? 'flex' : 'none';
+      if (ovTxt && active) {
+        const clean = (loadingText || 'Salvando...').replace(/^[⏳🔄]\s*/, '');
+        ovTxt.textContent = clean;
+      }
       const allBtns = document.querySelectorAll('button');
       if (active) {
         allBtns.forEach(btn => {
