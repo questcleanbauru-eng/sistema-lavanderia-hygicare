@@ -3976,7 +3976,11 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
             const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
             if (!mv.length) return '';
             const trows = mv.map((v, i) => {
-              let vRecs = vazaoRecs.filter(r => Number(r.vazao_id) === Number(v.id));
+              // Usa machine_id + vazao_name porque vazao_id pode divergir entre
+              // o ID local (momento do salvamento) e o ID do Sheets (após sync)
+              let vRecs = vazaoRecs.filter(r =>
+                Number(r.machine_id) === Number(m.id) &&
+                (r.vazao_name || '') === (v.name || ''));
               if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
               if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
               const sorted  = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
@@ -4352,14 +4356,21 @@ ${machSections}
 
     async function _countNovidades() {
       const cutoff = _novidadesCutoff();
-      const [records, vazaoRecs, notes, clientsAll, machines, processes, recipes] = await Promise.all([
+      const [records, vazaoRecs, notes, machines, processes, recipes] = await Promise.all([
         dbGetAll_raw('records'), dbGetAll_raw('vazao_records'), dbGetAll_raw('client_notes'),
-        dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('recipes'),
+        dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('recipes'),
       ]);
+      const allowedClients = await window.getAll('clients');
+      const allowed = new Set(allowedClients.map(c => String(c.id)));
       const since = x => (x.created_at || x.date_start || x.date || '') >= cutoff;
-      return records.filter(since).length + vazaoRecs.filter(since).length + notes.filter(since).length +
-             clientsAll.filter(since).length + machines.filter(since).length +
-             processes.filter(since).length + recipes.filter(since).length;
+      const machineClient = {};
+      machines.forEach(m => { machineClient[String(m.id)] = String(m.client_id); });
+      const vazaoCount = vazaoRecs.filter(since).filter(r => allowed.has(machineClient[String(r.machine_id)])).length;
+      return records.filter(since).filter(r => allowed.has(String(r.client_id))).length +
+             vazaoCount +
+             notes.filter(since).filter(n => allowed.has(String(n.client_id))).length +
+             allowedClients.filter(since).length +
+             machines.filter(since).length + processes.filter(since).length + recipes.filter(since).length;
     }
 
     async function _refreshNovidadesDot() {
@@ -4381,22 +4392,41 @@ ${machSections}
       const allowedIds = new Set((await window.getAll('clients')).map(c => String(c.id)));
       const cName = id => clientsAll.find(c => String(c.id) === String(id))?.name || `#${id}`;
 
+      // Leituras de vazão agrupadas por cliente + data (com lista de bombas)
+      // vazao_records não tem client_id — precisa ir por machine_id → machines.client_id
+      const machineClientMap = {};
+      machines.forEach(m => { machineClientMap[String(m.id)] = String(m.client_id); });
+      const vazaoMap = {};
+      vazaoRecs.filter(since).forEach(r => {
+        const clientId = machineClientMap[String(r.machine_id)];
+        if (!clientId || !allowedIds.has(clientId)) return;
+        const day = (r.date || r.created_at || '').slice(0, 10);
+        const key = `${clientId}|${day}`;
+        if (!vazaoMap[key]) vazaoMap[key] = { date: r.date||r.created_at||'', clientId, bombas: [] };
+        if (r.vazao_name) vazaoMap[key].bombas.push(r.vazao_name);
+      });
+      const vazaoItems = Object.values(vazaoMap).map(g => ({
+        date: g.date, name: cName(g.clientId),
+        tipo: '💧 Leitura de Vazão',
+        sub: [...new Set(g.bombas)].slice(0,4).join(', ') + (g.bombas.length > 4 ? '…' : ''),
+        cor: '#0ea5e9'
+      }));
+
       // Lista plana de eventos, ordenada por data desc
       const items = [
         ...records.filter(since).filter(r => allowedIds.has(String(r.client_id)))
-          .map(r => ({ date: r.date_start||r.created_at||'', name: cName(r.client_id), tipo: '📋 Relatório de Produção', cor: '#2563eb' })),
-        ...vazaoRecs.filter(since).filter(r => allowedIds.has(String(r.client_id)))
-          .map(r => ({ date: r.date||r.created_at||'', name: cName(r.client_id), tipo: '💧 Leitura de Vazão', cor: '#0ea5e9' })),
+          .map(r => ({ date: r.date_start||r.created_at||'', name: cName(r.client_id), tipo: '📋 Relatório de Produção', sub: '', cor: '#2563eb' })),
+        ...vazaoItems,
         ...notes.filter(since).filter(n => allowedIds.has(String(n.client_id)))
-          .map(n => ({ date: n.date||n.created_at||'', name: cName(n.client_id), tipo: '📝 Nota do Histórico', cor: '#7c3aed' })),
+          .map(n => ({ date: n.date||n.created_at||'', name: cName(n.client_id), tipo: '📝 Nota do Histórico', sub: '', cor: '#7c3aed' })),
         ...clientsAll.filter(since)
-          .map(c => ({ date: c.created_at||'', name: c.name||'—', tipo: '👥 Novo Cliente', cor: '#16a34a' })),
+          .map(c => ({ date: c.created_at||'', name: c.name||'—', tipo: '👥 Novo Cliente', sub: '', cor: '#16a34a' })),
         ...machines.filter(since)
-          .map(m => ({ date: m.created_at||'', name: m.name||'—', tipo: '⚙️ Nova Máquina', cor: '#ea580c' })),
+          .map(m => ({ date: m.created_at||'', name: m.name||'—', tipo: '⚙️ Nova Máquina', sub: '', cor: '#ea580c' })),
         ...processes.filter(since)
-          .map(p => ({ date: p.created_at||'', name: p.name||'—', tipo: '🔄 Novo Processo', cor: '#d97706' })),
+          .map(p => ({ date: p.created_at||'', name: p.name||'—', tipo: '🔄 Novo Processo', sub: '', cor: '#d97706' })),
         ...recipes.filter(since)
-          .map(r => ({ date: r.created_at||'', name: r.name||'—', tipo: '🗂️ Nova Receita', cor: '#be185d' })),
+          .map(r => ({ date: r.created_at||'', name: r.name||'—', tipo: '🗂️ Nova Receita', sub: '', cor: '#be185d' })),
       ].sort((a,b) => b.date.localeCompare(a.date));
 
       const body = items.length === 0
@@ -4405,7 +4435,7 @@ ${machSections}
             <div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9">
               <div style="flex:1;min-width:0">
                 <div style="font-size:0.87rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
-                <div style="font-size:0.75rem;color:${it.cor};margin-top:1px">${it.tipo}</div>
+                <div style="font-size:0.75rem;color:${it.cor};margin-top:1px">${it.tipo}${it.sub ? `<span style="color:#64748b;font-weight:400"> · ${escHtml(it.sub)}</span>` : ''}</div>
               </div>
               <div style="font-size:0.75rem;color:#9ca3af;flex-shrink:0">${fmtD(it.date)}</div>
             </div>`).join('');
