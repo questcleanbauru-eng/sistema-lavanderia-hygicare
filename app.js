@@ -4589,10 +4589,21 @@ ${machSections}
       await renderVazaoLocalHistory(clientId);
     }
 
-    function _showVazaoWhatsapp(clientName, date, rows) {
+    function _showVazaoWhatsapp(clientName, date, rows, machineMap) {
       const fmtDateBR = d => { const p = new Date(d + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
-      const lines = rows.map(r => `• ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}`).join('\n');
-      const msg = `💧 *Leitura de Vazão*\n*Cliente:* ${clientName}\n*Data:* ${fmtDateBR(date)}\n\n${lines}\n\n_Hygicare Lavanderia_`;
+      // Agrupar por máquina
+      const byMach = {};
+      for (const r of rows) {
+        const mId = String(r.machine_id || 'x');
+        const mName = (machineMap && machineMap[mId]) || `Máquina #${mId}`;
+        if (!byMach[mName]) byMach[mName] = [];
+        byMach[mName].push(r);
+      }
+      const sections = Object.entries(byMach).map(([mName, recs]) => {
+        const pumps = recs.map(r => `  • ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}`).join('\n');
+        return `⚙️ *${mName}*\n${pumps}`;
+      }).join('\n\n');
+      const msg = `💧 *Leitura de Vazão*\n*Cliente:* ${clientName}\n*Data:* ${fmtDateBR(date)}\n\n${sections}\n\n_Hygicare Lavanderia_`;
 
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
@@ -4660,7 +4671,9 @@ ${machSections}
         notifyEmail('nova_vazao', { clientName: _clientName, date, count: saved });
 
         // Botão de compartilhar via WhatsApp
-        _showVazaoWhatsapp(_clientName, date, rows);
+        const _allMachVz = await dbGetAll_raw('machines');
+        const _machMapVz = Object.fromEntries(_allMachVz.map(m => [String(m.id), m.name]));
+        _showVazaoWhatsapp(_clientName, date, rows, _machMapVz);
 
         inputs.forEach(inp => inp.value = '');
         await renderVazaoHistory();
@@ -4834,7 +4847,7 @@ ${machSections}
         const m = machines.find(mm => Number(mm.id) === Number(r.machine_id));
         const mName = m?.name || `Máquina #${r.machine_id}`;
         const key = `${r.machine_id}|||${r.vazao_name}`;
-        if (!byMachVazao[key]) byMachVazao[key] = { machineName: mName, vazaoName: r.vazao_name || '', unit: r.vazao_unit || '', readings: [] };
+        if (!byMachVazao[key]) byMachVazao[key] = { machineName: mName, machineId: Number(r.machine_id), vazaoName: r.vazao_name || '', unit: r.vazao_unit || '', readings: [] };
         byMachVazao[key].readings.push(r);
       }
       for (const item of Object.values(byMachVazao)) {
@@ -4849,8 +4862,13 @@ ${machSections}
       }
 
       const canEdit = canDo('edit_vazao');
-      listEl.innerHTML = Object.entries(byMachine).map(([machineName, items]) => `
-        <div class="vazao-hist-mach-label">⚙️ ${machineName}</div>
+      listEl.innerHTML = Object.entries(byMachine).map(([machineName, items]) => {
+        const machineId = items[0]?.machineId || 0;
+        return `
+        <div class="vazao-hist-mach-label" style="display:flex;justify-content:space-between;align-items:center">
+          <span>⚙️ ${machineName}</span>
+          <button onclick="window._shareVazaoHistory(${clientId},${machineId},'${machineName.replace(/'/g,"\\'")}')" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:2px 6px" title="Compartilhar via WhatsApp">📲</button>
+        </div>
         ${items.map(item => {
           const latest = item.readings[0];
           const prev   = item.readings[1];
@@ -4887,8 +4905,30 @@ ${machSections}
                 </details>` : `<div style="padding:0 0 0 4px">${readingRows}</div>`}
             </div>`;
         }).join('')}
-      `).join('');
+      `;
+      }).join('');
     }
+
+    window._shareVazaoHistory = async function(clientId, machineId, machineName) {
+      const allClients = await dbGetAll_raw('clients');
+      const client = allClients.find(c => Number(c.id) === Number(clientId));
+      const clientName = client?.name || `#${clientId}`;
+      const allRecords = await dbGetAll_raw('vazao_records');
+      const machRecs = allRecords.filter(r =>
+        Number(r.client_id) === Number(clientId) && Number(r.machine_id) === Number(machineId));
+      // Última leitura por bomba
+      const byPump = {};
+      for (const r of machRecs) {
+        const k = r.vazao_name || '';
+        if (!byPump[k] || (r.date||'') > (byPump[k].date||'')) byPump[k] = r;
+      }
+      const rows = Object.values(byPump);
+      if (!rows.length) return toast('Nenhuma leitura para compartilhar', 'warning');
+      const latestDate = rows.reduce((mx, r) => (r.date||'') > mx ? (r.date||'') : mx, '');
+      _showVazaoWhatsapp(clientName, latestDate, rows.map(r => ({
+        machine_id: r.machine_id, vazao_name: r.vazao_name, vazao_unit: r.vazao_unit, value: r.value
+      })), { [String(machineId)]: machineName });
+    };
 
     window._deleteVazaoRecord = async function(id, el) {
       if (!canDo('edit_vazao')) return toast('Sem permissão para excluir leituras.', 'error');
