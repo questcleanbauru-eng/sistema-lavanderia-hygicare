@@ -5146,6 +5146,13 @@ ${machSections}
       const allCbs = document.querySelectorAll('.vazao-sel-cb');
       const allCb = document.getElementById('vazao-sel-all');
       if (allCb) allCb.checked = allCbs.length > 0 && checked === allCbs.length;
+      const delBtn = document.getElementById('btn-vazao-del-selected');
+      if (delBtn) {
+        delBtn.disabled = checked === 0;
+        delBtn.style.background = checked > 0 ? 'var(--danger,#ef4444)' : '#d1d5db';
+        delBtn.style.color = checked > 0 ? '#fff' : '#9ca3af';
+        delBtn.style.cursor = checked > 0 ? 'pointer' : 'not-allowed';
+      }
     };
 
     window._toggleSelectAllVazao = function(checked) {

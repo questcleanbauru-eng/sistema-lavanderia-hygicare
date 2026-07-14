@@ -834,7 +834,7 @@
                 <input type="checkbox" id="vazao-sel-all" onchange="window._toggleSelectAllVazao(this.checked)"> Todos
               </label>
               <span id="vazao-sel-count" style="font-size:0.82rem;color:var(--muted);flex:1">0 selecionados</span>
-              <button onclick="window._deleteVazaoSelected()" style="background:var(--danger,#ef4444);color:#fff;border:none;border-radius:7px;padding:5px 14px;font-size:0.82rem;font-weight:700;cursor:pointer">🗑️ Excluir</button>
+              <button id="btn-vazao-del-selected" onclick="window._deleteVazaoSelected()" disabled style="background:#d1d5db;color:#9ca3af;border:none;border-radius:7px;padding:5px 14px;font-size:0.82rem;font-weight:700;cursor:not-allowed;transition:background .2s,color .2s">🗑️ Excluir</button>
             </div>
             <div id="vazao-local-history"></div>
           </div>
