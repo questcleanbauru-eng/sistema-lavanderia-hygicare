@@ -874,8 +874,9 @@ ${printScript}
     // =====================================================
     function getManagedSellerNames() {
       if (currentUser.role === 'consultor') {
+        const myName = (currentUser.sellerName || currentUser.name || '').toLowerCase();
         const access = (currentUser.sellers_access || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-        return new Set(access);
+        return new Set([myName, ...access]);
       }
       const allUsers = JSON.parse(localStorage.getItem('hygicare_users') || '[]');
       const myName = (currentUser.sellerName || currentUser.name || '').toLowerCase();
