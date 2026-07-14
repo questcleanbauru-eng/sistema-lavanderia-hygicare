@@ -4355,52 +4355,49 @@ ${machSections}
     async function showNovidades() {
       const cutoff = _novidadesCutoff();
       const since = x => (x.created_at || x.date_start || x.date || '') >= cutoff;
-      const fmtD = d => { if (!d) return ''; const s = d.slice(0,10); const p = new Date(s+'T00:00:00'); return isNaN(p)?s:p.toLocaleDateString('pt-BR'); };
+      const fmtD = d => { if (!d) return ''; const s = d.slice(0,10); const p = new Date(s+'T00:00:00'); return isNaN(p)?s:p.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); };
 
       const [records, vazaoRecs, notes, clientsAll, machines, processes, recipes] = await Promise.all([
         dbGetAll_raw('records'), dbGetAll_raw('vazao_records'), dbGetAll_raw('client_notes'),
         dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('recipes'),
       ]);
       const allowedIds = new Set((await window.getAll('clients')).map(c => String(c.id)));
-      const clientName = id => clientsAll.find(c => String(c.id) === String(id))?.name || `#${id}`;
+      const cName = id => clientsAll.find(c => String(c.id) === String(id))?.name || `#${id}`;
 
-      const newRecs    = records.filter(since).filter(r => allowedIds.has(String(r.client_id)));
-      const newVazao   = vazaoRecs.filter(since).filter(r => allowedIds.has(String(r.client_id)));
-      const newNotes   = notes.filter(since).filter(n => allowedIds.has(String(n.client_id)));
-      const newClients = clientsAll.filter(since);
-      const newMach    = machines.filter(since);
-      const newProc    = processes.filter(since);
-      const newRecipes = recipes.filter(since);
+      // Lista plana de eventos, ordenada por data desc
+      const items = [
+        ...records.filter(since).filter(r => allowedIds.has(String(r.client_id)))
+          .map(r => ({ date: r.date_start||r.created_at||'', name: cName(r.client_id), tipo: '📋 Relatório de Produção', cor: '#2563eb' })),
+        ...vazaoRecs.filter(since).filter(r => allowedIds.has(String(r.client_id)))
+          .map(r => ({ date: r.date||r.created_at||'', name: cName(r.client_id), tipo: '💧 Leitura de Vazão', cor: '#0ea5e9' })),
+        ...notes.filter(since).filter(n => allowedIds.has(String(n.client_id)))
+          .map(n => ({ date: n.date||n.created_at||'', name: cName(n.client_id), tipo: '📝 Nota do Histórico', cor: '#7c3aed' })),
+        ...clientsAll.filter(since)
+          .map(c => ({ date: c.created_at||'', name: c.name||'—', tipo: '👥 Novo Cliente', cor: '#16a34a' })),
+        ...machines.filter(since)
+          .map(m => ({ date: m.created_at||'', name: m.name||'—', tipo: '⚙️ Nova Máquina', cor: '#ea580c' })),
+        ...processes.filter(since)
+          .map(p => ({ date: p.created_at||'', name: p.name||'—', tipo: '🔄 Novo Processo', cor: '#d97706' })),
+        ...recipes.filter(since)
+          .map(r => ({ date: r.created_at||'', name: r.name||'—', tipo: '🗂️ Nova Receita', cor: '#be185d' })),
+      ].sort((a,b) => b.date.localeCompare(a.date));
 
-      const total = newRecs.length + newVazao.length + newNotes.length +
-                    newClients.length + newMach.length + newProc.length + newRecipes.length;
-
-      const mkSection = (icon, label, items, getText) => {
-        if (!items.length) return '';
-        const preview = items.slice(0,3).map(getText).join('');
-        const more = items.length > 3 ? `<div style="font-size:0.75rem;color:#6b7280;margin-top:2px">+${items.length-3} mais</div>` : '';
-        return `<div style="margin-bottom:1rem">
-          <div style="font-size:0.78rem;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">${icon} ${label} <span style="font-weight:400;color:#6b7280">(${items.length})</span></div>
-          ${preview}${more}
-        </div>`;
-      };
-      const row = (main, sub) => `<div style="display:flex;justify-content:space-between;font-size:0.83rem;padding:3px 0;border-bottom:1px solid #f1f5f9"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${main}</span><span style="color:#9ca3af;font-size:0.75rem;flex-shrink:0;margin-left:0.5rem">${sub}</span></div>`;
-
-      const body = total === 0
+      const body = items.length === 0
         ? `<div style="text-align:center;color:#9ca3af;padding:1.5rem 0;font-size:0.9rem">Nenhuma novidade nas últimas 48h 😴</div>`
-        : mkSection('📋','Relatórios de Produção', newRecs, r => row(clientName(r.client_id), fmtD(r.date_start||r.created_at)))
-        + mkSection('💧','Leituras de Vazão', newVazao, r => row(clientName(r.client_id), fmtD(r.date||r.created_at)))
-        + mkSection('📝','Notas do Histórico', newNotes, n => row(clientName(n.client_id), fmtD(n.date||n.created_at)))
-        + mkSection('👥','Novos Clientes', newClients, c => row(c.name||'—', fmtD(c.created_at)))
-        + mkSection('⚙️','Novas Máquinas', newMach, m => row(m.name||'—', fmtD(m.created_at)))
-        + mkSection('🔄','Novos Processos', newProc, p => row(p.name||'—', fmtD(p.created_at)))
-        + mkSection('🗂️','Novas Receitas', newRecipes, r => row(r.name||'—', fmtD(r.created_at)));
+        : items.map(it => `
+            <div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:0.87rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
+                <div style="font-size:0.75rem;color:${it.cor};margin-top:1px">${it.tipo}</div>
+              </div>
+              <div style="font-size:0.75rem;color:#9ca3af;flex-shrink:0">${fmtD(it.date)}</div>
+            </div>`).join('');
 
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
       overlay.innerHTML = `
-        <div style="background:#fff;border-radius:16px;padding:1.5rem 1.25rem;max-width:380px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25);max-height:80vh;display:flex;flex-direction:column">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div style="background:#fff;border-radius:16px;padding:1.5rem 1.25rem;max-width:360px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25);max-height:80vh;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.85rem">
             <div style="font-size:1rem;font-weight:700;color:#111827">🔔 Novidades — últimas 48h</div>
             <button id="_nov-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#6b7280;padding:0 4px">✕</button>
           </div>
