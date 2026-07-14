@@ -2199,6 +2199,7 @@ ${kpisHtml}
       const data = Object.fromEntries(new FormData(formClient).entries());
       data.send_client = !!data.send_client;
       data.send_seller = !!data.send_seller;
+      data.vazao_only  = !!data.vazao_only;
 
       const editId = editClientIdField.value ? Number(editClientIdField.value) : null;
       const submitBtn = formClient.querySelector('button[type="submit"]');
@@ -2373,6 +2374,7 @@ ${kpisHtml}
       formClient.price_kg.value     = c.price_kg || '';
       formClient.send_client.checked = !!c.send_client;
       formClient.send_seller.checked = !!c.send_seller;
+      formClient.vazao_only.checked  = !!c.vazao_only;
       formClientCard.classList.remove('hidden');
       formClientCard.scrollIntoView({ behavior: 'smooth' });
     }
@@ -2491,12 +2493,14 @@ ${kpisHtml}
     // =====================================================
     let _clientsGrouped = false;
     function _clientItemHtml(c) {
+      const vazaoOnly = !!c.vazao_only;
       return `
-        <div class="list-item">
+        <div class="list-item"${vazaoOnly ? ' style="border-left:3px solid #0ea5e9;opacity:0.92"' : ''}>
           <div class="list-item-content">
             <div class="list-item-name">
-              👤 ${c.name}
+              ${vazaoOnly ? '💧' : '👤'} ${c.name}
               <span class="badge">${c.city || 'Sem cidade'}</span>
+              ${vazaoOnly ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.7em">Apenas Vazão</span>' : ''}
             </div>
             <div class="list-item-details">
               ${c.seller ? `<span class="detail-chip">👨‍💼 ${c.seller}</span>` : ''}
@@ -3365,6 +3369,7 @@ ${kpisHtml}
       const thresholdStr = threshold.toISOString().split('T')[0];
       const overdue = [];
       for (const c of clients) {
+        if (c.vazao_only) continue;
         const last = lastDate[Number(c.id)] || null;
         if (!last || last < thresholdStr) {
           const daysSince = last ? Math.floor((today.getTime() - new Date(last).getTime()) / 86400000) : null;
