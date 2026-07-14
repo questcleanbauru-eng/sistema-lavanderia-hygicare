@@ -7208,17 +7208,23 @@ ${inactiveSec}
       const container = document.getElementById('user-sellers-checkboxes');
       if (!container) return;
       const allUsers = await dbGetAll_raw('users');
-      const sellers = allUsers.filter(u => u.role === 'vendedor');
+      const sellers = allUsers.filter(u => u.role === 'vendedor' || u.role === 'gerente');
       const selectedSet = new Set(selectedAccess.split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
       if (!sellers.length) {
         container.innerHTML = '<span style="color:#94a3b8;font-size:0.84rem">Nenhum vendedor cadastrado</span>';
         return;
       }
-      container.innerHTML = sellers.map(s => {
+      const gerentes  = sellers.filter(u => u.role === 'gerente');
+      const vendedores = sellers.filter(u => u.role === 'vendedor');
+      const mkChk = s => {
         const name = s.sellerName || s.name || '';
         const checked = selectedSet.has(name.toLowerCase()) ? 'checked' : '';
-        return `<label class="perm-check"><input type="checkbox" name="seller_access" value="${name}" ${checked} /> ${name}</label>`;
-      }).join('');
+        const tag = s.role === 'gerente' ? ' <span style="font-size:0.7em;color:#1a3f5c;font-weight:700">(gerente)</span>' : '';
+        return `<label class="perm-check"><input type="checkbox" name="seller_access" value="${name}" ${checked} /> ${name}${tag}</label>`;
+      };
+      container.innerHTML =
+        (gerentes.length  ? `<div style="font-size:0.72rem;color:#6b7280;font-weight:600;margin:4px 0 2px;width:100%">GERENTES</div>${gerentes.map(mkChk).join('')}` : '') +
+        (vendedores.length ? `<div style="font-size:0.72rem;color:#6b7280;font-weight:600;margin:4px 0 2px;width:100%">VENDEDORES</div>${vendedores.map(mkChk).join('')}` : '');
     }
 
     document.getElementById('user-role')?.addEventListener('change', e => toggleManagerRow(e.target.value));
