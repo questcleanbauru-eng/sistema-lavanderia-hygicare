@@ -7039,11 +7039,14 @@ ${recipeSections}
       const recordsPreDate = [...records];
 
       if (filterStart || filterEnd) {
+        // Normaliza para YYYY-MM para comparar com date_start (que é comparado em slice(0,7))
+        const fsMonth = filterStart ? filterStart.slice(0, 7) : '';
+        const feMonth = filterEnd   ? filterEnd.slice(0, 7)   : '';
         records = records.filter(r => {
           const m = (r.date_start || '').slice(0, 7);
           if (!m) return false;
-          if (filterStart && m < filterStart) return false;
-          if (filterEnd   && m > filterEnd)   return false;
+          if (fsMonth && m < fsMonth) return false;
+          if (feMonth && m > feMonth) return false;
           return true;
         });
       }
