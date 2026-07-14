@@ -4718,12 +4718,24 @@ ${machSections}
         const _clientName = _clientVz?.name || `#${clientId}`;
         notifyEmail('nova_vazao', { clientName: _clientName, date, count: saved });
 
-        // Botão de compartilhar via WhatsApp
+        // Botão de compartilhar via WhatsApp (inclui manutenções)
         const _allMachVz = await dbGetAll_raw('machines');
         const _machMapVz = Object.fromEntries(_allMachVz.map(m => [String(m.id), m.name]));
-        _showVazaoWhatsapp(_clientName, date, rows, _machMapVz);
+        const _rowsWz = [...rows, ...maintBtns.map(btn => ({
+          machine_id: Number(btn.id.replace('toggle-maint-', '')),
+          vazao_name: '__manutencao__', vazao_unit: '', value: null
+        }))];
+        _showVazaoWhatsapp(_clientName, date, _rowsWz, _machMapVz);
 
+        // Fechar campos após salvar
         inputs.forEach(inp => inp.value = '');
+        document.querySelectorAll('[id^="toggle-maint-"]').forEach(t => {
+          t.dataset.maintOn = '0'; t.style.background = '#d1d5db';
+          const k = document.getElementById(t.id.replace('toggle-maint-','toggle-knob-'));
+          if (k) k.style.left = '3px';
+        });
+        document.querySelectorAll('[id^="vazao-mach-inputs-"]').forEach(el => el.style.display = '');
+        document.getElementById('vazao-machines-area').style.display = 'none';
         await renderVazaoHistory();
         await renderVazaoLocalHistory(clientId);
       } catch(e) {
