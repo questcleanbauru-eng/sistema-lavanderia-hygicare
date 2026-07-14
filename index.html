@@ -812,7 +812,8 @@
           <div class="card" id="vazao-history-card" style="display:none">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
               <h3 style="font-size:0.92rem;font-weight:700;margin:0">📜 Histórico de Leituras</h3>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                <button onclick="window._shareAllVazaoHistory(Number(document.getElementById('vazao-client')?.value||0))" style="display:flex;align-items:center;gap:0.3rem;padding:5px 10px;background:#25d366;color:#fff;border:none;border-radius:7px;font-size:0.8rem;font-weight:700;cursor:pointer">📲 Compartilhar</button>
                 <select id="vazao-hist-machine" class="form-input" style="font-size:0.82rem;padding:0.3rem 0.5rem;min-width:0">
                   <option value="">⚙️ Todas as máquinas</option>
                 </select>

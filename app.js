@@ -4865,10 +4865,7 @@ ${machSections}
       listEl.innerHTML = Object.entries(byMachine).map(([machineName, items]) => {
         const machineId = items[0]?.machineId || 0;
         return `
-        <div class="vazao-hist-mach-label" style="display:flex;justify-content:space-between;align-items:center">
-          <span>⚙️ ${machineName}</span>
-          <button onclick="window._shareVazaoHistory(${clientId},${machineId},'${machineName.replace(/'/g,"\\'")}')" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:2px 6px" title="Compartilhar via WhatsApp">📲</button>
-        </div>
+        <div class="vazao-hist-mach-label">⚙️ ${machineName}</div>
         ${items.map(item => {
           const latest = item.readings[0];
           const prev   = item.readings[1];
@@ -4908,6 +4905,62 @@ ${machSections}
       `;
       }).join('');
     }
+
+    window._shareAllVazaoHistory = async function(clientId) {
+      if (!clientId) return toast('Selecione um cliente primeiro', 'warning');
+      const allClients = await dbGetAll_raw('clients');
+      const client = allClients.find(c => Number(c.id) === Number(clientId));
+      const clientName = client?.name || `#${clientId}`;
+      const allMachines = await dbGetAll_raw('machines');
+      const machMap = Object.fromEntries(
+        allMachines.filter(m => Number(m.client_id) === Number(clientId)).map(m => [String(m.id), m.name])
+      );
+      const allRecords = await dbGetAll_raw('vazao_records');
+      let recs = allRecords.filter(r => Number(r.client_id) === Number(clientId));
+      const periodFilter = document.getElementById('vazao-hist-period')?.value || '30';
+      if (periodFilter !== 'all') {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - Number(periodFilter));
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+        recs = recs.filter(r => (r.date||'').slice(0,10) >= cutoffStr);
+      }
+      if (!recs.length) return toast('Nenhuma leitura no período selecionado', 'warning');
+      const dateMap = {};
+      for (const r of recs) {
+        const d = (r.date||'').slice(0,10);
+        if (!dateMap[d]) dateMap[d] = [];
+        dateMap[d].push(r);
+      }
+      const dates = Object.keys(dateMap).sort().reverse();
+      const _doShare = d => _showVazaoWhatsapp(clientName, d, dateMap[d].map(r => ({
+        machine_id: r.machine_id, vazao_name: r.vazao_name, vazao_unit: r.vazao_unit, value: r.value
+      })), machMap);
+      if (dates.length === 1) { _doShare(dates[0]); return; }
+      const fmtD = d => { const p = new Date(d + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+      ov.innerHTML = `
+        <div style="background:var(--surface,#fff);border-radius:14px;padding:1.4rem 1.2rem;max-width:320px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+          <div style="font-size:0.95rem;font-weight:700;margin-bottom:0.5rem;color:var(--text)">📲 Escolha a data para compartilhar</div>
+          <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.9rem">Todas as máquinas · ${escHtml(clientName)}</div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto">
+            ${dates.map(d => {
+              const machCount = new Set(dateMap[d].map(r => String(r.machine_id))).size;
+              const pumpCount = dateMap[d].length;
+              return `<button data-d="${d}" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;text-align:left;font-size:0.88rem;color:var(--text)">
+                📅 <strong>${fmtD(d)}</strong> <span style="color:var(--muted);font-size:0.78rem">&nbsp;${machCount} máquina${machCount!==1?'s':''} · ${pumpCount} bomba${pumpCount!==1?'s':''}</span>
+              </button>`;
+            }).join('')}
+          </div>
+          <button id="_sdpa-close" style="margin-top:0.85rem;padding:8px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:0.88rem;cursor:pointer;width:100%">Cancelar</button>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_sdpa-close').addEventListener('click', () => ov.remove());
+      ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+      ov.querySelectorAll('[data-d]').forEach(btn => {
+        btn.addEventListener('click', () => { ov.remove(); _doShare(btn.dataset.d); });
+      });
+    };
 
     window._shareVazaoHistory = async function(clientId, machineId, machineName) {
       const allClients = await dbGetAll_raw('clients');
