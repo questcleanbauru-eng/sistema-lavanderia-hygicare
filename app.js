@@ -4252,7 +4252,167 @@ ${machSections}
       }).join('');
 
       refreshAlertsBadge();
+
+      // Últimas leituras de vazão — 7 dias
+      const vazaoCard = document.getElementById('home-recent-vazao-card');
+      const vazaoEl   = document.getElementById('home-recent-vazao');
+      if (vazaoEl && canDo('vazao')) {
+        const cutoff7 = new Date(); cutoff7.setDate(cutoff7.getDate() - 7);
+        const cutoffStr = cutoff7.toISOString().slice(0, 10);
+        let vRecs = (await dbGetAll_raw('vazao_records'))
+          .filter(r => (r.date || '') >= cutoffStr);
+        // filtro por clientes acessíveis
+        const vcIds = new Set(clients.map(c => String(c.id)));
+        vRecs = vRecs.filter(r => vcIds.has(String(r.client_id)));
+        if (vRecs.length) {
+          if (vazaoCard) vazaoCard.style.display = '';
+          // agrupar por data + cliente
+          const vg = {};
+          for (const r of vRecs) {
+            const key = `${r.date}|${r.client_id}`;
+            if (!vg[key]) vg[key] = { date: r.date, clientId: r.client_id, count: 0 };
+            vg[key].count++;
+          }
+          const vSorted = Object.values(vg).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
+          vazaoEl.innerHTML = vSorted.map(g => {
+            const c = clients.find(cl => String(cl.id) === String(g.clientId));
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:0.88rem;font-weight:600">${c?.name || '—'}</div>
+                <div style="font-size:0.73rem;color:var(--muted)">${fmtDate(g.date)} · ${g.count} leitura${g.count>1?'s':''}</div>
+              </div>
+              <span style="font-size:0.8rem;color:#0ea5e9;font-weight:700">💧</span>
+            </div>`;
+          }).join('');
+        } else {
+          if (vazaoCard) vazaoCard.style.display = 'none';
+        }
+      }
+
+      // Últimas notas do histórico — 7 dias
+      const notesCard = document.getElementById('home-recent-notes-card');
+      const notesEl   = document.getElementById('home-recent-notes');
+      if (notesEl && canDo('client_notes')) {
+        const cutoff7n = new Date(); cutoff7n.setDate(cutoff7n.getDate() - 7);
+        const cutoffNStr = cutoff7n.toISOString().slice(0, 10);
+        let notes = (await dbGetAll_raw('client_notes'))
+          .filter(n => (n.date || n.created_at || '').slice(0,10) >= cutoffNStr);
+        const ncIds = new Set(clients.map(c => String(c.id)));
+        notes = notes.filter(n => ncIds.has(String(n.client_id)));
+        if (notes.length) {
+          if (notesCard) notesCard.style.display = '';
+          const nSorted = notes.sort((a,b) => {
+            const da = (a.date||a.created_at||''); const db = (b.date||b.created_at||'');
+            return db.localeCompare(da);
+          }).slice(0, 5);
+          notesEl.innerHTML = nSorted.map(n => {
+            const c = clients.find(cl => String(cl.id) === String(n.client_id));
+            const d = (n.date || n.created_at || '').slice(0,10);
+            const preview = (n.text || n.note || n.content || '').slice(0, 60);
+            return `<div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div style="font-size:0.88rem;font-weight:600">${c?.name || '—'}</div>
+                <div style="font-size:0.72rem;color:var(--muted);flex-shrink:0;margin-left:0.5rem">${fmtDate(d)}</div>
+              </div>
+              ${preview ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(preview)}…</div>` : ''}
+            </div>`;
+          }).join('');
+        } else {
+          if (notesCard) notesCard.style.display = 'none';
+        }
+      }
+
+      // Atualiza ponto vermelho no botão 🔔
+      _refreshNovidadesDot();
     }
+
+    // =====================================================
+    // NOVIDADES — painel de atividade recente (48h)
+    // =====================================================
+    function _novidadesCutoff() {
+      const d = new Date(); d.setHours(d.getHours() - 48); return d.toISOString();
+    }
+
+    async function _countNovidades() {
+      const cutoff = _novidadesCutoff();
+      const [records, vazaoRecs, notes, clientsAll, machines, processes, recipes] = await Promise.all([
+        dbGetAll_raw('records'), dbGetAll_raw('vazao_records'), dbGetAll_raw('client_notes'),
+        dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('recipes'),
+      ]);
+      const since = x => (x.created_at || x.date_start || x.date || '') >= cutoff;
+      return records.filter(since).length + vazaoRecs.filter(since).length + notes.filter(since).length +
+             clientsAll.filter(since).length + machines.filter(since).length +
+             processes.filter(since).length + recipes.filter(since).length;
+    }
+
+    async function _refreshNovidadesDot() {
+      const dot = document.getElementById('novidades-dot');
+      if (!dot) return;
+      const count = await _countNovidades();
+      dot.style.display = count > 0 ? '' : 'none';
+    }
+
+    async function showNovidades() {
+      const cutoff = _novidadesCutoff();
+      const since = x => (x.created_at || x.date_start || x.date || '') >= cutoff;
+      const fmtD = d => { if (!d) return ''; const s = d.slice(0,10); const p = new Date(s+'T00:00:00'); return isNaN(p)?s:p.toLocaleDateString('pt-BR'); };
+
+      const [records, vazaoRecs, notes, clientsAll, machines, processes, recipes] = await Promise.all([
+        dbGetAll_raw('records'), dbGetAll_raw('vazao_records'), dbGetAll_raw('client_notes'),
+        dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('recipes'),
+      ]);
+      const allowedIds = new Set((await window.getAll('clients')).map(c => String(c.id)));
+      const clientName = id => clientsAll.find(c => String(c.id) === String(id))?.name || `#${id}`;
+
+      const newRecs    = records.filter(since).filter(r => allowedIds.has(String(r.client_id)));
+      const newVazao   = vazaoRecs.filter(since).filter(r => allowedIds.has(String(r.client_id)));
+      const newNotes   = notes.filter(since).filter(n => allowedIds.has(String(n.client_id)));
+      const newClients = clientsAll.filter(since);
+      const newMach    = machines.filter(since);
+      const newProc    = processes.filter(since);
+      const newRecipes = recipes.filter(since);
+
+      const total = newRecs.length + newVazao.length + newNotes.length +
+                    newClients.length + newMach.length + newProc.length + newRecipes.length;
+
+      const mkSection = (icon, label, items, getText) => {
+        if (!items.length) return '';
+        const preview = items.slice(0,3).map(getText).join('');
+        const more = items.length > 3 ? `<div style="font-size:0.75rem;color:#6b7280;margin-top:2px">+${items.length-3} mais</div>` : '';
+        return `<div style="margin-bottom:1rem">
+          <div style="font-size:0.78rem;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">${icon} ${label} <span style="font-weight:400;color:#6b7280">(${items.length})</span></div>
+          ${preview}${more}
+        </div>`;
+      };
+      const row = (main, sub) => `<div style="display:flex;justify-content:space-between;font-size:0.83rem;padding:3px 0;border-bottom:1px solid #f1f5f9"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${main}</span><span style="color:#9ca3af;font-size:0.75rem;flex-shrink:0;margin-left:0.5rem">${sub}</span></div>`;
+
+      const body = total === 0
+        ? `<div style="text-align:center;color:#9ca3af;padding:1.5rem 0;font-size:0.9rem">Nenhuma novidade nas últimas 48h 😴</div>`
+        : mkSection('📋','Relatórios de Produção', newRecs, r => row(clientName(r.client_id), fmtD(r.date_start||r.created_at)))
+        + mkSection('💧','Leituras de Vazão', newVazao, r => row(clientName(r.client_id), fmtD(r.date||r.created_at)))
+        + mkSection('📝','Notas do Histórico', newNotes, n => row(clientName(n.client_id), fmtD(n.date||n.created_at)))
+        + mkSection('👥','Novos Clientes', newClients, c => row(c.name||'—', fmtD(c.created_at)))
+        + mkSection('⚙️','Novas Máquinas', newMach, m => row(m.name||'—', fmtD(m.created_at)))
+        + mkSection('🔄','Novos Processos', newProc, p => row(p.name||'—', fmtD(p.created_at)))
+        + mkSection('🗂️','Novas Receitas', newRecipes, r => row(r.name||'—', fmtD(r.created_at)));
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+      overlay.innerHTML = `
+        <div style="background:#fff;border-radius:16px;padding:1.5rem 1.25rem;max-width:380px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25);max-height:80vh;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+            <div style="font-size:1rem;font-weight:700;color:#111827">🔔 Novidades — últimas 48h</div>
+            <button id="_nov-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#6b7280;padding:0 4px">✕</button>
+          </div>
+          <div style="overflow-y:auto;flex:1">${body}</div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const close = () => overlay.remove();
+      overlay.querySelector('#_nov-close').addEventListener('click', close);
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    }
+
+    document.getElementById('btn-novidades')?.addEventListener('click', showNovidades);
 
     async function initVazaoScreen() {
       const dateEl   = document.getElementById('vazao-date');
