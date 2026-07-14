@@ -817,6 +817,7 @@
               <h3 style="font-size:0.92rem;font-weight:700;margin:0">📜 Histórico de Leituras</h3>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
                 <button onclick="window._shareAllVazaoHistory(Number(document.getElementById('vazao-client')?.value||0))" style="display:flex;align-items:center;gap:0.3rem;padding:5px 10px;background:#25d366;color:#fff;border:none;border-radius:7px;font-size:0.8rem;font-weight:700;cursor:pointer">📲 Compartilhar</button>
+                <button id="btn-vazao-select-mode" onclick="window._toggleVazaoSelectMode()" style="padding:5px 10px;background:none;border:1px solid var(--border);border-radius:7px;font-size:0.8rem;cursor:pointer">☑️ Selecionar</button>
                 <select id="vazao-hist-machine" class="form-input" style="font-size:0.82rem;padding:0.3rem 0.5rem;min-width:0">
                   <option value="">⚙️ Todas as máquinas</option>
                 </select>
@@ -827,6 +828,13 @@
                   <option value="all">Todos</option>
                 </select>
               </div>
+            </div>
+            <div id="vazao-sel-bar" style="display:none;align-items:center;gap:0.5rem;flex-wrap:wrap;background:rgba(239,68,68,0.07);border:1.5px solid #fca5a5;border-radius:9px;padding:0.5rem 0.75rem;margin-bottom:0.5rem">
+              <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;cursor:pointer;user-select:none">
+                <input type="checkbox" id="vazao-sel-all" onchange="window._toggleSelectAllVazao(this.checked)"> Todos
+              </label>
+              <span id="vazao-sel-count" style="font-size:0.82rem;color:var(--muted);flex:1">0 selecionados</span>
+              <button onclick="window._deleteVazaoSelected()" style="background:var(--danger,#ef4444);color:#fff;border:none;border-radius:7px;padding:5px 14px;font-size:0.82rem;font-weight:700;cursor:pointer">🗑️ Excluir</button>
             </div>
             <div id="vazao-local-history"></div>
           </div>

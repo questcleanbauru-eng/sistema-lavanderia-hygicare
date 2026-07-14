@@ -4699,7 +4699,7 @@ ${machSections}
         // Salvar flags de manutenção
         let maintSaved = 0;
         for (const btn of maintBtns) {
-          const mId = Number(btn.id.replace('btn-maint-', ''));
+          const mId = Number(btn.id.replace('toggle-maint-', ''));
           const mrec = {
             date, client_id: clientId, machine_id: mId,
             vazao_name: '__manutencao__', vazao_unit: '', value: null,
@@ -4932,7 +4932,14 @@ ${machSections}
           const maintDates = maintItem ? maintItem.readings : [];
           const maintBlock = maintDates.length ? `
             <div style="padding:4px 8px 4px 4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-              ${maintDates.map(r => `
+              ${maintDates.map(r => window._vazaoSelectMode ? `
+                <label style="display:inline-flex;align-items:center;gap:7px;user-select:none">
+                  <input type="checkbox" class="vazao-sel-cb" data-id="${r.id}" onchange="window._updateVazaoSelBar()" style="accent-color:var(--danger);flex-shrink:0;width:16px;height:16px">
+                  <span style="font-size:0.75rem;color:#92400e;font-weight:600">🔧 Em manutenção — ${fmtDate(r.date)}</span>
+                  <span style="display:inline-block;width:42px;height:24px;background:#d97706;border-radius:12px;position:relative;flex-shrink:0">
+                    <span style="position:absolute;top:3px;right:3px;width:18px;height:18px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25)"></span>
+                  </span>
+                </label>` : `
                 <label style="display:inline-flex;align-items:center;gap:7px;cursor:${canEdit?'pointer':'default'};user-select:none"
                        ${canEdit ? `onclick="window._deleteVazaoRecord(${r.id},this)" title="Clique para desligar manutenção"` : ''}>
                   <span style="font-size:0.75rem;color:#92400e;font-weight:600">🔧 Em manutenção — ${fmtDate(r.date)}</span>
@@ -4956,9 +4963,10 @@ ${machSections}
           // Linhas de todas as leituras com ações
           const readingRows = item.readings.map((r, idx) => `
             <div style="display:flex;align-items:center;gap:0.5rem;padding:3px 0;border-top:${idx > 0 ? '1px solid var(--border)' : 'none'}">
+              ${window._vazaoSelectMode ? `<input type="checkbox" class="vazao-sel-cb" data-id="${r.id}" onchange="window._updateVazaoSelBar()" style="accent-color:var(--danger);flex-shrink:0;width:16px;height:16px">` : ''}
               <span style="font-size:0.75rem;color:var(--muted);min-width:60px">${fmtDate(r.date)}</span>
               <span style="font-size:0.82rem;font-weight:${idx===0?'700':'500'};flex:1">${r.value} <span style="font-weight:400;color:var(--muted)">${item.unit}</span></span>
-              ${canEdit ? `
+              ${canEdit && !window._vazaoSelectMode ? `
                 <button onclick="window._editVazaoRecord(${r.id})" style="background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--primary)" title="Editar">✏️</button>
                 <button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--danger)" title="Excluir">🗑️</button>
               ` : ''}
@@ -5111,6 +5119,56 @@ ${machSections}
       await dbDelete('vazao_records', id);
       const ok = await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
       toast(ok ? 'Leitura excluída!' : 'Leitura excluída localmente', ok ? 'success' : 'warning');
+      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+      await renderVazaoLocalHistory(clientId);
+      await renderVazaoHistory();
+    };
+
+    window._vazaoSelectMode = false;
+
+    window._toggleVazaoSelectMode = function() {
+      window._vazaoSelectMode = !window._vazaoSelectMode;
+      const bar = document.getElementById('vazao-sel-bar');
+      const btn = document.getElementById('btn-vazao-select-mode');
+      if (bar) bar.style.display = window._vazaoSelectMode ? 'flex' : 'none';
+      if (btn) { btn.textContent = window._vazaoSelectMode ? '✕ Cancelar' : '☑️ Selecionar'; btn.style.background = window._vazaoSelectMode ? '#6b7280' : ''; }
+      if (!window._vazaoSelectMode) {
+        const allCb = document.getElementById('vazao-sel-all'); if (allCb) allCb.checked = false;
+      }
+      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+      renderVazaoLocalHistory(clientId);
+    };
+
+    window._updateVazaoSelBar = function() {
+      const checked = document.querySelectorAll('.vazao-sel-cb:checked').length;
+      const countEl = document.getElementById('vazao-sel-count');
+      if (countEl) countEl.textContent = `${checked} selecionado${checked !== 1 ? 's' : ''}`;
+      const allCbs = document.querySelectorAll('.vazao-sel-cb');
+      const allCb = document.getElementById('vazao-sel-all');
+      if (allCb) allCb.checked = allCbs.length > 0 && checked === allCbs.length;
+    };
+
+    window._toggleSelectAllVazao = function(checked) {
+      document.querySelectorAll('.vazao-sel-cb').forEach(cb => cb.checked = checked);
+      window._updateVazaoSelBar();
+    };
+
+    window._deleteVazaoSelected = async function() {
+      if (!canDo('edit_vazao')) return toast('Sem permissão para excluir leituras.', 'error');
+      const checked = [...document.querySelectorAll('.vazao-sel-cb:checked')];
+      if (!checked.length) return toast('Selecione pelo menos uma leitura', 'warning');
+      if (!await confirmAction(`Excluir ${checked.length} leitura(s) selecionada(s)?`, 'Excluir', true)) return;
+      let count = 0;
+      for (const cb of checked) {
+        const id = Number(cb.dataset.id);
+        await dbDelete('vazao_records', id);
+        await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
+        count++;
+      }
+      toast(`${count} leitura(s) excluída(s)!`, 'success');
+      window._vazaoSelectMode = false;
+      const bar = document.getElementById('vazao-sel-bar'); if (bar) bar.style.display = 'none';
+      const btn = document.getElementById('btn-vazao-select-mode'); if (btn) { btn.textContent = '☑️ Selecionar'; btn.style.background = ''; }
       const clientId = Number(document.getElementById('vazao-client')?.value || 0);
       await renderVazaoLocalHistory(clientId);
       await renderVazaoHistory();
