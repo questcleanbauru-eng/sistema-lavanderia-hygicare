@@ -4504,8 +4504,8 @@ ${machSections}
       };
       await fillClients();
 
-      // Restaurar seleção anterior
-      if (clientSel.value) await loadVazaoMachines(clientSel.value);
+      // Restaurar seleção anterior (ou mostrar msg de orientação)
+      await loadVazaoMachines(clientSel.value || 0);
 
       // 3. Sincronizar em background e atualizar lista silenciosamente
       syncVazaoData().then(() => fillClients()).catch(() => {});
@@ -4519,7 +4519,7 @@ ${machSections}
       area.innerHTML = '';
 
       if (!clientId) {
-        emptyMsg.textContent = 'Selecione um cliente para ver as máquinas.';
+        emptyMsg.innerHTML = 'Selecione um cliente para ver as máquinas e registrar leituras de vazão.<br><span style="font-size:0.82rem">Para consultar o histórico de leituras, selecione o cliente acima.</span>';
         emptyMsg.style.display = '';
         await renderVazaoLocalHistory(0);
         return;
