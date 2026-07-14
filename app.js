@@ -4184,6 +4184,23 @@ ${machSections}
           if (!item) return;
           btn.addEventListener('click', async () => { show(item.screen); if (item.fn) await item.fn(); });
         });
+
+        // Botão Novidades na home (visível em mobile onde o sino do header fica oculto)
+        const novBtn = document.createElement('button');
+        novBtn.className = 'home-action-btn';
+        novBtn.id = 'home-novidades-btn';
+        novBtn.style.position = 'relative';
+        novBtn.innerHTML = `<span style="font-size:1.6rem;line-height:1;position:relative">🔔<span id="home-nov-badge" style="display:none;position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;font-size:0.55rem;font-weight:700;border-radius:10px;padding:1px 4px;line-height:1.4;min-width:14px;text-align:center"></span></span><span>Novidades</span>`;
+        shortcutsEl.appendChild(novBtn);
+        novBtn.addEventListener('click', showNovidades);
+
+        // Preenche badge com contagem
+        _countNovidades().then(count => {
+          const badge = document.getElementById('home-nov-badge');
+          if (badge) { badge.textContent = count; badge.style.display = count > 0 ? '' : 'none'; }
+          const dot = document.getElementById('novidades-dot');
+          if (dot) dot.style.display = count > 0 ? '' : 'none';
+        });
       }
 
       // KPIs — usar window.getAll para respeitar filtro de vendedor/consultor
