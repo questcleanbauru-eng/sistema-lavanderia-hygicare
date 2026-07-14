@@ -3689,6 +3689,7 @@ ${kpisHtml}
       const monthStart = `${yyyy}-${mm}-01`;
       [['pdf-summary-start', monthStart],['pdf-summary-end', today],
        ['pdf-client-start',  monthStart],['pdf-client-end',  today],
+       ['pdf-vazao-start',   monthStart],['pdf-vazao-end',   today],
        ['pdf-group-start',   monthStart],['pdf-group-end',   today]].forEach(([id, val]) => {
         const el = document.getElementById(id);
         if (el) el.value = val;
@@ -3717,7 +3718,7 @@ ${kpisHtml}
           } else if (p === 'year') {
             s = `${y}-01-01`;
           }
-          const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], group:['pdf-group-start','pdf-group-end'] };
+          const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], vazao:['pdf-vazao-start','pdf-vazao-end'], group:['pdf-group-start','pdf-group-end'] };
           const [startId, endId] = map[grp] || [];
           if (startId) { document.getElementById(startId).value = s; document.getElementById(endId).value = end; }
         });
@@ -3916,7 +3917,9 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
     // =====================================================
     document.getElementById('btn-pdf-vazao')?.addEventListener('click', async () => {
       if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
-      const clientId = document.getElementById('pdf-vazao-client')?.value;
+      const clientId  = document.getElementById('pdf-vazao-client')?.value;
+      const startDate = document.getElementById('pdf-vazao-start')?.value || '';
+      const endDate   = document.getElementById('pdf-vazao-end')?.value   || '';
       if (!clientId) return toast('Selecione um cliente.', 'warning');
       const w = window.open('', '_blank');
       if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
@@ -3931,27 +3934,37 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
       const cVazoes = vazoes.filter(v => Number(v.client_id) === Number(clientId));
       const machMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
       const fmtD = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
+      const fmtMes = d => { if (!d) return ''; const [y,m] = d.split('-'); return new Date(Number(y),Number(m)-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); };
+      const periodLabel = startDate && endDate
+        ? `${fmtD(startDate)} a ${fmtD(endDate)}`
+        : startDate ? `A partir de ${fmtD(startDate)}`
+        : endDate   ? `Até ${fmtD(endDate)}`
+        : 'Todo o período';
       const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
 .abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
 .logo{font-weight:900;font-size:15px;color:#111827}.logo-sub{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
 h1{font-size:15px;color:#111827;margin:6px 0 2px}h2{font-size:11px;color:#1a3f5c;margin:12px 0 5px;border-bottom:1px solid #d1d5db;padding-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+.period{font-size:10px;color:#6b7280;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
       const rows = cVazoes.map((v, i) => {
-        const vRecs = vazaoRecs.filter(r => Number(r.vazao_id) === Number(v.id));
-        const lastRec = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+        let vRecs = vazaoRecs.filter(r => Number(r.vazao_id) === Number(v.id));
+        if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
+        if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
+        const sorted  = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+        const lastRec = sorted[0];
         return `<tr style="${i%2===0?'':'background:#f8fafc'}">
           <td>${escHtml(v.name||'-')}</td>
           <td>${escHtml(machMap[v.machine_id]||'-')}</td>
           <td style="text-align:right">${v.target_flow ? Number(v.target_flow).toLocaleString('pt-BR',{maximumFractionDigits:1})+' m³/h' : '-'}</td>
           <td style="text-align:right">${lastRec ? Number(lastRec.flow).toLocaleString('pt-BR',{maximumFractionDigits:1})+' m³/h' : '-'}</td>
           <td>${fmtD(lastRec?.date)}</td>
-          <td>${vRecs.length} medições</td>
+          <td>${vRecs.length} medição(ões)</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:10px">Nenhuma medição cadastrada</td></tr>';
+      }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:10px">Nenhuma medição no período</td></tr>';
 
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Vazão — ${escHtml(client.name)}</title>
 <style>${CSS}</style></head><body>
@@ -3959,6 +3972,7 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
 <div class="hdr"><div>${getPdfLogoHtml(false)}<h1 style="margin-top:5px">${escHtml(client.name)}</h1></div>
 <div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
+<p class="period">📅 Período: <strong>${periodLabel}</strong></p>
 <h2>💧 Relatório de Vazão</h2>
 <table><thead><tr><th>Ponto de Vazão</th><th>Máquina</th><th style="text-align:right">Meta (m³/h)</th><th style="text-align:right">Última Leitura</th><th>Data</th><th>Histórico</th></tr></thead>
 <tbody>${rows}</tbody></table>
