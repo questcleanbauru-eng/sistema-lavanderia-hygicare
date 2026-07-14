@@ -6453,6 +6453,9 @@ ${recipeSections}
           if (el) el.insertAdjacentHTML('afterend',
             `<p style="text-align:center;color:#94a3b8;padding:2rem 0;margin:0;font-size:0.85rem">📭 Sem dados para este período</p>`);
         });
+        // Renderiza vazão mesmo sem registros de produção (ex: cliente apenas-vazão)
+        await renderVazaoChart();
+        await renderVazaoHistory();
         return;
       }
 
