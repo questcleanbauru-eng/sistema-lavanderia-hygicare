@@ -4392,53 +4392,58 @@ ${machSections}
       const allowedIds = new Set((await window.getAll('clients')).map(c => String(c.id)));
       const cName = id => clientsAll.find(c => String(c.id) === String(id))?.name || `#${id}`;
 
-      // Leituras de vazão agrupadas por cliente + data (com lista de bombas)
-      // vazao_records não tem client_id — precisa ir por machine_id → machines.client_id
+      // Agrupa eventos por cliente+tipo; uma linha por grupo
       const machineClientMap = {};
       machines.forEach(m => { machineClientMap[String(m.id)] = String(m.client_id); });
-      const vazaoMap = {};
+
+      const grouped = {}; // key = clientId|tipo
+      const addGroup = (clientId, tipo, cor, date, extra) => {
+        const key = `${clientId}|${tipo}`;
+        if (!grouped[key]) grouped[key] = { name: cName(clientId), tipo, cor, date, count: 0, extras: [] };
+        const g = grouped[key];
+        if (date > g.date) g.date = date;
+        g.count++;
+        if (extra && !g.extras.includes(extra)) g.extras.push(extra);
+      };
+
+      records.filter(since).filter(r => allowedIds.has(String(r.client_id))).forEach(r =>
+        addGroup(String(r.client_id), '📋 Relatório de Produção', '#2563eb', r.date_start||r.created_at||'', null));
+
       vazaoRecs.filter(since).forEach(r => {
         const clientId = machineClientMap[String(r.machine_id)];
         if (!clientId || !allowedIds.has(clientId)) return;
-        const day = (r.date || r.created_at || '').slice(0, 10);
-        const key = `${clientId}|${day}`;
-        if (!vazaoMap[key]) vazaoMap[key] = { date: r.date||r.created_at||'', clientId, bombas: [] };
-        if (r.vazao_name) vazaoMap[key].bombas.push(r.vazao_name);
+        addGroup(clientId, '💧 Leitura de Vazão', '#0ea5e9', r.date||r.created_at||'', r.vazao_name||null);
       });
-      const vazaoItems = Object.values(vazaoMap).map(g => ({
-        date: g.date, name: cName(g.clientId),
-        tipo: '💧 Leitura de Vazão',
-        sub: [...new Set(g.bombas)].slice(0,4).join(', ') + (g.bombas.length > 4 ? '…' : ''),
-        cor: '#0ea5e9'
-      }));
 
-      // Lista plana de eventos, ordenada por data desc
-      const items = [
-        ...records.filter(since).filter(r => allowedIds.has(String(r.client_id)))
-          .map(r => ({ date: r.date_start||r.created_at||'', name: cName(r.client_id), tipo: '📋 Relatório de Produção', sub: '', cor: '#2563eb' })),
-        ...vazaoItems,
-        ...notes.filter(since).filter(n => allowedIds.has(String(n.client_id)))
-          .map(n => ({ date: n.date||n.created_at||'', name: cName(n.client_id), tipo: '📝 Nota do Histórico', sub: '', cor: '#7c3aed' })),
-        ...clientsAll.filter(since)
-          .map(c => ({ date: c.created_at||'', name: c.name||'—', tipo: '👥 Novo Cliente', sub: '', cor: '#16a34a' })),
-        ...machines.filter(since)
-          .map(m => ({ date: m.created_at||'', name: m.name||'—', tipo: '⚙️ Nova Máquina', sub: '', cor: '#ea580c' })),
-        ...processes.filter(since)
-          .map(p => ({ date: p.created_at||'', name: p.name||'—', tipo: '🔄 Novo Processo', sub: '', cor: '#d97706' })),
-        ...recipes.filter(since)
-          .map(r => ({ date: r.created_at||'', name: r.name||'—', tipo: '🗂️ Nova Receita', sub: '', cor: '#be185d' })),
-      ].sort((a,b) => b.date.localeCompare(a.date));
+      notes.filter(since).filter(n => allowedIds.has(String(n.client_id))).forEach(n =>
+        addGroup(String(n.client_id), '📝 Nota do Histórico', '#7c3aed', n.date||n.created_at||'', null));
+
+      clientsAll.filter(since).forEach(c =>
+        addGroup(String(c.id), '👥 Novo Cliente', '#16a34a', c.created_at||'', null));
+
+      // Itens sem cliente: máquina, processo, receita — permanecem individuais
+      const standaloneItems = [
+        ...machines.filter(since).map(m => ({ name: m.name||'—', tipo: '⚙️ Nova Máquina', cor: '#ea580c', date: m.created_at||'', count: 1, extras: [] })),
+        ...processes.filter(since).map(p => ({ name: p.name||'—', tipo: '🔄 Novo Processo', cor: '#d97706', date: p.created_at||'', count: 1, extras: [] })),
+        ...recipes.filter(since).map(r => ({ name: r.name||'—', tipo: '🗂️ Nova Receita', cor: '#be185d', date: r.created_at||'', count: 1, extras: [] })),
+      ];
+
+      const items = [...Object.values(grouped), ...standaloneItems]
+        .sort((a, b) => b.date.localeCompare(a.date));
 
       const body = items.length === 0
         ? `<div style="text-align:center;color:#9ca3af;padding:1.5rem 0;font-size:0.9rem">Nenhuma novidade nas últimas 48h 😴</div>`
-        : items.map(it => `
-            <div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9">
+        : items.map(it => {
+            const countTag = it.count > 1 ? `<span style="background:${it.cor}22;color:${it.cor};font-size:0.68rem;font-weight:700;border-radius:8px;padding:1px 6px;margin-left:4px">${it.count}x</span>` : '';
+            const extrasTag = it.extras.length ? `<span style="color:#64748b;font-weight:400"> · ${escHtml([...new Set(it.extras)].slice(0,4).join(', '))}</span>` : '';
+            return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9">
               <div style="flex:1;min-width:0">
                 <div style="font-size:0.87rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
-                <div style="font-size:0.75rem;color:${it.cor};margin-top:1px">${it.tipo}${it.sub ? `<span style="color:#64748b;font-weight:400"> · ${escHtml(it.sub)}</span>` : ''}</div>
+                <div style="font-size:0.75rem;color:${it.cor};margin-top:1px">${it.tipo}${countTag}${extrasTag}</div>
               </div>
               <div style="font-size:0.75rem;color:#9ca3af;flex-shrink:0">${fmtD(it.date)}</div>
-            </div>`).join('');
+            </div>`;
+          }).join('');
 
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
