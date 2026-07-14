@@ -4621,12 +4621,14 @@ ${machSections}
       for (const r of rows) {
         const mId = String(r.machine_id || 'x');
         const mName = (machineMap && machineMap[mId]) || `Máquina #${mId}`;
-        if (!byMach[mName]) byMach[mName] = [];
-        byMach[mName].push(r);
+        if (!byMach[mName]) byMach[mName] = { recs: [], maint: false };
+        if (r.vazao_name === '__manutencao__') { byMach[mName].maint = true; }
+        else { byMach[mName].recs.push(r); }
       }
-      const sections = Object.entries(byMach).map(([mName, recs]) => {
-        const pumps = recs.map(r => `  • ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}`).join('\n');
-        return `⚙️ *${mName}*\n${pumps}`;
+      const sections = Object.entries(byMach).map(([mName, data]) => {
+        const pumps = data.recs.map(r => `  • ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}`).join('\n');
+        const maintLine = data.maint ? '\n  🔧 Em manutenção' : '';
+        return `⚙️ *${mName}*\n${pumps || ''}${maintLine}`;
       }).join('\n\n');
       const msg = `💧 *Leitura de Vazão*\n*Cliente:* ${clientName}\n*Data:* ${fmtDateBR(date)}\n\n${sections}\n\n_Hygicare Lavanderia_`;
 
@@ -4982,7 +4984,6 @@ ${machSections}
         const cutoffStr = cutoff.toISOString().slice(0, 10);
         recs = recs.filter(r => (r.date||'').slice(0,10) >= cutoffStr);
       }
-      recs = recs.filter(r => r.vazao_name !== '__manutencao__');
       if (!recs.length) return toast('Nenhuma leitura no período selecionado', 'warning');
       const dateMap = {};
       for (const r of recs) {
@@ -5005,9 +5006,11 @@ ${machSections}
           <div style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto">
             ${dates.map(d => {
               const machCount = new Set(dateMap[d].map(r => String(r.machine_id))).size;
-              const pumpCount = dateMap[d].length;
+              const pumpCount = dateMap[d].filter(r => r.vazao_name !== '__manutencao__').length;
+              const maintCount = new Set(dateMap[d].filter(r => r.vazao_name === '__manutencao__').map(r => String(r.machine_id))).size;
+              const extra = maintCount ? ` · 🔧 ${maintCount} manutenção` : '';
               return `<button data-d="${d}" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;text-align:left;font-size:0.88rem;color:var(--text)">
-                📅 <strong>${fmtD(d)}</strong> <span style="color:var(--muted);font-size:0.78rem">&nbsp;${machCount} máquina${machCount!==1?'s':''} · ${pumpCount} bomba${pumpCount!==1?'s':''}</span>
+                📅 <strong>${fmtD(d)}</strong> <span style="color:var(--muted);font-size:0.78rem">&nbsp;${machCount} máquina${machCount!==1?'s':''} · ${pumpCount} bomba${pumpCount!==1?'s':''}${extra}</span>
               </button>`;
             }).join('')}
           </div>
@@ -5063,9 +5066,14 @@ ${machSections}
           <div style="font-size:0.95rem;font-weight:700;margin-bottom:0.5rem;color:var(--text)">📲 Escolha a data</div>
           <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.9rem">⚙️ ${escHtml(machineName)}</div>
           <div style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto">
-            ${dates.map(d => `<button data-d="${d}" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;text-align:left;font-size:0.88rem;color:var(--text)">
-              📅 <strong>${fmtD(d)}</strong> <span style="color:var(--muted);font-size:0.78rem">&nbsp;${dateMap[d].length} bomba${dateMap[d].length!==1?'s':''}</span>
-            </button>`).join('')}
+            ${dates.map(d => {
+              const pumps = dateMap[d].filter(r => r.vazao_name !== '__manutencao__').length;
+              const hasMaint = dateMap[d].some(r => r.vazao_name === '__manutencao__');
+              const extra = hasMaint ? ' · 🔧 manutenção' : '';
+              return `<button data-d="${d}" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;text-align:left;font-size:0.88rem;color:var(--text)">
+                📅 <strong>${fmtD(d)}</strong> <span style="color:var(--muted);font-size:0.78rem">&nbsp;${pumps} bomba${pumps!==1?'s':''}${extra}</span>
+              </button>`;
+            }).join('')}
           </div>
           <button id="_sdp-close" style="margin-top:0.85rem;padding:8px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:0.88rem;cursor:pointer;width:100%">Cancelar</button>
         </div>`;
