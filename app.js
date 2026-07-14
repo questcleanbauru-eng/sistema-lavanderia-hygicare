@@ -4562,9 +4562,14 @@ ${machSections}
             <div class="vazao-mach-block-hdr">
               <span>⚙️ ${m.name}</span>
               ${has ? `<span style="font-size:0.75rem;color:var(--primary);font-weight:600">💧 ${mv.length} vazão(ões)</span>` : '<span style="font-size:0.75rem;color:#b45309;font-weight:600">⚠️ Sem vazões</span>'}
-              <button id="btn-maint-${m.id}" data-maint-on="0" data-mach-name="${m.name.replace(/"/g,'&quot;')}"
-                onclick="window._toggleVazaoMaint(${m.id})"
-                style="margin-left:auto;background:none;border:1px solid #d97706;color:#d97706;border-radius:6px;padding:2px 9px;font-size:0.75rem;cursor:pointer;font-weight:600">🔧 Manutenção</button>
+              <label onclick="window._toggleVazaoMaint(${m.id})" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-left:auto;user-select:none">
+                <span style="font-size:0.75rem;font-weight:600;color:#6b7280">🔧 Manutenção</span>
+                <span id="toggle-maint-${m.id}" data-maint-on="0"
+                  style="display:inline-block;width:42px;height:24px;background:#d1d5db;border-radius:12px;position:relative;transition:background .25s;flex-shrink:0">
+                  <span id="toggle-knob-${m.id}"
+                    style="position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:left .25s;box-shadow:0 1px 3px rgba(0,0,0,.25)"></span>
+                </span>
+              </label>
             </div>
             <div id="vazao-mach-inputs-${m.id}">
             ${has
@@ -4595,21 +4600,20 @@ ${machSections}
     }
 
     window._toggleVazaoMaint = function(machineId) {
-      const btn    = document.getElementById(`btn-maint-${machineId}`);
+      const toggle = document.getElementById(`toggle-maint-${machineId}`);
+      const knob   = document.getElementById(`toggle-knob-${machineId}`);
       const inputs = document.getElementById(`vazao-mach-inputs-${machineId}`);
-      if (!btn) return;
-      const active = btn.dataset.maintOn === '1';
+      if (!toggle) return;
+      const active = toggle.dataset.maintOn === '1';
       if (active) {
-        btn.dataset.maintOn = '0';
-        btn.style.background = 'none';
-        btn.style.color = '#d97706';
-        btn.textContent = '🔧 Manutenção';
+        toggle.dataset.maintOn = '0';
+        toggle.style.background = '#d1d5db';
+        if (knob) knob.style.left = '3px';
         if (inputs) inputs.style.display = '';
       } else {
-        btn.dataset.maintOn = '1';
-        btn.style.background = '#d97706';
-        btn.style.color = '#fff';
-        btn.textContent = '🔧 Em manutenção';
+        toggle.dataset.maintOn = '1';
+        toggle.style.background = '#d97706';
+        if (knob) knob.style.left = '21px';
         if (inputs) inputs.style.display = 'none';
       }
     };
@@ -4670,7 +4674,7 @@ ${machSections}
         });
       });
 
-      const maintBtns = [...document.querySelectorAll('[id^="btn-maint-"][data-maint-on="1"]')];
+      const maintBtns = [...document.querySelectorAll('[id^="toggle-maint-"][data-maint-on="1"]')];
       if (!rows.length && !maintBtns.length) return toast('Informe pelo menos um resultado ou marque uma manutenção', 'warning');
       if (_saving) return;
 
@@ -4915,17 +4919,15 @@ ${machSections}
           const pumpItems = items.filter(i => i.vazaoName !== '__manutencao__');
           const maintDates = maintItem ? maintItem.readings : [];
           const maintBlock = maintDates.length ? `
-            <div style="padding:4px 8px 4px 4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
-              ${maintDates.map(r => canEdit
-                ? `<button onclick="window._deleteVazaoRecord(${r.id},this)" title="Clique para remover"
-                     style="display:inline-flex;align-items:center;gap:5px;background:#d97706;border:none;border-radius:20px;padding:4px 11px;font-size:0.75rem;color:#fff;font-weight:600;cursor:pointer"
-                     onmouseover="this.style.background='#b45309'" onmouseout="this.style.background='#d97706'">
-                    🔧 Em manutenção — ${fmtDate(r.date)}
-                   </button>`
-                : `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef9c3;border:1px solid #fde68a;border-radius:20px;padding:4px 11px;font-size:0.75rem;color:#92400e;font-weight:600">
-                    🔧 Em manutenção — ${fmtDate(r.date)}
-                   </span>`
-              ).join('')}
+            <div style="padding:4px 8px 4px 4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+              ${maintDates.map(r => `
+                <label style="display:inline-flex;align-items:center;gap:7px;cursor:${canEdit?'pointer':'default'};user-select:none"
+                       ${canEdit ? `onclick="window._deleteVazaoRecord(${r.id},this)" title="Clique para desligar manutenção"` : ''}>
+                  <span style="font-size:0.75rem;color:#92400e;font-weight:600">🔧 Em manutenção — ${fmtDate(r.date)}</span>
+                  <span style="display:inline-block;width:42px;height:24px;background:#d97706;border-radius:12px;position:relative;flex-shrink:0;transition:background .2s">
+                    <span style="position:absolute;top:3px;right:3px;width:18px;height:18px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25)"></span>
+                  </span>
+                </label>`).join('')}
             </div>` : '';
           // Se a máquina tem apenas manutenção (sem bombas com leituras), mostra card simples
           if (!pumpItems.length) return maintBlock || '';
