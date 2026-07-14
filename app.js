@@ -3471,10 +3471,11 @@ ${kpisHtml}
     async function syncVazaoData() {
       const pull = async (sheet, store) => {
         try {
-          const r = await fetch(`${gasApiUrl()}?sheet=${sheet}`);
+          const r = await fetch(`${gasApiUrl()}?sheet=${sheet}`, { cache: 'no-store' });
           if (r.ok) {
             const items = (await r.json()).data || [];
-            await clearStore(store);
+            // Upsert (sem clearStore): registros salvos localmente mas ainda não
+            // no Sheets (offline ou delay) não são perdidos pelo refetch
             for (const v of items) { if (v.id) await dbPut(store, normalizeItem(v)); }
           }
         } catch(e) {}
@@ -4582,6 +4583,30 @@ ${machSections}
       await renderVazaoLocalHistory(clientId);
     }
 
+    function _showVazaoWhatsapp(clientName, date, rows) {
+      const fmtDateBR = d => { const p = new Date(d + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
+      const lines = rows.map(r => `• ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}`).join('\n');
+      const msg = `💧 *Leitura de Vazão*\n*Cliente:* ${clientName}\n*Data:* ${fmtDateBR(date)}\n\n${lines}\n\n_Hygicare Lavanderia_`;
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+      overlay.innerHTML = `
+        <div style="background:var(--surface,#fff);border-radius:14px;padding:1.4rem 1.2rem;max-width:340px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+          <div style="font-size:1rem;font-weight:700;margin-bottom:0.75rem;color:var(--text)">✅ Leituras salvas!</div>
+          <pre style="font-size:0.8rem;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:0.75rem;white-space:pre-wrap;word-break:break-word;margin-bottom:1rem;color:var(--text);font-family:inherit">${escHtml(msg)}</pre>
+          <div style="display:flex;gap:0.5rem">
+            <a id="_wz-share" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener"
+               style="flex:1;display:flex;align-items:center;justify-content:center;gap:0.4rem;padding:9px;background:#25d366;color:#fff;border-radius:8px;font-size:0.9rem;font-weight:700;text-decoration:none">
+              📲 Compartilhar no WhatsApp
+            </a>
+            <button id="_wz-close" style="padding:9px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;cursor:pointer">Fechar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector('#_wz-close').addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    }
+
     async function saveVazaoReadings() {
       if (!canDo('edit_vazao')) return toast('Sem permissão para salvar leituras de vazão.', 'error');
       const date     = document.getElementById('vazao-date')?.value;
@@ -4625,7 +4650,12 @@ ${machSections}
         toast(`✅ ${saved} leitura(s) salva(s)!`, 'success');
         const _allClientsVz = await dbGetAll_raw('clients');
         const _clientVz = _allClientsVz.find(c => Number(c.id) === clientId);
-        notifyEmail('nova_vazao', { clientName: _clientVz?.name || `#${clientId}`, date, count: saved });
+        const _clientName = _clientVz?.name || `#${clientId}`;
+        notifyEmail('nova_vazao', { clientName: _clientName, date, count: saved });
+
+        // Botão de compartilhar via WhatsApp
+        _showVazaoWhatsapp(_clientName, date, rows);
+
         inputs.forEach(inp => inp.value = '');
         await renderVazaoHistory();
         await renderVazaoLocalHistory(clientId);
