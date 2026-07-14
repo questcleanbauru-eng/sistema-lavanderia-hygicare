@@ -4590,7 +4590,7 @@ ${machSections}
     }
 
     function _showVazaoWhatsapp(clientName, date, rows, machineMap) {
-      const fmtDateBR = d => { const p = new Date(d + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
+      const fmtDateBR = d => { const clean = (d||'').slice(0,10); const p = new Date(clean + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
       // Agrupar por máquina
       const byMach = {};
       for (const r of rows) {
@@ -4914,17 +4914,26 @@ ${machSections}
       const client = allClients.find(c => Number(c.id) === Number(clientId));
       const clientName = client?.name || `#${clientId}`;
       const allRecords = await dbGetAll_raw('vazao_records');
-      const machRecs = allRecords.filter(r =>
+      let machRecs = allRecords.filter(r =>
         Number(r.client_id) === Number(clientId) && Number(r.machine_id) === Number(machineId));
-      // Última leitura por bomba
+      // Respeitar filtro de período ativo no histórico
+      const periodFilter = document.getElementById('vazao-hist-period')?.value || '30';
+      if (periodFilter !== 'all') {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - Number(periodFilter));
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+        machRecs = machRecs.filter(r => (r.date||'').slice(0,10) >= cutoffStr);
+      }
+      // Última leitura por bomba dentro do período
       const byPump = {};
       for (const r of machRecs) {
         const k = r.vazao_name || '';
-        if (!byPump[k] || (r.date||'') > (byPump[k].date||'')) byPump[k] = r;
+        const d = (r.date||'').slice(0,10);
+        if (!byPump[k] || d > (byPump[k].date||'').slice(0,10)) byPump[k] = r;
       }
       const rows = Object.values(byPump);
-      if (!rows.length) return toast('Nenhuma leitura para compartilhar', 'warning');
-      const latestDate = rows.reduce((mx, r) => (r.date||'') > mx ? (r.date||'') : mx, '');
+      if (!rows.length) return toast('Nenhuma leitura no período selecionado', 'warning');
+      const latestDate = rows.reduce((mx, r) => { const d=(r.date||'').slice(0,10); return d>mx?d:mx; }, '');
       _showVazaoWhatsapp(clientName, latestDate, rows.map(r => ({
         machine_id: r.machine_id, vazao_name: r.vazao_name, vazao_unit: r.vazao_unit, value: r.value
       })), { [String(machineId)]: machineName });
