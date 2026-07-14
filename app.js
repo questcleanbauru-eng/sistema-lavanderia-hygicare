@@ -3954,9 +3954,6 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
       if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
       w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
 
-      // Sincroniza dados de vazão antes de gerar para incluir leituras de outros dispositivos
-      await syncVazaoData().catch(() => {});
-
       const [clients, vazoes, vazaoRecs, machines] = await Promise.all([
         dbGetAll_raw('clients'), dbGetAll_raw('vazoes'),
         dbGetAll_raw('vazao_records'), dbGetAll_raw('machines'),
@@ -3968,6 +3965,8 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
       const cMachineIds = new Set(cMachines.map(m => Number(m.id)));
       const machMap     = Object.fromEntries(cMachines.map(m => [m.id, m.name]));
       const cVazoes     = vazoes.filter(v => cMachineIds.has(Number(v.machine_id)));
+      // Pré-filtra todos os registros do cliente para evitar varrer a lista completa N vezes
+      const clientRecs  = vazaoRecs.filter(r => Number(r.client_id) === Number(clientId));
       const fmtD = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
       const periodLabel = startDate && endDate
         ? `${fmtD(startDate)} a ${fmtD(endDate)}`
@@ -3993,13 +3992,11 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
             const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
             if (!mv.length) return '';
             const trows = mv.map((v, i) => {
-              // Usa client_id + vazao_name: machine_id pode ser o ID local (antes
-              // do sync com Sheets), tornando o match por machine_id instável.
-              // client_id é atribuído do select (já sincronizado) e vazao_name
-              // é uma string estável definida pelo usuário.
-              let vRecs = vazaoRecs.filter(r =>
-                Number(r.client_id) === Number(clientId) &&
-                (r.vazao_name || '') === (v.name || ''));
+              // Busca por client_id (já pré-filtrado) + vazao_name normalizado
+              // A normalização (trim + lowercase) resolve divergências de espaços/caixa
+              const vNameNorm = (v.name || '').trim().toLowerCase();
+              let vRecs = clientRecs.filter(r =>
+                (r.vazao_name || '').trim().toLowerCase() === vNameNorm);
               if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
               if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
               const sorted  = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
