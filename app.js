@@ -4924,19 +4924,45 @@ ${machSections}
         const cutoffStr = cutoff.toISOString().slice(0, 10);
         machRecs = machRecs.filter(r => (r.date||'').slice(0,10) >= cutoffStr);
       }
-      // Última leitura por bomba dentro do período
-      const byPump = {};
+      if (!machRecs.length) return toast('Nenhuma leitura no período selecionado', 'warning');
+
+      // Agrupar por data
+      const dateMap = {};
       for (const r of machRecs) {
-        const k = r.vazao_name || '';
         const d = (r.date||'').slice(0,10);
-        if (!byPump[k] || d > (byPump[k].date||'').slice(0,10)) byPump[k] = r;
+        if (!dateMap[d]) dateMap[d] = [];
+        dateMap[d].push(r);
       }
-      const rows = Object.values(byPump);
-      if (!rows.length) return toast('Nenhuma leitura no período selecionado', 'warning');
-      const latestDate = rows.reduce((mx, r) => { const d=(r.date||'').slice(0,10); return d>mx?d:mx; }, '');
-      _showVazaoWhatsapp(clientName, latestDate, rows.map(r => ({
+      const dates = Object.keys(dateMap).sort().reverse(); // mais recente primeiro
+
+      const _doShare = d => _showVazaoWhatsapp(clientName, d, dateMap[d].map(r => ({
         machine_id: r.machine_id, vazao_name: r.vazao_name, vazao_unit: r.vazao_unit, value: r.value
       })), { [String(machineId)]: machineName });
+
+      // Se só uma data, compartilha direto
+      if (dates.length === 1) { _doShare(dates[0]); return; }
+
+      // Seletor de data
+      const fmtD = d => { const p = new Date(d + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+      ov.innerHTML = `
+        <div style="background:var(--surface,#fff);border-radius:14px;padding:1.4rem 1.2rem;max-width:320px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+          <div style="font-size:0.95rem;font-weight:700;margin-bottom:0.5rem;color:var(--text)">📲 Escolha a data</div>
+          <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.9rem">⚙️ ${escHtml(machineName)}</div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto">
+            ${dates.map(d => `<button data-d="${d}" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;text-align:left;font-size:0.88rem;color:var(--text)">
+              📅 <strong>${fmtD(d)}</strong> <span style="color:var(--muted);font-size:0.78rem">&nbsp;${dateMap[d].length} bomba${dateMap[d].length!==1?'s':''}</span>
+            </button>`).join('')}
+          </div>
+          <button id="_sdp-close" style="margin-top:0.85rem;padding:8px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:0.88rem;cursor:pointer;width:100%">Cancelar</button>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_sdp-close').addEventListener('click', () => ov.remove());
+      ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+      ov.querySelectorAll('[data-d]').forEach(btn => {
+        btn.addEventListener('click', () => { ov.remove(); _doShare(btn.dataset.d); });
+      });
     };
 
     window._deleteVazaoRecord = async function(id, el) {
