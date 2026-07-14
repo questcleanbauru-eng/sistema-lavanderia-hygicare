@@ -845,15 +845,23 @@ ${printScript}
     let _editingRecord = null;
     let _saving        = false;
 
-    function setSaving(active, triggerBtn = null, loadingText = '⏳ Salvando...') {
-      _saving = active;
-      // Overlay spinner
+    function showOverlay(text) {
       const ov = document.getElementById('save-overlay');
       const ovTxt = document.getElementById('save-overlay-text');
-      if (ov) ov.style.display = active ? 'flex' : 'none';
-      if (ovTxt && active) {
-        const clean = (loadingText || 'Salvando...').replace(/^[⏳🔄]\s*/, '');
-        ovTxt.textContent = clean;
+      if (ov) ov.style.display = 'flex';
+      if (ovTxt) ovTxt.textContent = text || 'Aguarde...';
+    }
+    function hideOverlay() {
+      const ov = document.getElementById('save-overlay');
+      if (ov) ov.style.display = 'none';
+    }
+
+    function setSaving(active, triggerBtn = null, loadingText = '⏳ Salvando...') {
+      _saving = active;
+      if (active) {
+        showOverlay((loadingText || 'Salvando...').replace(/^[⏳🔄]\s*/, ''));
+      } else {
+        hideOverlay();
       }
       const allBtns = document.querySelectorAll('button');
       if (active) {
@@ -2396,29 +2404,33 @@ ${kpisHtml}
       if (!await confirmAction(msg, 'Excluir')) return;
 
       if (el) { el.disabled = true; el.textContent = '⏳'; }
-      const gasOk = await deleteSheetDB(SHEETS.CLIENTS, id);
-      if (!gasOk && navigator.onLine) {
-        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
-          if (el) { el.disabled = false; el.textContent = '🗑️'; }
-          return;
+      showOverlay('Excluindo cliente...');
+      try {
+        const gasOk = await deleteSheetDB(SHEETS.CLIENTS, id);
+        if (!gasOk && navigator.onLine) {
+          hideOverlay();
+          if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
+            if (el) { el.disabled = false; el.textContent = '🗑️'; }
+            return;
+          }
+          showOverlay('Excluindo cliente...');
         }
-      }
-
-      // Excluir localmente em cascata
-      const machines = (await dbGetAll_raw('machines')).filter(m => m.client_id === id);
-      for (const m of machines) {
-        const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === m.id);
-        for (const p of processes) {
-          await dbDelete('processes', p.id);
-          if (gasOk) await deleteSheetDB(SHEETS.PROCESSES, p.id);
+        // Excluir localmente em cascata
+        const machines = (await dbGetAll_raw('machines')).filter(m => m.client_id === id);
+        for (const m of machines) {
+          const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === m.id);
+          for (const p of processes) {
+            await dbDelete('processes', p.id);
+            if (gasOk) await deleteSheetDB(SHEETS.PROCESSES, p.id);
+          }
+          await dbDelete('machines', m.id);
+          if (gasOk) await deleteSheetDB(SHEETS.MACHINES, m.id);
         }
-        await dbDelete('machines', m.id);
-        if (gasOk) await deleteSheetDB(SHEETS.MACHINES, m.id);
-      }
-      await dbDelete('clients', id);
-      toast(gasOk ? 'Cliente excluído!' : 'Cliente excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
-      await refreshClientsSelects();
-      await renderClientsList();
+        await dbDelete('clients', id);
+        toast(gasOk ? 'Cliente excluído!' : 'Cliente excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
+        await refreshClientsSelects();
+        await renderClientsList();
+      } finally { hideOverlay(); }
     }
 
     async function editMachine(id) {
@@ -2442,22 +2454,27 @@ ${kpisHtml}
         : 'Excluir esta máquina? Os processos vinculados também serão removidos.';
       if (!await confirmAction(msg, 'Excluir')) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
-      const gasOk = await deleteSheetDB(SHEETS.MACHINES, id);
-      if (!gasOk && navigator.onLine) {
-        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
-          if (el) { el.disabled = false; el.textContent = '🗑️'; }
-          return;
+      showOverlay('Excluindo máquina...');
+      try {
+        const gasOk = await deleteSheetDB(SHEETS.MACHINES, id);
+        if (!gasOk && navigator.onLine) {
+          hideOverlay();
+          if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
+            if (el) { el.disabled = false; el.textContent = '🗑️'; }
+            return;
+          }
+          showOverlay('Excluindo máquina...');
         }
-      }
-      const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === id);
-      for (const p of processes) {
-        await dbDelete('processes', p.id);
-        if (gasOk) await deleteSheetDB(SHEETS.PROCESSES, p.id);
-      }
-      await dbDelete('machines', id);
-      toast(gasOk ? 'Máquina excluída!' : 'Máquina excluída localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
-      await refreshMachinesForProcessSelect();
-      await renderMachinesList();
+        const processes = (await dbGetAll_raw('processes')).filter(p => p.machine_id === id);
+        for (const p of processes) {
+          await dbDelete('processes', p.id);
+          if (gasOk) await deleteSheetDB(SHEETS.PROCESSES, p.id);
+        }
+        await dbDelete('machines', id);
+        toast(gasOk ? 'Máquina excluída!' : 'Máquina excluída localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
+        await refreshMachinesForProcessSelect();
+        await renderMachinesList();
+      } finally { hideOverlay(); }
     }
 
     async function editProcess(id) {
@@ -2476,16 +2493,21 @@ ${kpisHtml}
     async function deleteProcess(id, el) {
       if (!await confirmAction('Excluir este processo?', 'Excluir')) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
-      const gasOk = await deleteSheetDB(SHEETS.PROCESSES, id);
-      if (!gasOk && navigator.onLine) {
-        if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
-          if (el) { el.disabled = false; el.textContent = '🗑️'; }
-          return;
+      showOverlay('Excluindo processo...');
+      try {
+        const gasOk = await deleteSheetDB(SHEETS.PROCESSES, id);
+        if (!gasOk && navigator.onLine) {
+          hideOverlay();
+          if (!await confirmAction('Não foi possível excluir no Google Sheets.\nExcluir apenas localmente?', 'Excluir local')) {
+            if (el) { el.disabled = false; el.textContent = '🗑️'; }
+            return;
+          }
+          showOverlay('Excluindo processo...');
         }
-      }
-      await dbDelete('processes', id);
-      toast(gasOk ? 'Processo excluído!' : 'Processo excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
-      await renderProcessesList();
+        await dbDelete('processes', id);
+        toast(gasOk ? 'Processo excluído!' : 'Processo excluído localmente (não estava no Google Sheets)', gasOk ? 'success' : 'warning');
+        await renderProcessesList();
+      } finally { hideOverlay(); }
     }
 
     // Expor para uso nos botões inline
@@ -3609,10 +3631,13 @@ ${kpisHtml}
       if (!canDo('delete_note')) return toast('Sem permissão para excluir notas.', 'error');
       if (!await confirmAction('Excluir esta nota? Ação irreversível.', '🗑️ Excluir')) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
-      await dbDelete('client_notes', id);
-      const ok = await deleteSheetDB(SHEETS.CLIENT_NOTES, id);
-      toast(ok ? 'Nota excluída!' : 'Nota excluída localmente', ok ? 'success' : 'warning');
-      await renderClientNotesList();
+      showOverlay('Excluindo nota...');
+      try {
+        await dbDelete('client_notes', id);
+        const ok = await deleteSheetDB(SHEETS.CLIENT_NOTES, id);
+        toast(ok ? 'Nota excluída!' : 'Nota excluída localmente', ok ? 'success' : 'warning');
+        await renderClientNotesList();
+      } finally { hideOverlay(); }
     };
 
     // Salvar nota
@@ -5124,12 +5149,15 @@ ${machSections}
       if (!canDo('edit_vazao')) return toast('Sem permissão para excluir leituras.', 'error');
       if (!await confirmAction('Excluir esta leitura de vazão?', 'Excluir', true)) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
-      await dbDelete('vazao_records', id);
-      const ok = await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
-      toast(ok ? 'Leitura excluída!' : 'Leitura excluída localmente', ok ? 'success' : 'warning');
-      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
-      await renderVazaoLocalHistory(clientId);
-      await renderVazaoHistory();
+      showOverlay('Excluindo leitura...');
+      try {
+        await dbDelete('vazao_records', id);
+        const ok = await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
+        toast(ok ? 'Leitura excluída!' : 'Leitura excluída localmente', ok ? 'success' : 'warning');
+        const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+        await renderVazaoLocalHistory(clientId);
+        await renderVazaoHistory();
+      } finally { hideOverlay(); }
     };
 
     window._vazaoSelectMode = false;
@@ -5173,14 +5201,17 @@ ${machSections}
       const checked = [...document.querySelectorAll('.vazao-sel-cb:checked')];
       if (!checked.length) return toast('Selecione pelo menos uma leitura', 'warning');
       if (!await confirmAction(`Excluir ${checked.length} leitura(s) selecionada(s)?`, 'Excluir', true)) return;
+      showOverlay(`Excluindo ${checked.length} leitura(s)...`);
       let count = 0;
-      for (const cb of checked) {
-        const id = Number(cb.dataset.id);
-        await dbDelete('vazao_records', id);
-        await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
-        count++;
-      }
-      toast(`${count} leitura(s) excluída(s)!`, 'success');
+      try {
+        for (const cb of checked) {
+          const id = Number(cb.dataset.id);
+          await dbDelete('vazao_records', id);
+          await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
+          count++;
+        }
+        toast(`${count} leitura(s) excluída(s)!`, 'success');
+      } finally { hideOverlay(); }
       window._vazaoSelectMode = false;
       const bar = document.getElementById('vazao-sel-bar'); if (bar) bar.style.display = 'none';
       const btn = document.getElementById('btn-vazao-select-mode'); if (btn) { btn.textContent = '☑️ Selecionar'; btn.style.background = ''; }
@@ -5379,10 +5410,13 @@ ${machSections}
     window._deleteVazao = async function(id) {
       if (!canDo('edit_bomba')) return toast('Sem permissão para excluir vazões.', 'error');
       if (!await confirmAction('Excluir esta vazão? Os registros históricos não serão apagados.', 'Excluir', true)) return;
-      await dbDelete('vazoes', id);
-      await deleteSheetDB(SHEETS.VAZOES, id);
-      document.getElementById(`vazao-item-${id}`)?.remove();
-      toast('Vazão removida', 'success');
+      showOverlay('Excluindo vazão...');
+      try {
+        await dbDelete('vazoes', id);
+        await deleteSheetDB(SHEETS.VAZOES, id);
+        document.getElementById(`vazao-item-${id}`)?.remove();
+        toast('Vazão removida', 'success');
+      } finally { hideOverlay(); }
     };
 
 
@@ -5886,21 +5920,24 @@ ${machSections}
         ? `Excluir receita\n"${nameHint}"?\n\nTodas as versões (ativas, arquivadas, pendentes) serão removidas.`
         : 'Excluir esta receita e todas as suas versões?';
       if (!await confirmAction(confirmMsg, '🗑️ Excluir', true)) return;
-      const nId = Number(id);
-      const toDelete = all.filter(r => Number(r.id) === nId || Number(r.replaces_id) === nId);
-      let gasErr = 0;
-      for (const r of toDelete) {
-        await dbDelete('recipes', r.id);
-        const ok = await deleteSheetDB(SHEETS.RECIPES, r.id);
-        if (!ok) gasErr++;
-      }
-      if (gasErr > 0 && navigator.onLine) {
-        toast('⚠️ Removido localmente, mas o servidor não confirmou. Clique Atualizar pode reaparecer.', 'warning', 7000);
-      } else {
-        toast('Receita excluída!', 'success');
-      }
-      await renderRecipesList();
-      await updateRecipeBadge();
+      showOverlay('Excluindo receita...');
+      try {
+        const nId = Number(id);
+        const toDelete = all.filter(r => Number(r.id) === nId || Number(r.replaces_id) === nId);
+        let gasErr = 0;
+        for (const r of toDelete) {
+          await dbDelete('recipes', r.id);
+          const ok = await deleteSheetDB(SHEETS.RECIPES, r.id);
+          if (!ok) gasErr++;
+        }
+        if (gasErr > 0 && navigator.onLine) {
+          toast('⚠️ Removido localmente, mas o servidor não confirmou. Clique Atualizar pode reaparecer.', 'warning', 7000);
+        } else {
+          toast('Receita excluída!', 'success');
+        }
+        await renderRecipesList();
+        await updateRecipeBadge();
+      } finally { hideOverlay(); }
     };
 
     window._viewRecipe = async function(recipeId) {
@@ -6284,10 +6321,13 @@ ${recipeSections}
 
     window._deleteRecipeProduct = async function(id) {
       if (!await confirmAction('Excluir este produto?', 'Excluir', true)) return;
-      await dbDelete('recipe_products', id);
-      await deleteSheetDB(SHEETS.RECIPE_PRODUCTS, id);
-      await _renderRecipeProductsList();
-      toast('Produto removido', 'success');
+      showOverlay('Excluindo produto...');
+      try {
+        await dbDelete('recipe_products', id);
+        await deleteSheetDB(SHEETS.RECIPE_PRODUCTS, id);
+        await _renderRecipeProductsList();
+        toast('Produto removido', 'success');
+      } finally { hideOverlay(); }
     };
 
     async function initRecipesScreen() {
@@ -7922,11 +7962,14 @@ ${inactiveSec}
       }
       if (!confirm(`Excluir o usuário "${username}"? Esta ação não pode ser desfeita.`)) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
-      await dbDelete('users', id);
-      const ok = await deleteSheetDB(SHEETS.USERS, id);
-      toast(ok ? 'Usuário excluído!' : 'Usuário excluído localmente', ok ? 'success' : 'warning');
-      await renderUsersList();
-      refreshSellerSelect();
+      showOverlay('Excluindo usuário...');
+      try {
+        await dbDelete('users', id);
+        const ok = await deleteSheetDB(SHEETS.USERS, id);
+        toast(ok ? 'Usuário excluído!' : 'Usuário excluído localmente', ok ? 'success' : 'warning');
+        await renderUsersList();
+        refreshSellerSelect();
+      } finally { hideOverlay(); }
     };
 
     // Salvar usuário (criar/editar)
