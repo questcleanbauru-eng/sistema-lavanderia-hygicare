@@ -3683,6 +3683,20 @@ ${kpisHtml}
     }
 
     async function initPdfReportsScreen() {
+      // Sincronizar dados em background para garantir dados frescos nos PDFs
+      if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        syncVazaoData().catch(() => {});
+        // Sincroniza records e client_notes (usados nos PDFs de produção)
+        const _pullStore = async (sheet, store) => {
+          try {
+            const r = await fetch(`${gasApiUrl()}?sheet=${sheet}`);
+            if (r.ok) { const items = (await r.json()).data || []; if (items.length) await saveToStore(store, items); }
+          } catch(e) {}
+        };
+        _pullStore(SHEETS.RECORDS, 'records').catch(() => {});
+        _pullStore(SHEETS.CLIENT_NOTES, 'client_notes').catch(() => {});
+      }
+
       const clients = await window.getAll('clients');
       const sorted = [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''));
       const clientOpts = '<option value="">Selecionar cliente...</option>' +
@@ -3940,6 +3954,9 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
       if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
       w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
 
+      // Sincroniza dados de vazão antes de gerar para incluir leituras de outros dispositivos
+      await syncVazaoData().catch(() => {});
+
       const [clients, vazoes, vazaoRecs, machines] = await Promise.all([
         dbGetAll_raw('clients'), dbGetAll_raw('vazoes'),
         dbGetAll_raw('vazao_records'), dbGetAll_raw('machines'),
@@ -3976,10 +3993,12 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
             const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
             if (!mv.length) return '';
             const trows = mv.map((v, i) => {
-              // Usa machine_id + vazao_name porque vazao_id pode divergir entre
-              // o ID local (momento do salvamento) e o ID do Sheets (após sync)
+              // Usa client_id + vazao_name: machine_id pode ser o ID local (antes
+              // do sync com Sheets), tornando o match por machine_id instável.
+              // client_id é atribuído do select (já sincronizado) e vazao_name
+              // é uma string estável definida pelo usuário.
               let vRecs = vazaoRecs.filter(r =>
-                Number(r.machine_id) === Number(m.id) &&
+                Number(r.client_id) === Number(clientId) &&
                 (r.vazao_name || '') === (v.name || ''));
               if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
               if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
