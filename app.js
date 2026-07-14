@@ -4540,8 +4540,12 @@ ${machSections}
       // Restaurar seleção anterior (ou mostrar msg de orientação)
       await loadVazaoMachines(clientSel.value || 0);
 
-      // 3. Sincronizar em background e atualizar lista silenciosamente
-      syncVazaoData().then(() => fillClients()).catch(() => {});
+      // 3. Sincronizar em background e atualizar lista + histórico silenciosamente
+      syncVazaoData().then(async () => {
+        fillClients();
+        const _cId = Number(document.getElementById('vazao-client')?.value || 0);
+        if (_cId) await renderVazaoLocalHistory(_cId);
+      }).catch(() => {});
     }
 
     async function loadVazaoMachines(clientId) {
@@ -4769,6 +4773,9 @@ ${machSections}
         });
         document.querySelectorAll('[id^="vazao-mach-inputs-"]').forEach(el => el.style.display = '');
         document.getElementById('vazao-machines-area').style.display = 'none';
+        // Abre filtro para "Todos" para o usuário ver o que acabou de salvar (independente da data)
+        const _periodSel = document.getElementById('vazao-hist-period');
+        if (_periodSel) _periodSel.value = 'all';
         await renderVazaoHistory();
         await renderVazaoLocalHistory(clientId);
       } catch(e) {
