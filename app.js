@@ -879,11 +879,12 @@ ${printScript}
       }
       const allUsers = JSON.parse(localStorage.getItem('hygicare_users') || '[]');
       const myName = (currentUser.sellerName || currentUser.name || '').toLowerCase();
-      return new Set(
-        allUsers
+      return new Set([
+        myName,
+        ...allUsers
           .filter(u => (u.manager || '').toLowerCase() === myName)
           .map(u => (u.sellerName || u.name || '').toLowerCase())
-      );
+      ]);
     }
 
     const _originalGetAll = window.getAll;
