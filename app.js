@@ -3983,37 +3983,43 @@ h3{font-size:10px;color:#374151;margin:10px 0 4px;font-weight:700}
 .period{font-size:10px;color:#6b7280;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
+.pump-block{margin:6px 0 12px 0}
+.pump-title{font-size:10px;font-weight:700;color:#1a3f5c;padding:5px 7px;background:#eff6ff;border-left:3px solid #1a3f5c;display:flex;justify-content:space-between;align-items:center}
+.pump-count{font-weight:400;color:#6b7280;font-size:9px}
+.no-recs{color:#94a3b8;font-style:italic;padding:4px 7px;font-size:9px}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
 
-      // Agrupar vazões por máquina
+      const fmtVal = val => val != null ? Number(val).toLocaleString('pt-BR',{maximumFractionDigits:2}) : '-';
+
+      // Agrupar vazões por máquina, com histórico completo por bomba
       const bodyHtml = cMachines.length === 0
         ? '<p style="color:#94a3b8;text-align:center;padding:16px">Nenhuma máquina cadastrada para este cliente.</p>'
         : cMachines.map(m => {
             const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
             if (!mv.length) return '';
-            const trows = mv.map((v, i) => {
-              // Busca por client_id (já pré-filtrado) + vazao_name normalizado
-              // A normalização (trim + lowercase) resolve divergências de espaços/caixa
+            const pumpSections = mv.map(v => {
               const vNameNorm = (v.name || '').trim().toLowerCase();
               let vRecs = clientRecs.filter(r =>
                 (r.vazao_name || '').trim().toLowerCase() === vNameNorm);
               if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
               if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
-              const sorted  = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
-              const lastRec = sorted[0];
-              const fmtVal  = val => val != null ? Number(val).toLocaleString('pt-BR',{maximumFractionDigits:2}) : '-';
-              return `<tr>
-                <td>${escHtml(v.name||'-')}</td>
-                <td>${escHtml(v.unit||'-')}</td>
-                <td style="text-align:right">${lastRec ? fmtVal(lastRec.value) : '-'}</td>
-                <td>${fmtD(lastRec?.date)}</td>
-                <td style="text-align:center">${vRecs.length}</td>
-              </tr>`;
+              const sorted = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+              const unit = escHtml(v.unit || '-');
+              const detailRows = sorted.length
+                ? sorted.map(r => `<tr>
+                    <td>${fmtD(r.date)}</td>
+                    <td style="text-align:right;font-weight:600">${fmtVal(r.value)}</td>
+                    <td style="color:#6b7280">${unit}</td>
+                  </tr>`).join('')
+                : `<tr><td colspan="3" class="no-recs">Sem leituras no período</td></tr>`;
+              return `<div class="pump-block">
+  <div class="pump-title">${escHtml(v.name||'-')} <span class="pump-count">${sorted.length} leitura${sorted.length!==1?'s':''}</span></div>
+  <table><thead><tr><th>Data</th><th style="text-align:right">Leitura</th><th>Unidade</th></tr></thead>
+  <tbody>${detailRows}</tbody></table>
+</div>`;
             }).join('');
-            return `<h3>⚙️ ${escHtml(m.name)}</h3>
-<table><thead><tr><th>Ponto de Vazão</th><th>Unidade</th><th style="text-align:right">Última Leitura</th><th>Data</th><th style="text-align:center">Medições</th></tr></thead>
-<tbody>${trows}</tbody></table>`;
+            return `<h3>⚙️ ${escHtml(m.name)}</h3>${pumpSections}`;
           }).join('') || '<p style="color:#94a3b8;text-align:center;padding:16px">Nenhuma vazão cadastrada para este cliente.</p>';
 
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Vazão — ${escHtml(client.name)}</title>
