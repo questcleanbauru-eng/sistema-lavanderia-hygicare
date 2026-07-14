@@ -6983,8 +6983,11 @@ ${recipeSections}
         },
         options: {
           responsive: true,
-          plugins: { legend: { display: mesSorted.length > 1, labels: { font: { size: 11 } } } },
-          scales: { y: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
+          plugins: {
+            legend: { display: mesSorted.length > 1, labels: { font: { size: 11 } } },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString('pt-BR')} kg` } }
+          },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString('pt-BR') + ' kg' } } }
         }
       });
 
@@ -7005,8 +7008,11 @@ ${recipeSections}
         },
         options: {
           indexAxis: 'y', responsive: true,
-          plugins: { legend: { display: false } },
-          scales: { x: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => `${Number(ctx.parsed.x).toLocaleString('pt-BR')} kg` } }
+          },
+          scales: { x: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString('pt-BR') + ' kg' } } }
         }
       });
 
@@ -7035,7 +7041,8 @@ ${recipeSections}
         options: {
           responsive: true,
           plugins: { legend: { position: 'bottom' } },
-          scales: { x: { stacked: false }, y: { beginAtZero: true, ticks: { callback: v => v+'kg' } } }
+          plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString('pt-BR')} kg` } } },
+          scales: { x: { stacked: false }, y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString('pt-BR') + ' kg' } } }
         }
       });
 
