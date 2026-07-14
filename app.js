@@ -4815,6 +4815,7 @@ ${machSections}
         byMachine[item.machineName].push(item);
       }
 
+      const canEdit = canDo('edit_vazao');
       listEl.innerHTML = Object.entries(byMachine).map(([machineName, items]) => `
         <div class="vazao-hist-mach-label">⚙️ ${machineName}</div>
         ${items.map(item => {
@@ -4827,20 +4828,87 @@ ${machSections}
             const col  = pct >= 0 ? '#ef4444' : '#10b981';
             delta = `<span style="font-size:0.72rem;color:${col};font-weight:700;white-space:nowrap">${sign} ${Math.abs(pct).toFixed(1)}% vs anterior</span>`;
           }
+          // Linhas de todas as leituras com ações
+          const readingRows = item.readings.map((r, idx) => `
+            <div style="display:flex;align-items:center;gap:0.5rem;padding:3px 0;border-top:${idx > 0 ? '1px solid var(--border)' : 'none'}">
+              <span style="font-size:0.75rem;color:var(--muted);min-width:60px">${fmtDate(r.date)}</span>
+              <span style="font-size:0.82rem;font-weight:${idx===0?'700':'500'};flex:1">${r.value} <span style="font-weight:400;color:var(--muted)">${item.unit}</span></span>
+              ${canEdit ? `
+                <button onclick="window._editVazaoRecord(${r.id})" style="background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--primary)" title="Editar">✏️</button>
+                <button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--danger)" title="Excluir">🗑️</button>
+              ` : ''}
+            </div>`).join('');
           return `
-            <div class="vazao-hist-item">
-              <div>
+            <div class="vazao-hist-item" style="flex-direction:column;align-items:stretch;gap:0.3rem">
+              <div style="display:flex;justify-content:space-between;align-items:center">
                 <div style="font-size:0.88rem;font-weight:600">${item.vazaoName}</div>
-                <div style="font-size:0.73rem;color:var(--muted)">${fmtDate(latest.date)}${item.readings.length > 1 ? ` · ${item.readings.length} leituras` : ''}</div>
+                <div style="display:flex;align-items:center;gap:0.4rem">
+                  <div style="font-size:1rem;font-weight:700">${latest.value} <span style="font-size:0.73rem;color:var(--muted);font-weight:500">${item.unit}</span></div>
+                  ${delta}
+                </div>
               </div>
-              <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-                <div style="font-size:1rem;font-weight:700">${latest.value} <span style="font-size:0.73rem;color:var(--muted);font-weight:500">${item.unit}</span></div>
-                ${delta}
-              </div>
+              ${item.readings.length > 1 ? `
+                <details style="margin-top:2px">
+                  <summary style="font-size:0.73rem;color:var(--primary);cursor:pointer;list-style:none">📋 ${item.readings.length} leituras</summary>
+                  <div style="padding:4px 0 0 4px">${readingRows}</div>
+                </details>` : `<div style="padding:0 0 0 4px">${readingRows}</div>`}
             </div>`;
         }).join('')}
       `).join('');
     }
+
+    window._deleteVazaoRecord = async function(id, el) {
+      if (!canDo('edit_vazao')) return toast('Sem permissão para excluir leituras.', 'error');
+      if (!await confirmAction('Excluir esta leitura de vazão?', 'Excluir', true)) return;
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
+      await dbDelete('vazao_records', id);
+      const ok = await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
+      toast(ok ? 'Leitura excluída!' : 'Leitura excluída localmente', ok ? 'success' : 'warning');
+      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+      await renderVazaoLocalHistory(clientId);
+      await renderVazaoHistory();
+    };
+
+    window._editVazaoRecord = async function(id) {
+      if (!canDo('edit_vazao')) return toast('Sem permissão para editar leituras.', 'error');
+      const all = await dbGetAll_raw('vazao_records');
+      const rec = all.find(r => Number(r.id) === Number(id));
+      if (!rec) return toast('Leitura não encontrada', 'error');
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+      overlay.innerHTML = `
+        <div style="background:var(--surface,#fff);border-radius:14px;padding:1.4rem 1.2rem;max-width:320px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+          <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;color:var(--text)">✏️ Editar Leitura — ${escHtml(rec.vazao_name||'')}</div>
+          <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Data</label>
+          <input id="_ev-date" type="date" value="${rec.date||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:0.9rem;margin-bottom:0.75rem">
+          <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Valor ${rec.vazao_unit ? `(${rec.vazao_unit})` : ''}</label>
+          <input id="_ev-value" type="number" step="0.01" value="${rec.value||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:0.9rem;margin-bottom:1rem">
+          <div style="display:flex;gap:0.5rem">
+            <button id="_ev-save" style="flex:1;padding:8px;background:var(--primary,#2563eb);color:#fff;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer;font-weight:600">Salvar</button>
+            <button id="_ev-cancel" style="padding:8px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;cursor:pointer">Cancelar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      overlay.querySelector('#_ev-cancel').addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#_ev-save').addEventListener('click', async () => {
+        const newDate  = overlay.querySelector('#_ev-date').value;
+        const newValue = parseFloat(overlay.querySelector('#_ev-value').value);
+        if (!newDate || isNaN(newValue)) return toast('Preencha data e valor', 'warning');
+        const btn = overlay.querySelector('#_ev-save');
+        btn.disabled = true; btn.textContent = '⏳';
+        const updated = { ...rec, date: newDate, value: newValue };
+        await dbPut('vazao_records', updated);
+        await patchSheetDB(SHEETS.VAZAO_RECORDS, id, updated);
+        overlay.remove();
+        toast('Leitura atualizada!', 'success');
+        const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+        await renderVazaoLocalHistory(clientId);
+        await renderVazaoHistory();
+      });
+    };
 
     async function renderVazaoChart() {
       const { records } = await _getFilteredVazaoRecords();
