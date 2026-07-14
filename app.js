@@ -4034,6 +4034,7 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
             const pumpSections = mv.map(v => {
               const vNameNorm = (v.name || '').trim().toLowerCase();
               let vRecs = clientRecs.filter(r =>
+                Number(r.machine_id) === Number(m.id) &&
                 (r.vazao_name || '').trim().toLowerCase() === vNameNorm);
               if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
               if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
@@ -4052,7 +4053,21 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
   <tbody>${detailRows}</tbody></table>
 </div>`;
             }).join('');
-            return `<h3>⚙️ ${escHtml(m.name)}</h3>${pumpSections}`;
+            // Registros de manutenção desta máquina
+            let maintRecs = clientRecs.filter(r =>
+              Number(r.machine_id) === Number(m.id) && r.vazao_name === '__manutencao__');
+            if (startDate) maintRecs = maintRecs.filter(r => (r.date || '') >= startDate);
+            if (endDate)   maintRecs = maintRecs.filter(r => (r.date || '') <= endDate);
+            maintRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+            const maintSection = maintRecs.length ? `
+<div class="pump-block" style="margin-top:8px">
+  <div class="pump-title" style="background:#fff7ed;border-left-color:#d97706;color:#92400e">
+    🔧 Manutenção <span class="pump-count" style="color:#b45309">${maintRecs.length} registro${maintRecs.length!==1?'s':''}</span>
+  </div>
+  <table><thead><tr><th style="background:#d97706">Data</th><th style="background:#d97706" colspan="2">Observação</th></tr></thead>
+  <tbody>${maintRecs.map(r => `<tr><td>${fmtD(r.date)}</td><td colspan="2" style="color:#92400e;font-style:italic">Em manutenção</td></tr>`).join('')}</tbody></table>
+</div>` : '';
+            return `<h3>⚙️ ${escHtml(m.name)}</h3>${pumpSections}${maintSection}`;
           }).join('') || '<p style="color:#94a3b8;text-align:center;padding:16px">Nenhuma vazão cadastrada para este cliente.</p>';
 
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Vazão — ${escHtml(client.name)}</title>
