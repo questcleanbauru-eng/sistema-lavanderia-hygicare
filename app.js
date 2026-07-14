@@ -4990,7 +4990,7 @@ ${machSections}
             </div>` : '';
           // Se a máquina tem apenas manutenção (sem bombas com leituras), mostra card simples
           if (!pumpItems.length) return maintBlock || '';
-          return pumpItems.map(item => {
+          const pumpsHtml = pumpItems.map(item => {
           const latest = item.readings[0];
           const prev   = item.readings[1];
           let delta = '';
@@ -5025,9 +5025,10 @@ ${machSections}
                   <summary style="font-size:0.73rem;color:var(--primary);cursor:pointer;list-style:none">📋 ${item.readings.length} leituras</summary>
                   <div style="padding:4px 0 0 4px">${readingRows}</div>
                 </details>` : `<div style="padding:0 0 0 4px">${readingRows}</div>`}
-              ${maintBlock}
             </div>`;
           }).join('');
+          // maintBlock renderizado UMA VEZ fora do loop de bombas
+          return pumpsHtml + maintBlock;
           })()}
       `;
       }).join('');
@@ -5207,12 +5208,13 @@ ${machSections}
       if (!canDo('edit_vazao')) return toast('Sem permissão para excluir leituras.', 'error');
       const checked = [...document.querySelectorAll('.vazao-sel-cb:checked')];
       if (!checked.length) return toast('Selecione pelo menos uma leitura', 'warning');
-      if (!await confirmAction(`Excluir ${checked.length} leitura(s) selecionada(s)?`, 'Excluir', true)) return;
-      showOverlay(`Excluindo ${checked.length} leitura(s)...`);
+      // Deduplica IDs para evitar excluir o mesmo registro duas vezes
+      const uniqueIds = [...new Set(checked.map(cb => Number(cb.dataset.id)).filter(id => id > 0))];
+      if (!await confirmAction(`Excluir ${uniqueIds.length} leitura(s) selecionada(s)?`, 'Excluir', true)) return;
+      showOverlay(`Excluindo ${uniqueIds.length} leitura(s)...`);
       let count = 0;
       try {
-        for (const cb of checked) {
-          const id = Number(cb.dataset.id);
+        for (const id of uniqueIds) {
           await dbDelete('vazao_records', id);
           await deleteSheetDB(SHEETS.VAZAO_RECORDS, id);
           count++;
@@ -6932,7 +6934,34 @@ ${recipeSections}
     const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor'];
     const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
 
+    function _applyChartPresetDates() {
+      const preset = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm   = String(now.getMonth() + 1).padStart(2, '0');
+      const ds = document.getElementById('chart-date-start');
+      const de = document.getElementById('chart-date-end');
+      if (!ds || !de) return;
+      // Só preenche se os inputs estiverem vazios (não sobrescreve filtro manual)
+      if (ds.value || de.value) return;
+      if (preset === 'month') {
+        ds.value = de.value = `${yyyy}-${mm}`;
+      } else if (preset === '3m') {
+        const d = new Date(now); d.setMonth(d.getMonth() - 2);
+        ds.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        de.value = `${yyyy}-${mm}`;
+      } else if (preset === '6m') {
+        const d = new Date(now); d.setMonth(d.getMonth() - 5);
+        ds.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        de.value = `${yyyy}-${mm}`;
+      } else if (preset === 'year') {
+        ds.value = `${yyyy}-01`;
+        de.value = `${yyyy}-12`;
+      }
+    }
+
     async function refreshChartsFilters() {
+      _applyChartPresetDates();
       const clients = await window.getAll('clients');
       const sel = document.getElementById('chart-filter-client');
       if (sel) {
@@ -7325,15 +7354,35 @@ ${recipeSections}
       await renderVazaoHistory();
     }
 
-    // Preset buttons — aplicam o período e re-renderizam
+    // Preset buttons — aplicam o período e preenchem os inputs de data
     document.querySelectorAll('.chart-preset-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const ds = document.getElementById('chart-date-start');
         const de = document.getElementById('chart-date-end');
-        if (ds) ds.value = '';
-        if (de) de.value = '';
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm   = String(now.getMonth() + 1).padStart(2, '0');
+        const preset = btn.dataset.preset;
+        let start = '', end = '';
+        if (preset === 'month') {
+          start = end = `${yyyy}-${mm}`;
+        } else if (preset === '3m') {
+          const d = new Date(now); d.setMonth(d.getMonth() - 2);
+          start = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+          end   = `${yyyy}-${mm}`;
+        } else if (preset === '6m') {
+          const d = new Date(now); d.setMonth(d.getMonth() - 5);
+          start = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+          end   = `${yyyy}-${mm}`;
+        } else if (preset === 'year') {
+          start = `${yyyy}-01`;
+          end   = `${yyyy}-12`;
+        }
+        // Preenche inputs sem disparar listener (value= não dispara change)
+        if (ds) ds.value = start;
+        if (de) de.value = end;
         renderCharts();
       });
     });
@@ -7358,6 +7407,7 @@ ${recipeSections}
       });
       document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
       document.querySelector('[data-preset="year"]')?.classList.add('active');
+      _applyChartPresetDates();
       renderCharts();
     });
 
