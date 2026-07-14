@@ -4916,11 +4916,16 @@ ${machSections}
           const maintDates = maintItem ? maintItem.readings : [];
           const maintBlock = maintDates.length ? `
             <div style="padding:4px 8px 4px 4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
-              ${maintDates.map(r => `
-                <span style="display:inline-flex;align-items:center;gap:4px;background:#fef9c3;border:1px solid #fde68a;border-radius:5px;padding:2px 7px;font-size:0.75rem;color:#92400e;font-weight:600">
-                  🔧 Em manutenção — ${fmtDate(r.date)}
-                  ${canEdit ? `<button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:none;cursor:pointer;font-size:0.72rem;color:#b91c1c;line-height:1;padding:0 0 0 4px" title="Excluir">✕</button>` : ''}
-                </span>`).join('')}
+              ${maintDates.map(r => canEdit
+                ? `<button onclick="window._deleteVazaoRecord(${r.id},this)" title="Clique para remover"
+                     style="display:inline-flex;align-items:center;gap:5px;background:#d97706;border:none;border-radius:20px;padding:4px 11px;font-size:0.75rem;color:#fff;font-weight:600;cursor:pointer"
+                     onmouseover="this.style.background='#b45309'" onmouseout="this.style.background='#d97706'">
+                    🔧 Em manutenção — ${fmtDate(r.date)}
+                   </button>`
+                : `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef9c3;border:1px solid #fde68a;border-radius:20px;padding:4px 11px;font-size:0.75rem;color:#92400e;font-weight:600">
+                    🔧 Em manutenção — ${fmtDate(r.date)}
+                   </span>`
+              ).join('')}
             </div>` : '';
           // Se a máquina tem apenas manutenção (sem bombas com leituras), mostra card simples
           if (!pumpItems.length) return maintBlock || '';
