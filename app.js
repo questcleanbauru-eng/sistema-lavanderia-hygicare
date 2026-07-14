@@ -4562,6 +4562,7 @@ ${machSections}
             <div class="vazao-mach-block-hdr">
               <span>⚙️ ${m.name}</span>
               ${has ? `<span style="font-size:0.75rem;color:var(--primary);font-weight:600">💧 ${mv.length} vazão(ões)</span>` : '<span style="font-size:0.75rem;color:#b45309;font-weight:600">⚠️ Sem vazões</span>'}
+              <button onclick="window._toggleVazaoMaint(${m.id},'${m.name.replace(/'/g,"\\'")}')" style="margin-left:auto;background:none;border:1px solid #d97706;color:#d97706;border-radius:6px;padding:2px 9px;font-size:0.75rem;cursor:pointer;font-weight:600" title="Registrar manutenção nesta máquina">🔧 Manutenção</button>
             </div>
             ${has
               ? `<table class="proc-table" style="width:100%">
@@ -4588,6 +4589,25 @@ ${machSections}
 
       await renderVazaoLocalHistory(clientId);
     }
+
+    window._toggleVazaoMaint = async function(machineId, machineName) {
+      const date     = document.getElementById('vazao-date')?.value;
+      const clientId = Number(document.getElementById('vazao-client')?.value || 0);
+      if (!date || !clientId) return toast('Preencha a data e selecione um cliente', 'warning');
+      const fmtD = d => { const p = new Date(d+'T00:00:00'); return isNaN(p)?d:p.toLocaleDateString('pt-BR'); };
+      if (!await confirmAction(`Registrar manutenção em ${machineName} na data ${fmtD(date)}?`, 'Registrar 🔧', false)) return;
+      const record = {
+        date, client_id: clientId, machine_id: machineId,
+        vazao_name: '__manutencao__', vazao_unit: '', value: null,
+        user: currentUser?.name || currentUser?.username || '',
+        created_at: new Date().toISOString()
+      };
+      const id = await dbAdd('vazao_records', record);
+      record.id = id;
+      await postToSheetDB(SHEETS.VAZAO_RECORDS, record);
+      toast('🔧 Manutenção registrada!', 'success');
+      await renderVazaoLocalHistory(clientId);
+    };
 
     function _showVazaoWhatsapp(clientName, date, rows, machineMap) {
       const fmtDateBR = d => { const clean = (d||'').slice(0,10); const p = new Date(clean + 'T00:00:00'); return isNaN(p) ? d : p.toLocaleDateString('pt-BR'); };
@@ -4867,6 +4887,27 @@ ${machSections}
         return `
         <div class="vazao-hist-mach-label">⚙️ ${machineName}</div>
         ${items.map(item => {
+          // Manutenção: badge especial
+          if (item.vazaoName === '__manutencao__') {
+            const maintRows = item.readings.map(r => `
+              <div style="display:flex;align-items:center;gap:0.5rem;padding:3px 0">
+                <span style="font-size:0.75rem;color:#92400e;min-width:60px">${fmtDate(r.date)}</span>
+                <span style="font-size:0.82rem;color:#92400e;flex:1">Manutenção realizada</span>
+                ${canEdit ? `<button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--danger)" title="Excluir">🗑️</button>` : ''}
+              </div>`).join('');
+            return `<div class="vazao-hist-item" style="background:#fffbeb;border-color:#fde68a;flex-direction:column;gap:0.25rem">
+              <div style="display:flex;align-items:center;gap:0.4rem">
+                <span style="font-size:0.9rem">🔧</span>
+                <span style="font-size:0.85rem;font-weight:700;color:#92400e">Manutenção</span>
+                <span style="font-size:0.75rem;color:#b45309;margin-left:auto">${item.readings.length}x no período</span>
+              </div>
+              ${item.readings.length > 1 ? `
+                <details style="margin-top:2px">
+                  <summary style="font-size:0.73rem;color:#d97706;cursor:pointer;list-style:none">📋 ${item.readings.length} registros</summary>
+                  <div style="padding:4px 0 0 4px">${maintRows}</div>
+                </details>` : `<div style="padding:0 0 0 4px">${maintRows}</div>`}
+            </div>`;
+          }
           const latest = item.readings[0];
           const prev   = item.readings[1];
           let delta = '';
@@ -4924,6 +4965,7 @@ ${machSections}
         const cutoffStr = cutoff.toISOString().slice(0, 10);
         recs = recs.filter(r => (r.date||'').slice(0,10) >= cutoffStr);
       }
+      recs = recs.filter(r => r.vazao_name !== '__manutencao__');
       if (!recs.length) return toast('Nenhuma leitura no período selecionado', 'warning');
       const dateMap = {};
       for (const r of recs) {
