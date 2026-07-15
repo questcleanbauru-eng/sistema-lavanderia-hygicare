@@ -2584,6 +2584,7 @@ ${printScript}
             `<option value="${c.id}">${c.name}</option>`).join('');
         if (prev) clientSel.value = prev;
         if (clientFilter) clientSel.value = clientFilter;
+        _makeSearchable(clientSel);
       }
 
       const activeClient = clientFilter || Number(clientSel?.value || 0);
@@ -3208,6 +3209,115 @@ ${printScript}
     });
 
     // =====================================================
+    // SEARCHABLE SELECT
+    // =====================================================
+    function _makeSearchable(selectEl) {
+      if (!selectEl || selectEl.dataset.ssInit) return;
+      selectEl.dataset.ssInit = '1';
+
+      // wrap
+      const wrap = document.createElement('div');
+      wrap.className = 'ss-wrap';
+      selectEl.parentNode.insertBefore(wrap, selectEl);
+      wrap.appendChild(selectEl);
+      selectEl.style.display = 'none';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = selectEl.className.includes('filter-select')
+        ? 'filter-select ss-input'
+        : 'form-input ss-input';
+      input.placeholder = selectEl.options[0]?.text || 'Selecione...';
+      input.autocomplete = 'off';
+      wrap.appendChild(input);
+
+      const drop = document.createElement('div');
+      drop.className = 'ss-dropdown';
+      wrap.appendChild(drop);
+
+      function getOpts() {
+        return Array.from(selectEl.options).map(o => ({ val: o.value, text: o.text }));
+      }
+
+      function renderDrop(query) {
+        const q = (query || '').trim().toLowerCase();
+        const opts = getOpts();
+        drop.innerHTML = '';
+        const filtered = q ? opts.filter(o => o.text.toLowerCase().includes(q)) : opts;
+        if (!filtered.length) {
+          drop.innerHTML = '<div class="ss-empty">Nenhum resultado</div>';
+        } else {
+          filtered.forEach((o, i) => {
+            const d = document.createElement('div');
+            d.className = 'ss-opt' + (o.val === selectEl.value ? ' ss-sel' : '') + (i === 0 ? ' ss-hover' : '');
+            d.dataset.val = o.val;
+            d.textContent = o.text;
+            d.addEventListener('mousedown', e => {
+              e.preventDefault();
+              selectEl.value = o.val;
+              input.value = o.val ? o.text : '';
+              selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+              closeDrop();
+            });
+            drop.appendChild(d);
+          });
+        }
+      }
+
+      function openDrop() {
+        renderDrop(input.value);
+        drop.style.display = 'block';
+      }
+
+      function closeDrop() {
+        drop.style.display = 'none';
+      }
+
+      function syncInputFromSelect() {
+        const sel = selectEl.options[selectEl.selectedIndex];
+        input.value = (sel && sel.value) ? sel.text : '';
+        input.placeholder = selectEl.options[0]?.text || 'Selecione...';
+      }
+
+      input.addEventListener('focus', () => { openDrop(); input.select(); });
+      input.addEventListener('input', () => { renderDrop(input.value); drop.style.display = 'block'; });
+      input.addEventListener('blur', () => {
+        setTimeout(() => {
+          closeDrop();
+          syncInputFromSelect();
+        }, 150);
+      });
+      input.addEventListener('keydown', e => {
+        const items = drop.querySelectorAll('.ss-opt');
+        const hovered = drop.querySelector('.ss-hover');
+        let idx = Array.from(items).indexOf(hovered);
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (idx < items.length - 1) { hovered?.classList.remove('ss-hover'); items[idx + 1].classList.add('ss-hover'); }
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (idx > 0) { hovered?.classList.remove('ss-hover'); items[idx - 1].classList.add('ss-hover'); }
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (hovered) hovered.dispatchEvent(new MouseEvent('mousedown'));
+        } else if (e.key === 'Escape') {
+          closeDrop(); syncInputFromSelect();
+        }
+      });
+
+      // sync when the underlying select is changed programmatically
+      selectEl.addEventListener('change', syncInputFromSelect);
+
+      // re-build when options are replaced (MutationObserver)
+      new MutationObserver(() => {
+        syncInputFromSelect();
+        if (drop.style.display === 'block') renderDrop(input.value);
+      }).observe(selectEl, { childList: true });
+
+      syncInputFromSelect();
+    }
+
+    // =====================================================
     // SELECTS
     // =====================================================
     async function refreshClientsSelects() {
@@ -3228,6 +3338,8 @@ ${printScript}
           if (sel.value) sel.dispatchEvent(new Event('change'));
         }
       });
+      _makeSearchable(machineClientSelect);
+      _makeSearchable(prodClientSelect);
       await refreshSellerSelect();
       await refreshMachinesForProcessSelect();
     }
@@ -3500,6 +3612,7 @@ ${printScript}
         [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
           .forEach(c => { filterClient.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
         if (cur) filterClient.value = cur;
+        _makeSearchable(filterClient);
       }
 
       const clientFilter = filterClient?.value || '';
@@ -3561,6 +3674,7 @@ ${printScript}
         sel.innerHTML = '<option value="">-- Selecione --</option>';
         [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
           .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
+        _makeSearchable(sel);
       }
       document.getElementById('note-edit-id').value  = note?.id || '';
       document.getElementById('note-client').value   = note?.client_id || '';
@@ -3694,6 +3808,7 @@ ${printScript}
         const cur = el.value;
         el.innerHTML = clientOpts;
         if (cur) el.value = cur;
+        _makeSearchable(el);
       });
 
       // Datas padrão: mês atual
@@ -4758,6 +4873,7 @@ ${opSections}
         clients.sort((a,b) => (a.name||'').localeCompare(b.name||''))
                .forEach(c => { clientSel.innerHTML += `<option value="${c.id}">${c.name}</option>`; });
         if (cur) { clientSel.value = cur; }
+        _makeSearchable(clientSel);
       };
       await fillClients();
 
@@ -6571,6 +6687,7 @@ ${recipeSections}
         sel.innerHTML = '<option value="">👥 Todos os clientes</option>';
         clients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(c => sel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
         if (cur) sel.value = cur;
+        _makeSearchable(sel);
       }
       // Conectar campo de busca (idempotente)
       const searchInput = document.getElementById('recipe-search');
@@ -7256,6 +7373,7 @@ ${recipeSections}
         clients.sort((a,b) => (a.name||'').localeCompare(b.name||''))
                .forEach(c => sel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
         if (cur) sel.value = cur;
+        _makeSearchable(sel);
       }
       const selS = document.getElementById('chart-filter-seller');
       if (selS) {
