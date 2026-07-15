@@ -16,7 +16,8 @@ const SHEETS = {
   VAZAO_RECORDS: "VazaoRegistros",
   RECIPES: "Receitas",
   RECIPE_PRODUCTS: "ReceitaProdutos",
-  CLIENT_NOTES: "ClienteNotas"
+  CLIENT_NOTES: "ClienteNotas",
+  APP_CONFIG: "AppConfig"
 };
 
 // Modo de debug

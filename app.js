@@ -385,6 +385,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateApiDisplay(getApiCount());
     updateSyncStatus();
     initApp();
+    // Verifica manutenção após login (lê estado salvo localmente)
+    setTimeout(() => _applyMaintenanceMode(), 200);
   }
 
   if (currentUser) {
@@ -1273,6 +1275,79 @@ ${kpisHtml}
       }
 
       updateApiDisplay(apiUsedWrite);
+
+      // Preenche estado do toggle de manutenção
+      _refreshMaintenanceToggle();
+    }
+
+    // ---- Manutenção: lê estado local e atualiza UI do admin ----
+    function _refreshMaintenanceToggle() {
+      const cfg = _getMaintenanceCfg();
+      const cb  = document.getElementById('maint-toggle-cb');
+      const extra = document.getElementById('maint-extra');
+      const card  = document.getElementById('admin-maintenance-card');
+      const statusEl = document.getElementById('maint-status');
+      const msgEl = document.getElementById('maint-message');
+      if (cb)  cb.checked = cfg.active;
+      if (extra) extra.style.display = cfg.active ? 'flex' : 'none';
+      if (card) card.classList.toggle('maint-active', cfg.active);
+      if (msgEl && cfg.message) msgEl.value = cfg.message;
+      if (statusEl) {
+        statusEl.textContent = cfg.active
+          ? `🔴 ATIVO desde ${cfg.since ? new Date(cfg.since).toLocaleString('pt-BR') : '—'}`
+          : '🟢 App funcionando normalmente';
+        statusEl.style.color = cfg.active ? '#b45309' : '#16a34a';
+      }
+    }
+
+    function _getMaintenanceCfg() {
+      try { return JSON.parse(localStorage.getItem('hygicare_maintenance') || '{}'); }
+      catch { return {}; }
+    }
+
+    window._toggleMaintenance = function() {
+      const cb = document.getElementById('maint-toggle-cb');
+      const extra = document.getElementById('maint-extra');
+      const card  = document.getElementById('admin-maintenance-card');
+      if (extra) extra.style.display = cb?.checked ? 'flex' : 'none';
+      if (card)  card.classList.toggle('maint-active', cb?.checked || false);
+      if (!cb?.checked) {
+        window._saveMaintenance(false);
+      }
+    };
+
+    window._saveMaintenance = async function(active) {
+      const cb  = document.getElementById('maint-toggle-cb');
+      const isActive = active !== false ? (cb?.checked ?? false) : false;
+      const msg = document.getElementById('maint-message')?.value.trim()
+        || 'Sistema em manutenção. Voltamos em breve! 🔧';
+      const cfg = { active: isActive, message: isActive ? msg : '', since: isActive ? Date.now() : null };
+      localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
+
+      // Sync com GAS: upsert na aba AppConfig
+      const payload = { id: 1, key: 'maintenance', active: isActive ? '1' : '0', message: cfg.message, updated_at: new Date().toISOString() };
+      showOverlay(isActive ? 'Ativando manutenção...' : 'Desativando manutenção...');
+      try {
+        await patchSheetDB(SHEETS.APP_CONFIG, 1, payload).catch(() => postToSheetDB(SHEETS.APP_CONFIG, payload));
+      } finally { hideOverlay(); }
+
+      _refreshMaintenanceToggle();
+      toast(isActive ? '🔴 Modo manutenção ATIVADO' : '🟢 App reativado com sucesso', isActive ? 'warning' : 'success');
+    };
+
+    // ---- Verifica e aplica manutenção (chamada no init e após sync) ----
+    function _applyMaintenanceMode() {
+      if (currentUser?.role === 'admin') return; // admin sempre passa
+      const cfg = _getMaintenanceCfg();
+      const overlay = document.getElementById('maintenance-overlay');
+      const msgEl   = document.getElementById('maint-overlay-msg');
+      if (!overlay) return;
+      if (cfg.active) {
+        if (msgEl) msgEl.textContent = cfg.message || 'Sistema em manutenção. Voltamos em breve!';
+        overlay.classList.add('active');
+      } else {
+        overlay.classList.remove('active');
+      }
     }
 
     // Testar conexão com o Google Apps Script
@@ -1839,6 +1914,20 @@ ${kpisHtml}
           await initHomeScreen();
         }
         await updateSyncStatus();
+        // Busca configuração de manutenção do GAS e aplica para todos os usuários
+        try {
+          const cfgRes = await fetch(`${gasApiUrl()}?sheet=${SHEETS.APP_CONFIG}`);
+          if (cfgRes.ok) {
+            const cfgJson = await cfgRes.json();
+            const maintRow = (cfgJson.data || []).find(r => r.key === 'maintenance');
+            if (maintRow) {
+              const cfg = { active: maintRow.active === '1', message: maintRow.message || '', since: null };
+              localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
+              _applyMaintenanceMode();
+            }
+          }
+        } catch { /* falha silenciosa */ }
+
         toast('✅ Dados sincronizados automaticamente!', 'success', 3000);
         const dbUsers = await _originalGetAll('users');
         dbUsers.forEach(du => {
@@ -1961,6 +2050,22 @@ ${kpisHtml}
           await renderClientNotesList();
         }
         await updateSyncStatus();
+
+        // Sincroniza configuração de manutenção do GAS
+        if (isAll) {
+          try {
+            const cfgRes = await fetch(`${gasApiUrl()}?sheet=${SHEETS.APP_CONFIG}`);
+            if (cfgRes.ok) {
+              const cfgJson = await cfgRes.json();
+              const maintRow = (cfgJson.data || []).find(r => r.key === 'maintenance');
+              if (maintRow) {
+                const cfg = { active: maintRow.active === '1', message: maintRow.message || '', since: null };
+                localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
+                _applyMaintenanceMode();
+              }
+            }
+          } catch { /* falha silenciosa */ }
+        }
 
         toast(`✅ "${labelTarget}" atualizado(s)! (${imported} registro(s))`, 'success');
 

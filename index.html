@@ -654,6 +654,28 @@
             <div class="screen-title"><h2>🛠️ Painel Administrativo</h2></div>
           </div>
 
+          <!-- MODO MANUTENÇÃO -->
+          <div class="card" id="admin-maintenance-card" style="margin-bottom:1.2rem;border:2px solid #fde68a">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.9rem">
+              <div>
+                <h3 style="margin:0 0 0.2rem;font-size:1rem;color:#92400e">🔧 Modo Manutenção</h3>
+                <p style="margin:0;font-size:0.78rem;color:#78716c">Bloqueia o acesso de todos os usuários (exceto admin)</p>
+              </div>
+              <label class="maint-toggle" id="maint-toggle-label">
+                <input type="checkbox" id="maint-toggle-cb" onchange="window._toggleMaintenance()">
+                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div id="maint-extra" style="display:none;flex-direction:column;gap:0.6rem">
+              <label style="font-size:0.8rem;font-weight:600;color:#78716c">Mensagem exibida aos usuários</label>
+              <textarea id="maint-message" rows="2" class="form-input" style="font-size:0.88rem;resize:none"
+                placeholder="Ex: Sistema em manutenção. Voltamos em breve! 🔧"></textarea>
+              <button id="btn-save-maint" class="btn-primary" style="font-size:0.85rem;padding:0.45rem 1rem;align-self:flex-end"
+                onclick="window._saveMaintenance()">💾 Salvar mensagem</button>
+            </div>
+            <div id="maint-status" style="margin-top:0.6rem;font-size:0.8rem;color:#64748b"></div>
+          </div>
+
           <div class="card" style="margin-bottom:1.2rem">
             <h3 style="margin:0 0 1.2rem;font-size:1.05rem;color:#1e40af">🔗 Google Apps Script</h3>
 
@@ -1400,6 +1422,21 @@
         </div>
         <div id="save-overlay-text" style="font-size:0.88rem;font-weight:600;color:var(--text,#1f2937);letter-spacing:0.01em">Salvando...</div>
       </div>
+    </div>
+
+    <!-- Overlay de manutenção — bloqueia usuários não-admin -->
+    <div id="maintenance-overlay" style="display:none;position:fixed;inset:0;z-index:999999;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);align-items:center;justify-content:center;flex-direction:column;gap:1.5rem;text-align:center;padding:2rem">
+      <div style="font-size:4rem;animation:maint-spin 3s linear infinite">🔧</div>
+      <div>
+        <div style="font-size:1.4rem;font-weight:800;color:#f1f5f9;margin-bottom:0.4rem">Sistema em Manutenção</div>
+        <div id="maint-overlay-msg" style="font-size:0.95rem;color:#94a3b8;max-width:320px;line-height:1.5">Aguarde, o sistema será restaurado em breve.</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;animation:maint-pulse 1.2s ease-in-out infinite"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;animation:maint-pulse 1.2s ease-in-out 0.4s infinite"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;animation:maint-pulse 1.2s ease-in-out 0.8s infinite"></div>
+      </div>
+      <p style="font-size:0.72rem;color:#475569;margin:0">Hygicare Lavanderia</p>
     </div>
   </body>
 </html>

@@ -1950,3 +1950,45 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   0%, 39%, 100% { opacity: 0.12; }
   40%           { opacity: 1;    }
 }
+
+/* =========== MODO MANUTENÇÃO =========== */
+#maintenance-overlay { display: none; }
+#maintenance-overlay.active { display: flex; }
+@keyframes maint-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes maint-pulse {
+  0%, 100% { transform: scale(0.6); opacity: 0.4; }
+  50%      { transform: scale(1.2); opacity: 1; }
+}
+.maint-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.maint-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.maint-toggle-track {
+  width: 52px;
+  height: 28px;
+  background: #cbd5e1;
+  border-radius: 14px;
+  transition: background 0.25s;
+  position: relative;
+}
+.maint-toggle input:checked + .maint-toggle-track { background: #f59e0b; }
+.maint-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  transition: transform 0.25s;
+}
+.maint-toggle input:checked ~ .maint-toggle-track .maint-toggle-thumb { transform: translateX(24px); }
+#admin-maintenance-card.maint-active { border-color: #f59e0b; background: linear-gradient(135deg, #fffbeb, #fef3c7); }
