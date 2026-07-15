@@ -223,19 +223,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         });
       });
-      // Quando o novo SW assumir o controle:
+      // Quando o novo SW assumir o controle: recarrega automaticamente
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        // Se ainda não está logado, recarrega silenciosamente para garantir código novo
-        const session = localStorage.getItem('lavanderia_session');
-        if (!session) {
-          window.location.reload();
-          return;
-        }
-        toast('Nova versão disponível!', 'info', 12000, {
-          label: 'Atualizar',
-          fn: () => window.location.reload()
-        });
+        window.location.reload();
       });
+      // Verifica nova versão do SW a cada inicialização
+      swReg.update().catch(() => {});
     } catch (e) { console.warn('SW falhou:', e); }
   }
 
@@ -386,7 +379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSyncStatus();
     initApp();
     // Verifica manutenção após login (lê estado salvo localmente)
-    setTimeout(() => _applyMaintenanceMode(), 200);
+    setTimeout(() => window._applyMaintenanceMode?.(), 200);
   }
 
   if (currentUser) {
@@ -693,6 +686,10 @@ ${printScript}
   // INIT APP
   // ============================================================
   async function initApp() {
+
+    // Expor funções de manutenção globalmente (showApp é escopo irmão, não acessa initApp)
+    window._applyMaintenanceMode    = _applyMaintenanceMode;
+    window._refreshMaintenanceToggle = _refreshMaintenanceToggle;
 
     // Aplicar configuracoes salvas no localStorage
     const savedGasUrl = localStorage.getItem('hygicare_cfg_gas_url');
@@ -1298,6 +1295,8 @@ ${kpisHtml}
           : '🟢 App funcionando normalmente';
         statusEl.style.color = cfg.active ? '#b45309' : '#16a34a';
       }
+      // Atualiza banner laranja do admin no topo da página
+      _applyMaintenanceMode();
     }
 
     function _getMaintenanceCfg() {
@@ -1338,8 +1337,14 @@ ${kpisHtml}
 
     // ---- Verifica e aplica manutenção (chamada no init e após sync) ----
     function _applyMaintenanceMode() {
-      if (currentUser?.role === 'admin') return; // admin sempre passa
-      const cfg = _getMaintenanceCfg();
+      const cfg    = _getMaintenanceCfg();
+      const banner = document.getElementById('admin-maint-banner');
+      if (currentUser?.role === 'admin') {
+        // Admin vê banner laranja (não bloqueante)
+        if (banner) banner.style.display = cfg.active ? 'flex' : 'none';
+        return;
+      }
+      // Outros usuários: overlay bloqueante
       const overlay = document.getElementById('maintenance-overlay');
       const msgEl   = document.getElementById('maint-overlay-msg');
       if (!overlay) return;
