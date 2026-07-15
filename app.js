@@ -4185,6 +4185,17 @@ ${machSections}
       let [records, clients, machines, processes] = await Promise.all([
         dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'),
       ]);
+      if (currentUser?.role === 'gerente' || currentUser?.role === 'consultor') {
+        const managed = getManagedSellerNames();
+        const myIds = new Set(clients.filter(c => managed.has((c.seller||'').toLowerCase())).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      } else if (currentUser?.role === 'vendedor') {
+        const sn = (currentUser.sellerName||'').toLowerCase();
+        const myIds = new Set(clients.filter(c => (c.seller||'').toLowerCase() === sn).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      }
       if (clientId) records = records.filter(r => String(r.client_id) === String(clientId));
       if (startDate) records = records.filter(r => (r.date_start||'').slice(0,10) >= startDate);
       if (endDate)   records = records.filter(r => (r.date_start||'').slice(0,10) <= endDate);
@@ -4282,6 +4293,12 @@ ${clientSections}
       let [records, clients, machines, processes] = await Promise.all([
         dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'),
       ]);
+      if (currentUser?.role === 'gerente') {
+        const managed = getManagedSellerNames();
+        const myIds = new Set(clients.filter(c => managed.has((c.seller||'').toLowerCase())).map(c => Number(c.id)));
+        clients = clients.filter(c => myIds.has(Number(c.id)));
+        records = records.filter(r => myIds.has(Number(r.client_id)));
+      }
       if (startDate) records = records.filter(r => (r.date_start||'').slice(0,10) >= startDate);
       if (endDate)   records = records.filter(r => (r.date_start||'').slice(0,10) <= endDate);
 
