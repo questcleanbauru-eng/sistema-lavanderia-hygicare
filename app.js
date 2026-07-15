@@ -1328,7 +1328,8 @@ ${kpisHtml}
       const payload = { id: 1, key: 'maintenance', active: isActive ? '1' : '0', message: cfg.message, updated_at: new Date().toISOString() };
       showOverlay(isActive ? 'Ativando manutenção...' : 'Desativando manutenção...');
       try {
-        await patchSheetDB(SHEETS.APP_CONFIG, 1, payload).catch(() => postToSheetDB(SHEETS.APP_CONFIG, payload));
+        const updated = await patchSheetDB(SHEETS.APP_CONFIG, 1, payload);
+        if (!updated) await postToSheetDB(SHEETS.APP_CONFIG, payload);
       } finally { hideOverlay(); }
 
       _refreshMaintenanceToggle();

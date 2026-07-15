@@ -40,6 +40,7 @@ const HEADERS = {
   ReceitaProdutos: ['id','name','category','created_at'],
   ClienteNotas:    ['id','client_id','type','title','content','date','created_by','created_at','synced_at'],
   Config:          ['chave','valor'],
+  AppConfig:       ['id','key','active','message','updated_at'],
 };
 
 // ── Resposta padrão ──────────────────────────────────────────
@@ -228,6 +229,7 @@ const SHEET_LABELS = {
   ReceitaProdutos: 'Produto de Receita',
   ClienteNotas:    'Nota de Cliente',
   Config:          'Configuração',
+  AppConfig:       'Configuração do App',
 };
 
 // ── Enviar e-mail de notificação ─────────────────────────────
