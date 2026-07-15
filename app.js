@@ -6697,6 +6697,7 @@ ${recipeSections}
                 <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
                 <span class="badge badge-gray">${g.rows.length} linha(s)</span>
                 <button class="btn-record-action" style="background:#16a34a;color:#fff" onclick="window._shareGroup('${safeKey}')" title="Compartilhar / Enviar relatório">📤 Enviar</button>
+                <button class="btn-record-action" style="background:#0ea5e9;color:#fff" onclick="window._printGroup('${safeKey}')" title="Visualizar relatório">👁️ Ver</button>
                 ${canDo('edit_record') ? `<button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>` : ''}
                 ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}', this)" title="Excluir registro">🗑️ Excluir</button>` : ''}
                 <span style="font-size:0.8rem;color:var(--muted)">▼</span>
