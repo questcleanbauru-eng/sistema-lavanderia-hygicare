@@ -1358,6 +1358,30 @@ ${kpisHtml}
       }
     }
 
+    // ---- Sync leve de manutenção (roda periodicamente e ao voltar para aba) ----
+    async function _syncMaintenanceRemote() {
+      try {
+        const res = await fetch(`${gasApiUrl()}?sheet=${SHEETS.APP_CONFIG}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const row  = (json.data || []).find(r => r.key === 'maintenance');
+        if (!row) return;
+        const cfg = { active: String(row.active) === '1', message: row.message || '', since: null };
+        const prev = _getMaintenanceCfg();
+        localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
+        // Só aplica se o estado mudou (evita piscar desnecessariamente)
+        if (cfg.active !== prev.active) _applyMaintenanceMode();
+      } catch { /* silencioso */ }
+    }
+
+    // Verifica ao voltar para a aba
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _syncMaintenanceRemote();
+    });
+
+    // Verifica a cada 2 minutos
+    setInterval(_syncMaintenanceRemote, 2 * 60 * 1000);
+
     // Testar conexão com o Google Apps Script
     async function testApis() {
       const dot    = document.getElementById('admin-status-dot');
