@@ -634,10 +634,6 @@
               <canvas id="chart-por-vendedor" height="220"></canvas>
             </div>
             <div class="card chart-card" style="grid-column:span 2">
-              <h3 class="chart-title">🏆 Ranking de Clientes — kg no período</h3>
-              <canvas id="chart-ranking-clientes" height="200"></canvas>
-            </div>
-            <div class="card chart-card" style="grid-column:span 2">
               <h3 class="chart-title">📊 Comparativo Mensal por Cliente (top 8)</h3>
               <canvas id="chart-comparativo-mensal" height="200"></canvas>
             </div>
@@ -1013,34 +1009,10 @@
             <div class="screen-title"><h2>📄 Relatórios PDF</h2></div>
           </div>
 
-          <!-- Relatório Executivo -->
+          <!-- Relatório de Produção -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">📊 Relatório Executivo</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">KPIs gerais, ranking de clientes, performance por vendedor e receitas pendentes.</p>
-            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
-              <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
-                <label style="font-size:0.78rem">Cliente (opcional)</label>
-                <select id="pdf-exec-client" class="form-input" style="padding:6px 10px;font-size:0.88rem">
-                  <option value="">👥 Todos os clientes</option>
-                </select>
-              </div>
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">Período</label>
-                <select id="pdf-report-period" class="form-input" style="padding:6px 10px;width:auto;font-size:0.88rem">
-                  <option value="30">Últimos 30 dias</option>
-                  <option value="60">Últimos 60 dias</option>
-                  <option value="90">Últimos 90 dias</option>
-                  <option value="365">Últimos 12 meses</option>
-                </select>
-              </div>
-              <button id="btn-pdf-executive" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-            </div>
-          </div>
-
-          <!-- Relatório Resumo -->
-          <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">📈 Relatório Resumo</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Resumo de produção no período com ranking de clientes e processos.</p>
+            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">📊 Relatório de Produção</h3>
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">KPIs, ranking de clientes, evolução mensal, processos e clientes inativos no período.</p>
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
               <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
                 <label style="font-size:0.78rem">Cliente (opcional)</label>

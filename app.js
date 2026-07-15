@@ -984,18 +984,15 @@ ${printScript}
     }
 
     document.getElementById('btn-pdf-executive')?.addEventListener('click', async () => {
-      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
-      const win = window.open('', '_blank', 'width=1000,height=750');
-      if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
+      // Relatório Executivo foi fundido com Resumo → redireciona para Produção
+      const s = document.getElementById('pdf-summary-start')?.value || '';
+      const e = document.getElementById('pdf-summary-end')?.value   || '';
+      const c = document.getElementById('pdf-summary-client')?.value || '';
+      _printSummaryReport(s, e, c);
+    });
 
-      const days = Number(document.getElementById('pdf-report-period')?.value || 30);
-      const execClientId = document.getElementById('pdf-exec-client')?.value || '';
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-      const cutoffISO = cutoff.toISOString().slice(0, 10);
-      const prevCutoff = new Date(cutoff);
-      prevCutoff.setDate(prevCutoff.getDate() - days);
-      const prevCutoffISO = prevCutoff.toISOString().slice(0, 10);
+    // (handler executivo consolidado em _printSummaryReport — ver btn-pdf-executive acima)
+    void (async () => { if (false) {
 
       let [records, clients, recipes] = await Promise.all([
         dbGetAll_raw('records'),
@@ -1231,13 +1228,7 @@ ${kpisHtml}
   <thead><tr><th>Cliente</th><th>Nome da Receita</th><th>Criado por</th><th style="text-align:center">Aguardando</th></tr></thead>
   <tbody>${pendingRows}</tbody>
 </table>
-
-<div class="footer">${getPdfFooterHtml('Relatório Executivo')}</div>
-</body></html>`;
-
-      win.document.write(html.replaceAll('#1a3f5c', getPdfColor()));
-      win.document.close();
-    });
+</body></html>\`; } })();
 
     function refreshAdminPanel() {
       const cfgGasUrl = localStorage.getItem('hygicare_cfg_gas_url') || CONFIG.GAS_URL || '';
@@ -3936,7 +3927,7 @@ ${kpisHtml}
       const clientOpts = '<option value="">Selecionar cliente...</option>' +
         sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
-      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-exec-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
+      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const cur = el.value;
@@ -7448,7 +7439,7 @@ ${recipeSections}
     // GRAFICOS
     // =====================================================
     let _charts = {};
-    const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor','chart-ranking-clientes','chart-comparativo-mensal'];
+    const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor','chart-comparativo-mensal'];
     const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
 
     function _applyChartPresetDates() {
@@ -7864,27 +7855,7 @@ ${recipeSections}
         }
       });
 
-      // ── Gráfico 6: Ranking de Clientes (barras horizontais) ─────────────
-      const rankMap = {};
-      for (const r of records) {
-        const c = findClientById(r.client_id, clients);
-        const name = c?.name || `#${r.client_id}`;
-        rankMap[name] = (rankMap[name] || 0) + parseFloat(r.total || 0);
-      }
-      const rankSorted = Object.entries(rankMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      const ctxRank = document.getElementById('chart-ranking-clientes');
-      if (ctxRank) _charts.ranking = new Chart(ctxRank, {
-        type: 'bar',
-        data: {
-          labels: rankSorted.map(e => e[0]),
-          datasets: [{ label: 'kg processado', data: rankSorted.map(e => parseFloat(e[1].toFixed(2))),
-            backgroundColor: CHART_COLORS.map(c => c + 'cc'), borderRadius: 5 }]
-        },
-        options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
-          scales: { x: { ticks: { callback: v => v.toLocaleString('pt-BR') + ' kg' } } } }
-      });
-
-      // ── Gráfico 7: Comparativo Mensal por Cliente (barras empilhadas) ───
+      // ── Gráfico 6: Comparativo Mensal por Cliente (barras empilhadas) ───
       const allMonths = [...new Set(records.map(r => (r.date_start || '').slice(0, 7)).filter(Boolean))].sort();
       const cliTotalMap = {};
       for (const r of records) cliTotalMap[r.client_id] = (cliTotalMap[r.client_id] || 0) + parseFloat(r.total || 0);
