@@ -336,14 +336,14 @@
           </div>
 
           <!-- Filtro mês/ano -->
-          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
-            <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap">Filtrar por:</span>
-            <input type="month" id="home-filter-month" class="form-input"
-              style="padding:4px 10px;font-size:0.85rem;flex:1;max-width:200px"
+          <div style="display:flex;align-items:center;gap:0.6rem;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.75rem;margin-bottom:0.85rem;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+            <span style="font-size:1rem;flex-shrink:0">📅</span>
+            <input type="month" id="home-filter-month"
+              style="border:none;outline:none;background:transparent;font-size:0.92rem;font-weight:700;color:var(--text);flex:1;min-width:0;padding:0;cursor:pointer"
               onchange="window._reloadHomeKpis()">
-            <button id="home-filter-clear" onclick="window._reloadHomeKpis(true)"
-              style="font-size:0.8rem;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 6px;white-space:nowrap">
-              ✕ Limpar
+            <button id="home-filter-today-btn" onclick="window._reloadHomeKpis('today')"
+              style="display:none;font-size:0.72rem;background:var(--primary,#0ea5e9);color:#fff;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;white-space:nowrap;font-weight:600;flex-shrink:0">
+              Mês atual
             </button>
           </div>
 
@@ -385,19 +385,19 @@
 
           <!-- Últimos registros -->
           <div class="card">
-            <h3 style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">📋 Últimos registros</h3>
+            <h3 id="home-title-records" style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">📋 Registros do mês</h3>
             <div id="home-recent-records"></div>
           </div>
 
-          <!-- Últimas leituras de vazão (7 dias) -->
+          <!-- Últimas leituras de vazão -->
           <div class="card" id="home-recent-vazao-card" style="display:none">
-            <h3 style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">💧 Últimas leituras de vazão</h3>
+            <h3 id="home-title-vazao" style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">💧 Vazão do mês</h3>
             <div id="home-recent-vazao"></div>
           </div>
 
-          <!-- Últimas notas do histórico (7 dias) -->
+          <!-- Últimas notas do histórico -->
           <div class="card" id="home-recent-notes-card" style="display:none">
-            <h3 style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">📋 Últimas notas do histórico</h3>
+            <h3 id="home-title-notes" style="font-size:0.88rem;font-weight:700;margin:0 0 0.65rem;color:var(--text)">📋 Histórico do mês</h3>
             <div id="home-recent-notes"></div>
           </div>
         </section>

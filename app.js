@@ -4293,24 +4293,26 @@ ${machSections}
       const allowedClientIds = new Set(clients.map(c => String(c.id)));
       const records = allRecordsRaw.filter(r => allowedClientIds.has(String(r.client_id)));
 
+      const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const filterMonthEl = document.getElementById('home-filter-month');
-      const filterYm = filterMonthEl?.value || '';
-      const ym = filterYm || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      // Pré-preenche com mês atual se ainda vazio
+      if (filterMonthEl && !filterMonthEl.value) filterMonthEl.value = currentYm;
+      const ym = filterMonthEl?.value || currentYm;
+
+      // Botão "Mês atual" — só aparece quando filtro ≠ mês corrente
+      const todayBtn = document.getElementById('home-filter-today-btn');
+      if (todayBtn) todayBtn.style.display = ym !== currentYm ? '' : 'none';
+
       const thisMonth = records.filter(r => (r.date_start || '').startsWith(ym));
       const kgMes = thisMonth.reduce((s, r) => s + parseFloat(r.total || 0), 0);
 
-      // Atualiza label conforme filtro
+      // Label com nome do mês selecionado
+      const [fy, fm] = ym.split('-');
+      const monthName = new Date(Number(fy), Number(fm) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
       const kgLabel = document.getElementById('home-kg-mes-label');
       const recLabel = document.getElementById('home-records-label');
-      if (filterYm) {
-        const [fy, fm] = filterYm.split('-');
-        const monthName = new Date(Number(fy), Number(fm) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-        if (kgLabel) kgLabel.textContent = `kg em ${monthName}`;
-        if (recLabel) recLabel.textContent = `registros em ${monthName}`;
-      } else {
-        if (kgLabel) kgLabel.textContent = 'kg este mês';
-        if (recLabel) recLabel.textContent = 'registros';
-      }
+      if (kgLabel) kgLabel.textContent = `kg em ${monthName}`;
+      if (recLabel) recLabel.textContent = `registros em ${monthName}`;
 
       const kgEl = document.getElementById('home-kg-mes');
       if (kgEl) kgEl.textContent = Math.round(kgMes).toLocaleString('pt-BR') + ' kg';
@@ -4325,61 +4327,57 @@ ${machSections}
       const pendEl = document.getElementById('home-pending-count');
       if (pendEl) pendEl.textContent = pending;
 
-      // Últimos totais agrupados por cliente+período (igual ao relatório)
+      // Títulos dinâmicos dos cards
+      const titleRecords = document.getElementById('home-title-records');
+      const titleVazao   = document.getElementById('home-title-vazao');
+      const titleNotes   = document.getElementById('home-title-notes');
+      if (titleRecords) titleRecords.textContent = `📋 Produção — ${monthName}`;
+      if (titleVazao)   titleVazao.textContent   = `💧 Vazão — ${monthName}`;
+      if (titleNotes)   titleNotes.textContent   = `📋 Histórico — ${monthName}`;
+
+      // Registros de produção do mês selecionado, agrupados por cliente
       const recentEl = document.getElementById('home-recent-records');
       if (!recentEl) return;
-      if (!records.length) {
-        recentEl.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;text-align:center;padding:0.75rem">Nenhum registro ainda.</div>';
-        return;
+      const monthRecords = records.filter(r => (r.date_start || '').startsWith(ym));
+      if (!monthRecords.length) {
+        recentEl.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;text-align:center;padding:0.75rem">Nenhum registro neste mês.</div>';
+      } else {
+        const groupMap = {};
+        for (const r of monthRecords) {
+          const cId = Number(r.client_id);
+          const key = String(cId);
+          if (!groupMap[key]) groupMap[key] = { clientId: cId, total: 0, lastDate: r.date_start || '', count: 0 };
+          groupMap[key].total += parseFloat(r.total || 0);
+          groupMap[key].count++;
+          if ((r.date_start || '') > groupMap[key].lastDate) groupMap[key].lastDate = r.date_start;
+        }
+        const groups = Object.values(groupMap).sort((a, b) => b.total - a.total).slice(0, 8);
+        recentEl.innerHTML = groups.map(g => {
+          const c = clients.find(cl => Number(cl.id) === g.clientId);
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+              <div style="min-width:0">
+                <div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c?.name || '—'}</div>
+                <div style="font-size:0.73rem;color:var(--muted)">${g.count} registro${g.count > 1 ? 's' : ''}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0;margin-left:0.75rem">
+                <div style="font-size:0.9rem;font-weight:700;color:var(--primary)">${Math.round(g.total).toLocaleString('pt-BR')} kg</div>
+              </div>
+            </div>`;
+        }).join('');
       }
-      // Agrupar por clientId + period (date_start mês/ano)
-      const groupMap = {};
-      for (const r of records) {
-        const cId = Number(r.client_id);
-        const period = (r.date_start || '').slice(0, 7); // yyyy-mm
-        const key = `${cId}|${period}`;
-        if (!groupMap[key]) groupMap[key] = { clientId: cId, period, total: 0, lastDate: r.date_start || '', count: 0 };
-        groupMap[key].total += parseFloat(r.total || 0);
-        groupMap[key].count++;
-        if ((r.date_start || '') > groupMap[key].lastDate) groupMap[key].lastDate = r.date_start;
-      }
-      const groups = Object.values(groupMap)
-        .sort((a, b) => b.lastDate.localeCompare(a.lastDate))
-        .slice(0, 5);
-      recentEl.innerHTML = groups.map(g => {
-        const c = clients.find(cl => Number(cl.id) === g.clientId);
-        const [yyyy, mm] = g.period.split('-');
-        const monthLabel = mm ? new Date(Number(yyyy), Number(mm) - 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }) : g.period;
-        const totalKg = g.total;
-        const totalFmt = Math.round(totalKg).toLocaleString('pt-BR') + ' kg';
-        return `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
-            <div style="min-width:0">
-              <div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c?.name || '—'}</div>
-              <div style="font-size:0.73rem;color:var(--muted)">${monthLabel} · ${g.count} registro${g.count > 1 ? 's' : ''}</div>
-            </div>
-            <div style="text-align:right;flex-shrink:0;margin-left:0.75rem">
-              <div style="font-size:0.9rem;font-weight:700;color:var(--primary)">${totalFmt}</div>
-            </div>
-          </div>`;
-      }).join('');
 
       refreshAlertsBadge();
 
-      // Últimas leituras de vazão — 7 dias
+      // Leituras de vazão do mês selecionado
       const vazaoCard = document.getElementById('home-recent-vazao-card');
       const vazaoEl   = document.getElementById('home-recent-vazao');
       if (vazaoEl && canDo('vazao')) {
-        const cutoff7 = new Date(); cutoff7.setDate(cutoff7.getDate() - 7);
-        const cutoffStr = cutoff7.toISOString().slice(0, 10);
-        let vRecs = (await dbGetAll_raw('vazao_records'))
-          .filter(r => (r.date || '') >= cutoffStr);
-        // filtro por clientes acessíveis
         const vcIds = new Set(clients.map(c => String(c.id)));
-        vRecs = vRecs.filter(r => vcIds.has(String(r.client_id)));
+        let vRecs = (await dbGetAll_raw('vazao_records'))
+          .filter(r => (r.date || '').startsWith(ym) && vcIds.has(String(r.client_id)));
         if (vRecs.length) {
           if (vazaoCard) vazaoCard.style.display = '';
-          // agrupar por data + cliente
           const vg = {};
           for (const r of vRecs) {
             const key = `${r.date}|${r.client_id}`;
@@ -4402,16 +4400,13 @@ ${machSections}
         }
       }
 
-      // Últimas notas do histórico — 7 dias
+      // Notas do histórico do mês selecionado
       const notesCard = document.getElementById('home-recent-notes-card');
       const notesEl   = document.getElementById('home-recent-notes');
       if (notesEl && canDo('client_notes')) {
-        const cutoff7n = new Date(); cutoff7n.setDate(cutoff7n.getDate() - 7);
-        const cutoffNStr = cutoff7n.toISOString().slice(0, 10);
-        let notes = (await dbGetAll_raw('client_notes'))
-          .filter(n => (n.date || n.created_at || '').slice(0,10) >= cutoffNStr);
         const ncIds = new Set(clients.map(c => String(c.id)));
-        notes = notes.filter(n => ncIds.has(String(n.client_id)));
+        let notes = (await dbGetAll_raw('client_notes'))
+          .filter(n => (n.date || n.created_at || '').slice(0,7) === ym && ncIds.has(String(n.client_id)));
         if (notes.length) {
           if (notesCard) notesCard.style.display = '';
           const nSorted = notes.sort((a,b) => {
@@ -4439,10 +4434,13 @@ ${machSections}
       _refreshNovidadesDot();
     }
 
-    window._reloadHomeKpis = function(clear = false) {
-      if (clear) {
+    window._reloadHomeKpis = function(action) {
+      if (action === 'today') {
         const el = document.getElementById('home-filter-month');
-        if (el) el.value = '';
+        if (el) {
+          const n = new Date();
+          el.value = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
+        }
       }
       initHomeScreen();
     };
