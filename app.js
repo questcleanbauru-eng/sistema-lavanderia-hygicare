@@ -1350,8 +1350,10 @@ ${kpisHtml}
       if (!overlay) return;
       if (cfg.active) {
         if (msgEl) msgEl.textContent = cfg.message || 'Sistema em manutenção. Voltamos em breve!';
+        overlay.style.display = 'flex';
         overlay.classList.add('active');
       } else {
+        overlay.style.display = 'none';
         overlay.classList.remove('active');
       }
     }
