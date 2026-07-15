@@ -358,10 +358,12 @@
             <div class="home-kpi">
               <div class="home-kpi-value" id="home-kg-mes">—</div>
               <div class="home-kpi-label" id="home-kg-mes-label">kg este mês</div>
+              <div class="home-kpi-delta" id="home-kg-delta"></div>
             </div>
             <div class="home-kpi">
               <div class="home-kpi-value" id="home-records-mes">—</div>
               <div class="home-kpi-label" id="home-records-label">registros</div>
+              <div class="home-kpi-delta" id="home-records-delta"></div>
             </div>
             <div class="home-kpi" id="home-kpi-pending" style="display:none">
               <div class="home-kpi-value" id="home-pending-count" style="color:#ef4444">0</div>
@@ -631,6 +633,14 @@
               <h3 class="chart-title">⚙️ kg por Máquina</h3>
               <canvas id="chart-por-vendedor" height="220"></canvas>
             </div>
+            <div class="card chart-card" style="grid-column:span 2">
+              <h3 class="chart-title">🏆 Ranking de Clientes — kg no período</h3>
+              <canvas id="chart-ranking-clientes" height="200"></canvas>
+            </div>
+            <div class="card chart-card" style="grid-column:span 2">
+              <h3 class="chart-title">📊 Comparativo Mensal por Cliente (top 8)</h3>
+              <canvas id="chart-comparativo-mensal" height="200"></canvas>
+            </div>
           </div>
 
           <!-- Seção Vazão -->
@@ -658,6 +668,16 @@
         <section id="screen-admin" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title"><h2>🛠️ Painel Administrativo</h2></div>
+          </div>
+
+          <!-- NOTIFICAÇÕES PUSH -->
+          <div class="card" id="admin-notif-card" style="margin-bottom:1.2rem">
+            <h3 style="margin:0 0 0.5rem;font-size:1rem">🔔 Notificações</h3>
+            <p style="font-size:0.78rem;color:#64748b;margin:0 0 0.75rem">Receba alertas no dispositivo sobre sincronização, manutenção e clientes sem relatório.</p>
+            <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+              <button id="btn-enable-notif" class="btn-primary" style="font-size:0.85rem" onclick="window._requestNotifPermission?.()">🔔 Ativar notificações</button>
+              <span id="notif-status" style="font-size:0.8rem;color:#64748b"></span>
+            </div>
           </div>
 
           <!-- MODO MANUTENÇÃO -->
@@ -933,6 +953,9 @@
               <h2>📄 Emitir Relatorio</h2>
               <span class="count-badge" id="records-count">0</span>
             </div>
+            <div class="screen-actions">
+              <button id="btn-export-csv" class="btn-secondary" style="font-size:0.83rem" title="Exportar registros filtrados para Excel">📊 Excel</button>
+            </div>
           </div>
           <div class="search-bar">
             <span>🔍</span>
@@ -1143,6 +1166,58 @@
                 </select>
               </div>
               <button id="btn-pdf-machines" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
+            </div>
+          </div>
+
+          <!-- Relatório de Cancelamentos -->
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">❌ Relatório de Cancelamentos</h3>
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Proporção de executados x cancelados por processo e máquina no período.</p>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
+                <label style="font-size:0.78rem">Cliente (opcional)</label>
+                <select id="pdf-cancel-client" class="form-input" style="padding:6px 10px;font-size:0.88rem">
+                  <option value="">👥 Todos os clientes</option>
+                </select>
+              </div>
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">De</label>
+                <input type="date" id="pdf-cancel-start" class="form-input" style="padding:6px 10px;width:auto">
+              </div>
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">Até</label>
+                <input type="date" id="pdf-cancel-end" class="form-input" style="padding:6px 10px;width:auto">
+              </div>
+              <button id="btn-pdf-cancel" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
+            </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
+              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+            </div>
+          </div>
+
+          <!-- Relatório por Operador -->
+          <div class="card" style="margin-bottom:1rem" id="pdf-operator-card">
+            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">👷 Relatório por Operador</h3>
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Registros agrupados por operador: quantidade, kg total e clientes atendidos.</p>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">De</label>
+                <input type="date" id="pdf-operator-start" class="form-input" style="padding:6px 10px;width:auto">
+              </div>
+              <div class="form-field" style="margin-bottom:0">
+                <label style="font-size:0.78rem">Até</label>
+                <input type="date" id="pdf-operator-end" class="form-input" style="padding:6px 10px;width:auto">
+              </div>
+              <button id="btn-pdf-operator" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
+            </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
+              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
+              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
             </div>
           </div>
         </section>

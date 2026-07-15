@@ -1369,8 +1369,12 @@ ${kpisHtml}
         const cfg = { active: String(row.active) === '1', message: row.message || '', since: null };
         const prev = _getMaintenanceCfg();
         localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
-        // Só aplica se o estado mudou (evita piscar desnecessariamente)
-        if (cfg.active !== prev.active) _applyMaintenanceMode();
+        if (cfg.active !== prev.active) {
+          _applyMaintenanceMode();
+          if (cfg.active && currentUser?.role !== 'admin') {
+            _showPushNotif('⚠️ Sistema em Manutenção', cfg.message || 'O sistema entrou em modo manutenção. Aguarde o retorno.');
+          }
+        }
       } catch { /* silencioso */ }
     }
 
@@ -1389,6 +1393,51 @@ ${kpisHtml}
 
     // Verifica a cada 2 minutos
     setInterval(_syncMaintenanceRemote, 2 * 60 * 1000);
+
+    // =====================================================
+    // NOTIFICAÇÕES PUSH (Feature 7)
+    // =====================================================
+    function _showPushNotif(title, body) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      navigator.serviceWorker.ready.then(reg => {
+        reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png', tag: 'hygicare-alert' });
+      }).catch(() => {});
+    }
+
+    window._requestNotifPermission = async function() {
+      const btn    = document.getElementById('btn-enable-notif');
+      const status = document.getElementById('notif-status');
+      if (!('Notification' in window)) {
+        if (status) status.textContent = '❌ Não suportado neste navegador.';
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        if (status) status.textContent = '✅ Notificações já estão ativas!';
+        if (btn) btn.textContent = '🔔 Já ativado';
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        if (status) status.textContent = '✅ Notificações ativadas com sucesso!';
+        if (btn) { btn.textContent = '✅ Ativado'; btn.disabled = true; }
+        _showPushNotif('🔔 Hygicare', 'Notificações ativadas! Você será avisado sobre manutenções.');
+      } else {
+        if (status) status.textContent = '❌ Permissão negada. Habilite nas configurações do navegador.';
+      }
+    };
+
+    // Atualizar status do botão de notificações ao abrir o painel admin
+    (function _initNotifStatus() {
+      if (!('Notification' in window)) return;
+      const btn    = document.getElementById('btn-enable-notif');
+      const status = document.getElementById('notif-status');
+      if (Notification.permission === 'granted') {
+        if (btn) { btn.textContent = '✅ Já ativado'; btn.disabled = true; }
+        if (status) status.textContent = '✅ Notificações ativas.';
+      } else if (Notification.permission === 'denied') {
+        if (status) status.textContent = '❌ Bloqueado — habilite nas configurações do navegador.';
+      }
+    })();
 
     // Testar conexão com o Google Apps Script
     async function testApis() {
@@ -3887,7 +3936,7 @@ ${kpisHtml}
       const clientOpts = '<option value="">Selecionar cliente...</option>' +
         sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
-      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-exec-client','pdf-summary-client'].forEach(id => {
+      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-exec-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const cur = el.value;
@@ -3904,10 +3953,15 @@ ${kpisHtml}
       [['pdf-summary-start', monthStart],['pdf-summary-end', today],
        ['pdf-client-start',  monthStart],['pdf-client-end',  today],
        ['pdf-vazao-start',   monthStart],['pdf-vazao-end',   today],
-       ['pdf-group-start',   monthStart],['pdf-group-end',   today]].forEach(([id, val]) => {
+       ['pdf-group-start',   monthStart],['pdf-group-end',   today],
+       ['pdf-cancel-start',  monthStart],['pdf-cancel-end',  today],
+       ['pdf-operator-start',monthStart],['pdf-operator-end',today]].forEach(([id, val]) => {
         const el = document.getElementById(id);
         if (el) el.value = val;
       });
+
+      const opCard = document.getElementById('pdf-operator-card');
+      if (opCard) opCard.style.display = (currentUser?.role === 'admin' || currentUser?.role === 'gerente') ? '' : 'none';
 
       // Preset date buttons (uma única vez por tela)
       if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
@@ -3932,7 +3986,7 @@ ${kpisHtml}
           } else if (p === 'year') {
             s = `${y}-01-01`;
           }
-          const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], vazao:['pdf-vazao-start','pdf-vazao-end'], group:['pdf-group-start','pdf-group-end'] };
+          const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], vazao:['pdf-vazao-start','pdf-vazao-end'], group:['pdf-group-start','pdf-group-end'], cancel:['pdf-cancel-start','pdf-cancel-end'], operator:['pdf-operator-start','pdf-operator-end'] };
           const [startId, endId] = map[grp] || [];
           if (startId) { document.getElementById(startId).value = s; document.getElementById(endId).value = end; }
         });
@@ -4364,6 +4418,203 @@ ${machSections}
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
 
+    // =====================================================
+    // PDF CANCELAMENTOS (Feature 4)
+    // =====================================================
+    document.getElementById('btn-pdf-cancel')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      const clientId  = document.getElementById('pdf-cancel-client')?.value || '';
+      const startDate = document.getElementById('pdf-cancel-start')?.value  || '';
+      const endDate   = document.getElementById('pdf-cancel-end')?.value    || '';
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      let [records, clients, machines, processes] = await Promise.all([
+        dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'),
+      ]);
+      if (clientId) records = records.filter(r => String(r.client_id) === String(clientId));
+      if (startDate) records = records.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   records = records.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+
+      const clientMap  = Object.fromEntries(clients.map(c => [c.id, c.name]));
+      const machineMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
+      const processMap = Object.fromEntries(processes.map(p => [p.id, p.name]));
+
+      const fmtKg  = v => Number(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' kg';
+      const fmtNum = v => Number(v).toLocaleString('pt-BR');
+      const fmtD   = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
+      const periodStr = startDate||endDate ? `${fmtD(startDate)} a ${fmtD(endDate)}` : 'Todo o período';
+      const clientName = clientId ? (clients.find(c=>String(c.id)===String(clientId))?.name || '—') : 'Todos os clientes';
+
+      const totalExec = records.reduce((s,r) => s + (parseFloat(r.executed)||0), 0);
+      const totalCanc = records.reduce((s,r) => s + (parseFloat(r.canceled)||0), 0);
+      const totalKg   = records.reduce((s,r) => s + (parseFloat(r.total)||0), 0);
+      const taxaCanc  = (totalExec + totalCanc) > 0 ? (totalCanc / (totalExec + totalCanc) * 100).toFixed(1) : '0.0';
+
+      // Group by client → process
+      const byClient = {};
+      for (const r of records) {
+        const cid = String(r.client_id);
+        if (!byClient[cid]) byClient[cid] = { name: clientMap[r.client_id]||'—', rows: [] };
+        byClient[cid].rows.push(r);
+      }
+
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{background:#1a3f5c;color:#fff;padding:14px 18px;border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.hdr-title{font-size:14px;font-weight:700;color:#fff}.hdr-sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:2px}
+.kpis{display:flex;gap:8px;margin:0 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;flex:1;text-align:center}
+.kv{font-size:18px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;text-transform:uppercase;margin-top:1px}.kv-red{color:#dc2626}.kv-green{color:#16a34a}
+.client-block{margin-bottom:14px}.client-hdr{background:#f1f5f9;border-left:3px solid #1a3f5c;padding:5px 10px;font-weight:700;font-size:11px;color:#1a3f5c;margin-bottom:2px;display:flex;justify-content:space-between}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;font-size:9px;text-transform:uppercase;text-align:left}
+td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
+.badge-canc{display:inline-block;background:#fee2e2;color:#dc2626;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700}
+.badge-exec{display:inline-block;background:#dcfce7;color:#16a34a;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700}
+.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+
+      const clientSections = Object.values(byClient).sort((a,b)=>a.name.localeCompare(b.name)).map(cl => {
+        const clExec = cl.rows.reduce((s,r)=>s+(parseFloat(r.executed)||0),0);
+        const clCanc = cl.rows.reduce((s,r)=>s+(parseFloat(r.canceled)||0),0);
+        const clKg   = cl.rows.reduce((s,r)=>s+(parseFloat(r.total)||0),0);
+        const rowsHtml = cl.rows.sort((a,b)=>(a.date_start||'').localeCompare(b.date_start||'')).map(r =>
+          `<tr><td>${fmtD(r.date_start)}</td>
+          <td>${escHtml(machineMap[r.machine_id]||'—')}</td>
+          <td>${escHtml(processMap[r.process_id]||'—')}</td>
+          <td style="text-align:right"><span class="badge-exec">${fmtNum(r.executed||0)}</span></td>
+          <td style="text-align:right"><span class="${(parseFloat(r.canceled)||0)>0?'badge-canc':'badge-exec'}">${fmtNum(r.canceled||0)}</span></td>
+          <td style="text-align:right;font-weight:600">${fmtKg(r.total||0)}</td></tr>`
+        ).join('');
+        return `<div class="client-block">
+<div class="client-hdr"><span>🏥 ${escHtml(cl.name)}</span><span style="font-size:9px;color:#6b7280;font-weight:400">${cl.rows.length} registro${cl.rows.length!==1?'s':''} · ${fmtKg(clKg)}</span></div>
+<table><thead><tr><th>Data</th><th>Máquina</th><th>Processo</th><th style="text-align:right">Executadas</th><th style="text-align:right">Canceladas</th><th style="text-align:right">Total kg</th></tr></thead>
+<tbody>${rowsHtml}</tbody>
+<tfoot><tr style="background:#fef9f9;font-weight:700"><td colspan="3" style="text-align:right;color:#374151">Subtotal</td>
+<td style="text-align:right"><span class="badge-exec">${fmtNum(clExec)}</span></td>
+<td style="text-align:right"><span class="${clCanc>0?'badge-canc':'badge-exec'}">${fmtNum(clCanc)}</span></td>
+<td style="text-align:right">${fmtKg(clKg)}</td></tr></tfoot></table></div>`;
+      }).join('') || '<p style="color:#94a3b8;text-align:center;padding:14px">Nenhum registro encontrado.</p>';
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório de Cancelamentos</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div>${getPdfLogoHtml(true)}</div>
+<div style="text-align:right"><div class="hdr-title">❌ Relatório de Cancelamentos</div>
+<div class="hdr-sub">${escHtml(clientName)} · ${escHtml(periodStr)} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div></div></div>
+<div class="kpis">
+<div class="kpi"><div class="kv kv-green">${fmtNum(totalExec)}</div><div class="kl">Peças Executadas</div></div>
+<div class="kpi"><div class="kv kv-red">${fmtNum(totalCanc)}</div><div class="kl">Peças Canceladas</div></div>
+<div class="kpi"><div class="kv ${parseFloat(taxaCanc)>10?'kv-red':''}">${taxaCanc}%</div><div class="kl">Taxa de Cancelamento</div></div>
+<div class="kpi"><div class="kv">${fmtKg(totalKg)}</div><div class="kl">Total kg Processados</div></div>
+</div>
+${clientSections}
+<div class="footer">${getPdfFooterHtml('Relatório de Cancelamentos')}</div>
+</body></html>`;
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
+    });
+
+    // =====================================================
+    // PDF POR OPERADOR (Feature 5)
+    // =====================================================
+    document.getElementById('btn-pdf-operator')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      if (currentUser?.role !== 'admin' && currentUser?.role !== 'gerente') return toast('Sem permissão.', 'error');
+      const startDate = document.getElementById('pdf-operator-start')?.value || '';
+      const endDate   = document.getElementById('pdf-operator-end')?.value   || '';
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      let [records, clients, machines, processes] = await Promise.all([
+        dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes'),
+      ]);
+      if (startDate) records = records.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   records = records.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+
+      const clientMap  = Object.fromEntries(clients.map(c => [c.id, c.name]));
+      const machineMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
+      const processMap = Object.fromEntries(processes.map(p => [p.id, p.name]));
+
+      const fmtKg  = v => Number(v).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' kg';
+      const fmtNum = v => Number(v).toLocaleString('pt-BR');
+      const fmtD   = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
+      const periodStr = startDate||endDate ? `${fmtD(startDate)} a ${fmtD(endDate)}` : 'Todo o período';
+
+      // Group by operator
+      const byOp = {};
+      for (const r of records) {
+        const op = r.created_by || '(não identificado)';
+        if (!byOp[op]) byOp[op] = { rows: [], kg: 0, exec: 0, canc: 0, clients: new Set() };
+        byOp[op].rows.push(r);
+        byOp[op].kg   += parseFloat(r.total)||0;
+        byOp[op].exec += parseFloat(r.executed)||0;
+        byOp[op].canc += parseFloat(r.canceled)||0;
+        byOp[op].clients.add(String(r.client_id));
+      }
+
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{background:#1a3f5c;color:#fff;padding:14px 18px;border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.hdr-title{font-size:14px;font-weight:700;color:#fff}.hdr-sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:2px}
+.kpis{display:flex;gap:8px;margin:0 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;flex:1;text-align:center}
+.kv{font-size:18px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;text-transform:uppercase;margin-top:1px}
+.op-block{margin-bottom:16px}.op-hdr{background:#1a3f5c;color:#fff;padding:7px 10px;font-weight:700;font-size:11px;border-radius:5px 5px 0 0;display:flex;justify-content:space-between;align-items:center}
+.op-stats{display:flex;gap:6px;margin:4px 0 4px}
+.op-stat{background:#f1f5f9;border-radius:4px;padding:4px 8px;font-size:9px;color:#374151}
+.op-stat strong{display:block;font-size:11px;color:#111827;font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#374151;color:#fff;padding:4px 7px;font-size:9px;text-transform:uppercase;text-align:left}
+td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
+.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+
+      const totalKg = Object.values(byOp).reduce((s,v)=>s+v.kg,0);
+      const totalRec = records.length;
+
+      const opSections = Object.entries(byOp).sort((a,b)=>b[1].kg-a[1].kg).map(([op, data]) => {
+        const pct = totalKg > 0 ? (data.kg / totalKg * 100).toFixed(1) : '0.0';
+        const lastRows = data.rows.sort((a,b)=>(b.date_start||'').localeCompare(a.date_start||'')).slice(0, 10);
+        const detailRows = lastRows.map(r =>
+          `<tr><td>${fmtD(r.date_start)}</td>
+          <td>${escHtml(clientMap[r.client_id]||'—')}</td>
+          <td>${escHtml(machineMap[r.machine_id]||'—')}</td>
+          <td>${escHtml(processMap[r.process_id]||'—')}</td>
+          <td style="text-align:right">${fmtNum(r.executed||0)}</td>
+          <td style="text-align:right">${fmtNum(r.canceled||0)}</td>
+          <td style="text-align:right;font-weight:600">${fmtKg(r.total||0)}</td></tr>`
+        ).join('');
+        return `<div class="op-block">
+<div class="op-hdr"><span>👤 ${escHtml(op)}</span><span style="font-size:9px;color:rgba(255,255,255,.75)">${pct}% do total</span></div>
+<div class="op-stats">
+  <div class="op-stat"><strong>${data.rows.length}</strong>Registros</div>
+  <div class="op-stat"><strong>${data.clients.size}</strong>Clientes</div>
+  <div class="op-stat"><strong>${fmtKg(data.kg)}</strong>Total kg</div>
+  <div class="op-stat"><strong>${fmtNum(data.exec)}</strong>Executadas</div>
+  <div class="op-stat"><strong>${fmtNum(data.canc)}</strong>Canceladas</div>
+</div>
+<table><thead><tr><th>Data</th><th>Cliente</th><th>Máquina</th><th>Processo</th><th style="text-align:right">Exec.</th><th style="text-align:right">Canc.</th><th style="text-align:right">kg</th></tr></thead>
+<tbody>${detailRows}${data.rows.length>10?`<tr><td colspan="7" style="text-align:center;color:#6b7280;font-style:italic;padding:4px">... mais ${data.rows.length-10} registro(s) não exibidos</td></tr>`:''}</tbody></table></div>`;
+      }).join('') || '<p style="color:#94a3b8;text-align:center;padding:14px">Nenhum registro encontrado.</p>';
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório por Operador</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div>${getPdfLogoHtml(true)}</div>
+<div style="text-align:right"><div class="hdr-title">👤 Relatório por Operador</div>
+<div class="hdr-sub">${escHtml(periodStr)} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div></div></div>
+<div class="kpis">
+<div class="kpi"><div class="kv">${Object.keys(byOp).length}</div><div class="kl">Operadores</div></div>
+<div class="kpi"><div class="kv">${totalRec}</div><div class="kl">Total de Registros</div></div>
+<div class="kpi"><div class="kv">${fmtKg(totalKg)}</div><div class="kl">Total kg</div></div>
+</div>
+${opSections}
+<div class="footer">${getPdfFooterHtml('Relatório por Operador')}</div>
+</body></html>`;
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
+    });
+
     async function initHomeScreen() {
       // Saudação
       const now = new Date();
@@ -4465,6 +4716,23 @@ ${machSections}
       if (recEl) recEl.textContent = thisMonth.length;
       const cliEl = document.getElementById('home-clients-count');
       if (cliEl) cliEl.textContent = clients.length;
+
+      // Comparativo mês anterior ▲▼
+      const prevDate = new Date(Number(fy), Number(fm) - 2);
+      const prevYm   = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+      const prevMonth = records.filter(r => (r.date_start || '').startsWith(prevYm));
+      const prevKg    = prevMonth.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+      function _homeDelta(curr, prev) {
+        if (prev === 0 && curr === 0) return '';
+        if (prev === 0) return '<span style="color:#16a34a;font-size:0.7rem;font-weight:600">✦ novo</span>';
+        const pct = (curr - prev) / prev * 100;
+        const col = pct >= 0 ? '#16a34a' : '#dc2626';
+        return `<span style="color:${col};font-size:0.7rem;font-weight:600">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(0)}% vs mês ant.</span>`;
+      }
+      const kgDeltaEl  = document.getElementById('home-kg-delta');
+      const recDeltaEl = document.getElementById('home-records-delta');
+      if (kgDeltaEl)  kgDeltaEl.innerHTML  = _homeDelta(kgMes, prevKg);
+      if (recDeltaEl) recDeltaEl.innerHTML = _homeDelta(thisMonth.length, prevMonth.length);
 
       const pending = (await dbGetAll_raw('recipes')).filter(r => r.status === 'pending').length;
       const kpiPend = document.getElementById('home-kpi-pending');
@@ -6996,6 +7264,51 @@ ${recipeSections}
       }
     }
 
+    // =====================================================
+    // EXPORTAR CSV / EXCEL (Feature 6)
+    // =====================================================
+    (function _setupCsvExport() {
+      const btn = document.getElementById('btn-export-csv');
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        const groups = Object.values(_recordGroups || {});
+        if (!groups.length) return toast('Nenhum dado para exportar. Aplique um filtro primeiro.', 'warning');
+
+        const fmtNum = v => String(Number(v) || 0).replace('.', ',');
+        const esc    = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+        const header = ['Cliente','Período','Data Início','Data Fim','Máquina','Processo','Executadas','Canceladas','Capacidade (kg)','Total (kg)'];
+        const lines  = [header.map(esc).join(';')];
+
+        for (const g of groups) {
+          for (const row of (g.rows || [])) {
+            lines.push([
+              esc(g.clientName),
+              esc(g.period),
+              esc(g.dateStartRaw || ''),
+              esc(g.dateEndRaw   || ''),
+              esc(row.machineName),
+              esc(row.procName),
+              fmtNum(row.executed),
+              fmtNum(row.canceled),
+              fmtNum(row.capacity),
+              fmtNum(row.total),
+            ].join(';'));
+          }
+        }
+
+        const bom  = '﻿';
+        const blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `hygicare-registros-${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+        toast(`Exportado ${lines.length - 1} linha(s) — abra no Excel.`, 'success');
+      });
+    })();
 
     async function generatePdf(clientId, start, end) {
       const clients   = await dbGetAll_raw('clients');
@@ -7135,7 +7448,7 @@ ${recipeSections}
     // GRAFICOS
     // =====================================================
     let _charts = {};
-    const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor'];
+    const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor','chart-ranking-clientes','chart-comparativo-mensal'];
     const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
 
     function _applyChartPresetDates() {
@@ -7549,6 +7862,54 @@ ${recipeSections}
             }
           }
         }
+      });
+
+      // ── Gráfico 6: Ranking de Clientes (barras horizontais) ─────────────
+      const rankMap = {};
+      for (const r of records) {
+        const c = findClientById(r.client_id, clients);
+        const name = c?.name || `#${r.client_id}`;
+        rankMap[name] = (rankMap[name] || 0) + parseFloat(r.total || 0);
+      }
+      const rankSorted = Object.entries(rankMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const ctxRank = document.getElementById('chart-ranking-clientes');
+      if (ctxRank) _charts.ranking = new Chart(ctxRank, {
+        type: 'bar',
+        data: {
+          labels: rankSorted.map(e => e[0]),
+          datasets: [{ label: 'kg processado', data: rankSorted.map(e => parseFloat(e[1].toFixed(2))),
+            backgroundColor: CHART_COLORS.map(c => c + 'cc'), borderRadius: 5 }]
+        },
+        options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
+          scales: { x: { ticks: { callback: v => v.toLocaleString('pt-BR') + ' kg' } } } }
+      });
+
+      // ── Gráfico 7: Comparativo Mensal por Cliente (barras empilhadas) ───
+      const allMonths = [...new Set(records.map(r => (r.date_start || '').slice(0, 7)).filter(Boolean))].sort();
+      const cliTotalMap = {};
+      for (const r of records) cliTotalMap[r.client_id] = (cliTotalMap[r.client_id] || 0) + parseFloat(r.total || 0);
+      const top8 = Object.entries(cliTotalMap).sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
+      const compDatasets = top8.map((cid, i) => {
+        const c = findClientById(cid, clients);
+        return {
+          label: c?.name || `#${cid}`,
+          data: allMonths.map(ym => records.filter(r => String(r.client_id) === String(cid) && (r.date_start || '').startsWith(ym))
+                                            .reduce((s, r) => s + parseFloat(r.total || 0), 0)),
+          backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + 'cc',
+        };
+      });
+      const ctxComp = document.getElementById('chart-comparativo-mensal');
+      if (ctxComp) _charts.comparativo = new Chart(ctxComp, {
+        type: 'bar',
+        data: {
+          labels: allMonths.map(ym => {
+            const [y, m] = ym.split('-');
+            return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+          }),
+          datasets: compDatasets
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } } },
+          scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => v.toLocaleString('pt-BR') } } } }
       });
 
       // Gráfico de Vazão

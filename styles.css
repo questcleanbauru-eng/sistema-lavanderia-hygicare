@@ -1701,6 +1701,11 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.home-kpi-delta {
+  font-size: 0.68rem;
+  margin-top: 0.15rem;
+  min-height: 1em;
+}
 .home-actions {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
