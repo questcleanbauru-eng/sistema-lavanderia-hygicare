@@ -1929,7 +1929,7 @@ ${kpisHtml}
             const cfgJson = await cfgRes.json();
             const maintRow = (cfgJson.data || []).find(r => r.key === 'maintenance');
             if (maintRow) {
-              const cfg = { active: maintRow.active === '1', message: maintRow.message || '', since: null };
+              const cfg = { active: String(maintRow.active) === '1', message: maintRow.message || '', since: null };
               localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
               _applyMaintenanceMode();
             }
@@ -2067,7 +2067,7 @@ ${kpisHtml}
               const cfgJson = await cfgRes.json();
               const maintRow = (cfgJson.data || []).find(r => r.key === 'maintenance');
               if (maintRow) {
-                const cfg = { active: maintRow.active === '1', message: maintRow.message || '', since: null };
+                const cfg = { active: String(maintRow.active) === '1', message: maintRow.message || '', since: null };
                 localStorage.setItem('hygicare_maintenance', JSON.stringify(cfg));
                 _applyMaintenanceMode();
               }
