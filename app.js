@@ -1374,6 +1374,14 @@ ${kpisHtml}
       } catch { /* silencioso */ }
     }
 
+    // Botão "Verificar se voltou" no overlay de manutenção
+    window._checkMaintenance = async function() {
+      const btn = document.getElementById('btn-maint-check');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
+      await _syncMaintenanceRemote();
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar se voltou'; }
+    };
+
     // Verifica ao voltar para a aba
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') _syncMaintenanceRemote();
