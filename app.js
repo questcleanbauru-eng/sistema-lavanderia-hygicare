@@ -6689,18 +6689,24 @@ ${recipeSections}
         return `
           <div class="records-group">
             <div class="records-group-header" onclick="event.target.closest('.btn-record-action') || this.nextElementSibling.classList.toggle('open')">
-              <div class="records-group-title">
-                👤 ${g.clientName}
-                <span class="badge" style="font-size:0.72rem">${g.period}</span>
+              <div class="rgh-top">
+                <div class="records-group-title">
+                  👤 ${g.clientName}
+                  <span class="badge" style="font-size:0.72rem">${g.period}</span>
+                </div>
+                <span class="rgh-chevron">▼</span>
               </div>
-              <div class="records-group-meta">
-                <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
-                <span class="badge badge-gray">${g.rows.length} linha(s)</span>
-                <button class="btn-record-action" style="background:#16a34a;color:#fff" onclick="window._shareGroup('${safeKey}')" title="Compartilhar / Enviar relatório">📤 Enviar</button>
-                <button class="btn-record-action" style="background:#0ea5e9;color:#fff" onclick="window._printGroup('${safeKey}')" title="Visualizar relatório">👁️ Ver</button>
-                ${canDo('edit_record') ? `<button class="btn-record-action" style="background:var(--warning);color:#fff" onclick="window._editRecord('${safeKey}')" title="Editar registro">✏️ Editar</button>` : ''}
-                ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger);color:#fff" onclick="window._deleteRecord('${safeKey}', this)" title="Excluir registro">🗑️ Excluir</button>` : ''}
-                <span style="font-size:0.8rem;color:var(--muted)">▼</span>
+              <div class="rgh-bottom">
+                <div class="rgh-badges">
+                  <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
+                  <span class="badge badge-gray">${g.rows.length} linha(s)</span>
+                </div>
+                <div class="rgh-actions">
+                  <button class="btn-record-action" style="background:#16a34a" onclick="window._shareGroup('${safeKey}')">📤 Enviar</button>
+                  <button class="btn-record-action" style="background:#0ea5e9" onclick="window._viewGroup('${safeKey}')">👁️ Ver</button>
+                  ${canDo('edit_record') ? `<button class="btn-record-action" style="background:var(--warning)" onclick="window._editRecord('${safeKey}')">✏️ Editar</button>` : ''}
+                  ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger)" onclick="window._deleteRecord('${safeKey}', this)">🗑️ Excluir</button>` : ''}
+                </div>
               </div>
             </div>
             <div class="records-group-body">
@@ -6732,7 +6738,17 @@ ${recipeSections}
 
       refreshAlertsBadge();
 
-      // ---- Imprimir um grupo ----
+      // ---- Visualizar relatório (sem auto-print) ----
+      window._viewGroup = function(safeKey) {
+        const g = _recordGroups[safeKey];
+        if (!g) return;
+        const win = window.open('', '_blank', 'width=1000,height=750');
+        if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
+        win.document.write(buildReportHtml(g, false).replaceAll('#1a3f5c', getPdfColor()));
+        win.document.close();
+      };
+
+      // ---- Imprimir um grupo (auto-print) ----
       window._printGroup = function(safeKey) {
         const g = _recordGroups[safeKey];
         if (!g) return;
