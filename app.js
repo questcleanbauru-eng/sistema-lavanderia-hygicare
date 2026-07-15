@@ -990,6 +990,7 @@ ${printScript}
       if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
 
       const days = Number(document.getElementById('pdf-report-period')?.value || 30);
+      const execClientId = document.getElementById('pdf-exec-client')?.value || '';
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       const cutoffISO = cutoff.toISOString().slice(0, 10);
@@ -1014,6 +1015,11 @@ ${printScript}
         const myIds = new Set(clients.filter(c => (c.seller||'').toLowerCase() === sellerName).map(c => Number(c.id)));
         clients = clients.filter(c => myIds.has(Number(c.id)));
         records = records.filter(r => myIds.has(Number(r.client_id)));
+      }
+      // Filtro por cliente específico
+      if (execClientId) {
+        records = records.filter(r => Number(r.client_id) === Number(execClientId));
+        clients = clients.filter(c => Number(c.id) === Number(execClientId));
       }
 
       // Formatação pt-BR
@@ -3736,7 +3742,7 @@ ${kpisHtml}
       const clientOpts = '<option value="">Selecionar cliente...</option>' +
         sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
-      ['pdf-client-select','pdf-vazao-client','pdf-mach-client'].forEach(id => {
+      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-exec-client','pdf-summary-client'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const cur = el.value;
@@ -4287,9 +4293,24 @@ ${machSections}
       const allowedClientIds = new Set(clients.map(c => String(c.id)));
       const records = allRecordsRaw.filter(r => allowedClientIds.has(String(r.client_id)));
 
-      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const filterMonthEl = document.getElementById('home-filter-month');
+      const filterYm = filterMonthEl?.value || '';
+      const ym = filterYm || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const thisMonth = records.filter(r => (r.date_start || '').startsWith(ym));
       const kgMes = thisMonth.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+
+      // Atualiza label conforme filtro
+      const kgLabel = document.getElementById('home-kg-mes-label');
+      const recLabel = document.getElementById('home-records-label');
+      if (filterYm) {
+        const [fy, fm] = filterYm.split('-');
+        const monthName = new Date(Number(fy), Number(fm) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        if (kgLabel) kgLabel.textContent = `kg em ${monthName}`;
+        if (recLabel) recLabel.textContent = `registros em ${monthName}`;
+      } else {
+        if (kgLabel) kgLabel.textContent = 'kg este mês';
+        if (recLabel) recLabel.textContent = 'registros';
+      }
 
       const kgEl = document.getElementById('home-kg-mes');
       if (kgEl) kgEl.textContent = Math.round(kgMes).toLocaleString('pt-BR') + ' kg';
@@ -4417,6 +4438,14 @@ ${machSections}
       // Atualiza ponto vermelho no botão 🔔
       _refreshNovidadesDot();
     }
+
+    window._reloadHomeKpis = function(clear = false) {
+      if (clear) {
+        const el = document.getElementById('home-filter-month');
+        if (el) el.value = '';
+      }
+      initHomeScreen();
+    };
 
     // =====================================================
     // NOVIDADES — painel de atividade recente (48h)
@@ -7459,10 +7488,11 @@ ${recipeSections}
     document.getElementById('btn-pdf-summary')?.addEventListener('click', () => {
       const s = document.getElementById('pdf-summary-start')?.value || '';
       const e = document.getElementById('pdf-summary-end')?.value   || '';
-      _printSummaryReport(s, e);
+      const c = document.getElementById('pdf-summary-client')?.value || '';
+      _printSummaryReport(s, e, c);
     });
 
-    async function _printSummaryReport(overrideStart, overrideEnd) {
+    async function _printSummaryReport(overrideStart, overrideEnd, overrideClient = '') {
       if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
       // Abrir janela ANTES dos awaits — mobile bloqueia window.open após async
       const w = window.open('', '_blank');
@@ -7516,7 +7546,7 @@ ${recipeSections}
         }
       }
 
-      const filterClient  = document.getElementById('chart-filter-client')?.value  || '';
+      const filterClient  = overrideClient || document.getElementById('chart-filter-client')?.value  || '';
       const filterSeller  = document.getElementById('chart-filter-seller')?.value  || '';
       const filterGerente = document.getElementById('chart-filter-gerente')?.value || '';
 

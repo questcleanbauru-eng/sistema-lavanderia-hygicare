@@ -335,15 +335,27 @@
             <span style="font-size:1.8rem">🏠</span>
           </div>
 
+          <!-- Filtro mês/ano -->
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+            <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap">Filtrar por:</span>
+            <input type="month" id="home-filter-month" class="form-input"
+              style="padding:4px 10px;font-size:0.85rem;flex:1;max-width:200px"
+              onchange="window._reloadHomeKpis()">
+            <button id="home-filter-clear" onclick="window._reloadHomeKpis(true)"
+              style="font-size:0.8rem;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 6px;white-space:nowrap">
+              ✕ Limpar
+            </button>
+          </div>
+
           <!-- KPIs -->
           <div class="home-kpis">
             <div class="home-kpi">
               <div class="home-kpi-value" id="home-kg-mes">—</div>
-              <div class="home-kpi-label">kg este mês</div>
+              <div class="home-kpi-label" id="home-kg-mes-label">kg este mês</div>
             </div>
             <div class="home-kpi">
               <div class="home-kpi-value" id="home-records-mes">—</div>
-              <div class="home-kpi-label">registros</div>
+              <div class="home-kpi-label" id="home-records-label">registros</div>
             </div>
             <div class="home-kpi" id="home-kpi-pending" style="display:none">
               <div class="home-kpi-value" id="home-pending-count" style="color:#ef4444">0</div>
@@ -955,6 +967,12 @@
             <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">📊 Relatório Executivo</h3>
             <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">KPIs gerais, ranking de clientes, performance por vendedor e receitas pendentes.</p>
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
+                <label style="font-size:0.78rem">Cliente (opcional)</label>
+                <select id="pdf-exec-client" class="form-input" style="padding:6px 10px;font-size:0.88rem">
+                  <option value="">👥 Todos os clientes</option>
+                </select>
+              </div>
               <div class="form-field" style="margin-bottom:0">
                 <label style="font-size:0.78rem">Período</label>
                 <select id="pdf-report-period" class="form-input" style="padding:6px 10px;width:auto;font-size:0.88rem">
@@ -973,6 +991,12 @@
             <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">📈 Relatório Resumo</h3>
             <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Resumo de produção no período com ranking de clientes e processos.</p>
             <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
+                <label style="font-size:0.78rem">Cliente (opcional)</label>
+                <select id="pdf-summary-client" class="form-input" style="padding:6px 10px;font-size:0.88rem">
+                  <option value="">👥 Todos os clientes</option>
+                </select>
+              </div>
               <div class="form-field" style="margin-bottom:0">
                 <label style="font-size:0.78rem">De</label>
                 <input type="date" id="pdf-summary-start" class="form-input" style="padding:6px 10px;width:auto">
