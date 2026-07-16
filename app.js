@@ -7243,6 +7243,7 @@ ${recipeSections}
                 <div class="rgh-actions">
                   <button class="btn-record-action" style="background:#16a34a" onclick="window._shareGroup('${safeKey}')">📤 Enviar</button>
                   <button class="btn-record-action" style="background:#0ea5e9" onclick="window._viewGroup('${safeKey}')">👁️ Ver</button>
+                  <button class="btn-record-action" style="background:#0d9488" onclick="window._csvGroup('${safeKey}')">📊 Excel</button>
                   ${canDo('edit_record') ? `<button class="btn-record-action" style="background:var(--warning)" onclick="window._editRecord('${safeKey}')">✏️ Editar</button>` : ''}
                   ${canDo('delete_record') ? `<button class="btn-record-action" style="background:var(--danger)" onclick="window._deleteRecord('${safeKey}', this)">🗑️ Excluir</button>` : ''}
                 </div>
@@ -7276,6 +7277,33 @@ ${recipeSections}
       }).join('');
 
       refreshAlertsBadge();
+
+      // ---- Excel individual de um grupo ----
+      window._csvGroup = function(safeKey) {
+        const g = _recordGroups[safeKey];
+        if (!g) return;
+        const fmtNum = v => String(Number(parseFloat(v)||0).toFixed(2)).replace('.',',');
+        const cell   = v => { const s = String(v??''); return (s.includes(';')||s.includes('"')||s.includes('\n')) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+        const rows   = [
+          ['Cliente', cell(g.clientName)],
+          ['Período', cell(g.period)],
+          [''],
+          ['Máquina','Processo','Executadas','Canceladas','Capacidade (kg)','Total (kg)'],
+        ];
+        for (const row of (g.rows || [])) {
+          rows.push([cell(row.machineName), cell(row.procName), row.executed||0, row.canceled||0, fmtNum(row.capacity), fmtNum(row.total)]);
+        }
+        rows.push(['','','','','TOTAL (kg)', fmtNum(g.totalKg)]);
+        const csv  = rows.map(r => (Array.isArray(r) ? r : [r]).join(';')).join('\r\n');
+        const blob = new Blob(['﻿'+csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url;
+        a.download = `${(g.clientName||'cliente').replace(/\s+/g,'-')}_${g.dateStartRaw||'data'}.csv`;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+        toast('Excel gerado.', 'success');
+      };
 
       // ---- Visualizar relatório (sem auto-print) ----
       window._viewGroup = function(safeKey) {
