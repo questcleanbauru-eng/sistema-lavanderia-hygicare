@@ -7391,48 +7391,80 @@ ${recipeSections}
     }
 
     // =====================================================
-    // EXPORTAR CSV / EXCEL (Feature 6)
+    // EXPORTAR CSV / EXCEL — layout agrupado (Emitir Relatório)
     // =====================================================
     (function _setupCsvExport() {
       const btn = document.getElementById('btn-export-csv');
       if (!btn) return;
       btn.addEventListener('click', () => {
-        const groups = Object.values(_recordGroups || {});
-        if (!groups.length) return toast('Nenhum dado para exportar. Aplique um filtro primeiro.', 'warning');
+        const allGroups = Object.values(_recordGroups || {});
+        if (!allGroups.length) return toast('Nenhum dado para exportar. Aplique um filtro primeiro.', 'warning');
 
-        const fmtNum = v => String(Number(v) || 0).replace('.', ',');
-        const esc    = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const fmtNum = v => String(Number(parseFloat(v) || 0).toFixed(2)).replace('.', ',');
+        const cell   = v => { const s = String(v ?? ''); return (s.includes(';') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g,'""') + '"' : s; };
+        const sep    = (label) => [cell(label),'','','','','',''].join(';');
 
-        const header = ['Cliente','Período','Data Início','Data Fim','Máquina','Processo','Executadas','Canceladas','Capacidade (kg)','Total (kg)'];
-        const lines  = [header.map(esc).join(';')];
+        // Reagrupar por mês (mesmo agrupamento da tela)
+        const byMonth = {};
+        for (const g of allGroups) {
+          const m = g.createdMonth || 'Sem data';
+          const sk = g.monthSortKey || '0000-00';
+          if (!byMonth[m]) byMonth[m] = { sortKey: sk, items: [] };
+          byMonth[m].items.push(g);
+        }
+        const monthEntries = Object.entries(byMonth).sort((a,b) => b[1].sortKey.localeCompare(a[1].sortKey));
 
-        for (const g of groups) {
-          for (const row of (g.rows || [])) {
+        const header = ['Cliente / Máquina','Período','Processo','Executadas','Canceladas','Capacidade (kg)','Total (kg)'];
+        const lines  = [header.map(cell).join(';')];
+        let totalGeralKg = 0;
+
+        for (const [month, { items }] of monthEntries) {
+          // Cabeçalho do mês
+          lines.push(sep(`=== ${month.toUpperCase()} ===`));
+
+          // Ordenar grupos do mês
+          const sorted = [...items].sort((a,b) => (b.dateStartRaw||'').localeCompare(a.dateStartRaw||'') || a.clientName.localeCompare(b.clientName));
+
+          for (const g of sorted) {
+            // Linha do cliente (destaque)
             lines.push([
-              esc(g.clientName),
-              esc(g.period),
-              esc(g.dateStartRaw || ''),
-              esc(g.dateEndRaw   || ''),
-              esc(row.machineName),
-              esc(row.procName),
-              fmtNum(row.executed),
-              fmtNum(row.canceled),
-              fmtNum(row.capacity),
-              fmtNum(row.total),
+              cell(`👤 ${g.clientName}`),
+              cell(g.period),
+              cell(`${g.rows.length} linha(s)`),
+              '', '', '',
+              cell(`TOTAL: ${fmtNum(g.totalKg)} kg`),
             ].join(';'));
+
+            // Linhas de máquina/processo
+            for (const row of (g.rows || [])) {
+              lines.push([
+                cell(`   • ${row.machineName}`),
+                '',
+                cell(row.procName),
+                cell(row.executed || 0),
+                cell(row.canceled || 0),
+                fmtNum(row.capacity),
+                fmtNum(row.total),
+              ].join(';'));
+            }
+            totalGeralKg += parseFloat(g.totalKg) || 0;
+            // Linha em branco entre grupos
+            lines.push(';;;;;;');
           }
         }
 
-        const bom  = '﻿';
-        const blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        // Rodapé com total geral
+        lines.push(sep(`TOTAL GERAL: ${fmtNum(totalGeralKg)} kg`));
+
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement('a');
         a.href     = url;
-        a.download = `hygicare-registros-${new Date().toISOString().slice(0,10)}.csv`;
+        a.download = `hygicare-relatorio-${new Date().toISOString().slice(0,10)}.csv`;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
-        toast(`Exportado ${lines.length - 1} linha(s) — abra no Excel.`, 'success');
+        toast(`Excel gerado — ${allGroups.length} grupo(s) exportado(s).`, 'success');
       });
     })();
 
