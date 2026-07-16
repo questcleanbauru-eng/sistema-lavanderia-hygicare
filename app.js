@@ -5479,14 +5479,14 @@ ${opSections}
 
       const sorted = Object.values(groups).sort((a, b) => b.date.localeCompare(a.date));
       list.innerHTML = sorted.map(g => `
-        <div class="list-item" style="flex-direction:column;align-items:stretch;gap:0.4rem;padding:0.85rem 1rem">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">
-            <div style="font-weight:700;font-size:0.95rem">${g.clientName}</div>
-            <div style="font-size:0.8rem;color:var(--muted)">${fmtDate(g.date)} · ⚙️ ${g.machineName}</div>
+        <div class="list-item" style="flex-direction:column;align-items:stretch;gap:0.3rem;padding:0.65rem 0.9rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.3rem">
+            <div style="font-weight:700;font-size:0.85rem">${g.clientName}</div>
+            <div style="font-size:0.72rem;color:var(--muted)">${fmtDate(g.date)} · ⚙️ ${g.machineName}</div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:0.4rem 1rem;margin-top:0.2rem">
+          <div style="display:flex;flex-wrap:wrap;gap:0.3rem 0.6rem;margin-top:0.1rem">
             ${g.readings.map(r => `
-              <span style="font-size:0.82rem;background:#f1f5f9;border-radius:6px;padding:3px 10px;border:1px solid var(--border)">
+              <span style="font-size:0.75rem;background:#f1f5f9;border-radius:5px;padding:2px 8px;border:1px solid var(--border)">
                 <strong>${r.vazao_name}</strong>: ${r.value} ${r.vazao_unit || ''}
               </span>
             `).join('')}

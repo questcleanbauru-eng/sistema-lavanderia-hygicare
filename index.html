@@ -603,10 +603,14 @@
               <option value="">👤 Todos os vendedores</option>
             </select>
             <div class="chart-date-range">
-              <label class="chart-date-label">De</label>
-              <input type="month" id="chart-date-start" class="filter-select" />
-              <label class="chart-date-label">Até</label>
-              <input type="month" id="chart-date-end" class="filter-select" />
+              <div class="chart-date-pair">
+                <label class="chart-date-label">De</label>
+                <input type="month" id="chart-date-start" class="filter-select" />
+              </div>
+              <div class="chart-date-pair">
+                <label class="chart-date-label">Até</label>
+                <input type="month" id="chart-date-end" class="filter-select" />
+              </div>
             </div>
             <button type="button" class="btn-secondary btn-sm" id="btn-clear-charts">🗑️ Limpar filtros</button>
           </div>
@@ -949,27 +953,26 @@
               <h2>📄 Emitir Relatorio</h2>
               <span class="count-badge" id="records-count">0</span>
             </div>
-            <div class="screen-actions">
-              <button id="btn-export-csv" class="btn-secondary" style="font-size:0.83rem" title="Exportar registros filtrados para Excel">📊 Excel</button>
-            </div>
           </div>
           <div class="search-bar">
             <span>🔍</span>
             <input type="text" id="search-records" placeholder="Buscar por cliente, maquina ou processo..." />
           </div>
-          <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
-            <div id="records-quick-filters" class="quick-filters" style="margin-bottom:0;flex-wrap:wrap">
-              <button class="qf-btn active" data-qf="all">Todos</button>
-              <button class="qf-btn" data-qf="week">Esta semana</button>
-              <button class="qf-btn" data-qf="month">Este mês</button>
-              <button class="qf-btn" data-qf="lastmonth">Mês passado</button>
+          <div style="margin-bottom:0.75rem">
+            <div id="records-quick-filters" class="quick-filters" style="margin-bottom:0.5rem">
+              <button class="qf-btn active" data-qf="all" style="flex:1">Todos</button>
+              <button class="qf-btn" data-qf="week" style="flex:1">Esta semana</button>
+              <button class="qf-btn" data-qf="month" style="flex:1">Este mês</button>
+              <button class="qf-btn" data-qf="lastmonth" style="flex:1">Mês passado</button>
             </div>
-            <select id="filter-month-year" class="form-input" style="font-size:0.85rem;padding:0.35rem 0.6rem;height:36px;min-width:150px;max-width:190px">
-              <option value="">📅 Mês/Ano</option>
-            </select>
-            <select id="filter-seller-records" class="form-input" style="font-size:0.85rem;padding:0.35rem 0.6rem;height:36px;min-width:170px;max-width:220px">
-              <option value="">👤 Todos os vendedores</option>
-            </select>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+              <select id="filter-month-year" class="form-input" style="font-size:0.85rem;padding:0.35rem 0.6rem;height:36px;flex:1;min-width:140px">
+                <option value="">📅 Mês/Ano</option>
+              </select>
+              <select id="filter-seller-records" class="form-input" style="font-size:0.85rem;padding:0.35rem 0.6rem;height:36px;flex:1;min-width:150px">
+                <option value="">👤 Todos os vendedores</option>
+              </select>
+            </div>
           </div>
           <!-- inputs ocultos mantidos para o JS funcionar -->
           <select id="filter-client-records" style="display:none"><option value="">Todos os clientes</option></select>
@@ -1028,8 +1031,10 @@
                 <label style="font-size:0.78rem">Até</label>
                 <input type="date" id="pdf-summary-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
-              <button id="btn-pdf-summary" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-              <button id="btn-csv-summary" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-summary" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
+              <button id="btn-csv-summary" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
               <button type="button" class="qf-btn pdf-preset" data-group="summary" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
@@ -1058,8 +1063,10 @@
                 <label style="font-size:0.78rem">Até</label>
                 <input type="date" id="pdf-client-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
-              <button id="btn-pdf-client" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar Ficha</button>
-              <button id="btn-csv-client" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-client" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar Ficha</button>
+              <button id="btn-csv-client" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
               <button type="button" class="qf-btn pdf-preset" data-group="client" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
@@ -1088,8 +1095,10 @@
                 <label style="font-size:0.78rem">Até</label>
                 <input type="date" id="pdf-vazao-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
-              <button id="btn-pdf-vazao" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-              <button id="btn-csv-vazao" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-vazao" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
+              <button id="btn-csv-vazao" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
               <button type="button" class="qf-btn pdf-preset" data-group="vazao" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
@@ -1119,8 +1128,10 @@
                 <label style="font-size:0.78rem">Até</label>
                 <input type="date" id="pdf-group-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
-              <button id="btn-pdf-grouped" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-              <button id="btn-csv-grouped" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-grouped" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
+              <button id="btn-csv-grouped" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
               <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
@@ -1141,8 +1152,10 @@
                   <option value="">Selecionar cliente...</option>
                 </select>
               </div>
-              <button id="btn-pdf-machines" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-              <button id="btn-csv-machines" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-machines" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
+              <button id="btn-csv-machines" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
           </div>
 
@@ -1165,8 +1178,10 @@
                 <label style="font-size:0.78rem">Até</label>
                 <input type="date" id="pdf-cancel-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
-              <button id="btn-pdf-cancel" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-              <button id="btn-csv-cancel" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-cancel" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
+              <button id="btn-csv-cancel" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
               <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
@@ -1189,8 +1204,10 @@
                 <label style="font-size:0.78rem">Até</label>
                 <input type="date" id="pdf-operator-end" class="form-input" style="padding:6px 10px;width:auto">
               </div>
-              <button id="btn-pdf-operator" class="btn-primary" style="font-size:0.88rem;align-self:flex-end">📄 Gerar PDF</button>
-              <button id="btn-csv-operator" class="btn-secondary" style="font-size:0.88rem;align-self:flex-end">📊 Excel</button>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
+              <button id="btn-pdf-operator" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
+              <button id="btn-csv-operator" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
               <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
