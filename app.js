@@ -4499,6 +4499,246 @@ ${opSections}
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
 
+    // =====================================================
+    // EXCEL (CSV) — exports individuais por relatório
+    // =====================================================
+    function _downloadCsv(rows, filename) {
+      const csv = rows.map(r => r.map(v => {
+        const s = String(v ?? '');
+        return (s.includes(';') || s.includes('"') || s.includes('\n'))
+          ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(';')).join('\r\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+      toast(`Excel gerado — ${rows.length - 1} linha(s).`, 'success');
+    }
+
+    function _csvRoleFilter(records, clients) {
+      if (currentUser?.role === 'gerente' || currentUser?.role === 'consultor') {
+        const managed = getManagedSellerNames();
+        const myIds = new Set(clients.filter(c => managed.has((c.seller||'').toLowerCase())).map(c => Number(c.id)));
+        return { clients: clients.filter(c => myIds.has(Number(c.id))), records: records.filter(r => myIds.has(Number(r.client_id))) };
+      } else if (currentUser?.role === 'vendedor') {
+        const sn = (currentUser.sellerName||'').toLowerCase();
+        const myIds = new Set(clients.filter(c => (c.seller||'').toLowerCase() === sn).map(c => Number(c.id)));
+        return { clients: clients.filter(c => myIds.has(Number(c.id))), records: records.filter(r => myIds.has(Number(r.client_id))) };
+      }
+      return { clients, records };
+    }
+
+    // --- Excel: Produção ---
+    document.getElementById('btn-csv-summary')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const startDate    = document.getElementById('pdf-summary-start')?.value || '';
+      const endDate      = document.getElementById('pdf-summary-end')?.value   || '';
+      const filterClient = document.getElementById('pdf-summary-client')?.value || '';
+      let [recs, cls, machs, procs] = await Promise.all([dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes')]);
+      ({ records: recs, clients: cls } = _csvRoleFilter(recs, cls));
+      if (filterClient) recs = recs.filter(r => String(r.client_id) === String(filterClient));
+      if (startDate) recs = recs.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   recs = recs.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+      if (!recs.length) return toast('Nenhum dado no período.', 'warning');
+      const cMap = Object.fromEntries(cls.map(c => [c.id, c]));
+      const mMap = Object.fromEntries(machs.map(m => [m.id, m.name]));
+      const pMap = Object.fromEntries(procs.map(p => [p.id, p.name]));
+      const rows = [['Data','Cliente','Cidade','Vendedor','Máquina','Processo','Executadas','Canceladas','Total kg','Operador']];
+      recs.sort((a,b) => (a.date_start||'').localeCompare(b.date_start||'')).forEach(r => {
+        const cl = cMap[r.client_id] || {};
+        rows.push([(r.date_start||'').slice(0,10), cl.name||'', cl.city||'', cl.seller||'', mMap[r.machine_id]||'', pMap[r.process_id]||'', r.executed||0, r.canceled||0, String(Number(r.total||0).toFixed(1)).replace('.',','), r.created_by||'']);
+      });
+      _downloadCsv(rows, `producao-${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Ficha do Cliente ---
+    document.getElementById('btn-csv-client')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const clientId  = document.getElementById('pdf-client-select')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const startDate = document.getElementById('pdf-client-start')?.value || '';
+      const endDate   = document.getElementById('pdf-client-end')?.value   || '';
+      const [clients, records, machines, processes, notes] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('records'), dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('client_notes'),
+      ]);
+      const client = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) return toast('Cliente não encontrado.', 'error');
+      let cRecs = records.filter(r => Number(r.client_id) === Number(clientId));
+      if (startDate) cRecs = cRecs.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   cRecs = cRecs.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+      let cNotes = notes.filter(n => Number(n.client_id) === Number(clientId));
+      if (startDate) cNotes = cNotes.filter(n => (n.date||'').slice(0,10) >= startDate);
+      if (endDate)   cNotes = cNotes.filter(n => (n.date||'').slice(0,10) <= endDate);
+      const mMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
+      const pMap = Object.fromEntries(processes.map(p => [p.id, p.name]));
+      const noteTypeLabel = {manutencao:'Manutenção', aviso:'Aviso', instalacao:'Instalação', lembrete:'Lembrete'};
+      const rows = [['Seção','Data','Máquina / Tipo','Processo / Título','Executadas / Conteúdo','Canceladas','Total kg','Status / Autor']];
+      cRecs.sort((a,b) => (a.date_start||'').localeCompare(b.date_start||'')).forEach(r => {
+        rows.push(['Produção',(r.date_start||'').slice(0,10), mMap[r.machine_id]||'', pMap[r.process_id]||'', r.executed||0, r.canceled||0, String(Number(r.total||0).toFixed(1)).replace('.',','), r.executed?'Executado':r.canceled?'Cancelado':'Pendente']);
+      });
+      cNotes.sort((a,b) => (a.date||'').localeCompare(b.date||'')).forEach(n => {
+        rows.push(['Nota',(n.date||'').slice(0,10), noteTypeLabel[n.type]||n.type||'', n.title||'', n.content||'', '', '', n.created_by||'']);
+      });
+      if (rows.length <= 1) return toast('Nenhum dado no período.', 'warning');
+      _downloadCsv(rows, `ficha-${(client.name||'cliente').replace(/\s+/g,'-')}_${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Vazão ---
+    document.getElementById('btn-csv-vazao')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const clientId  = document.getElementById('pdf-vazao-client')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const startDate = document.getElementById('pdf-vazao-start')?.value || '';
+      const endDate   = document.getElementById('pdf-vazao-end')?.value   || '';
+      const [clients, vazoes, vazaoRecs, machines] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('vazoes'), dbGetAll_raw('vazao_records'), dbGetAll_raw('machines'),
+      ]);
+      const client   = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) return toast('Cliente não encontrado.', 'error');
+      const cMachs   = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const cMachIds = new Set(cMachs.map(m => Number(m.id)));
+      const mMap     = Object.fromEntries(cMachs.map(m => [m.id, m.name]));
+      const cVazoes  = vazoes.filter(v => cMachIds.has(Number(v.machine_id)));
+      let clientRecs = vazaoRecs.filter(r => Number(r.client_id) === Number(clientId));
+      if (startDate) clientRecs = clientRecs.filter(r => (r.date||'') >= startDate);
+      if (endDate)   clientRecs = clientRecs.filter(r => (r.date||'') <= endDate);
+      const rows = [['Máquina','Bomba / Sensor','Data','Leitura','Unidade']];
+      cMachs.forEach(m => {
+        const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
+        mv.forEach(v => {
+          const vNameNorm = (v.name||'').trim().toLowerCase();
+          let vRecs = clientRecs.filter(r => Number(r.machine_id) === Number(m.id) && (r.vazao_name||'').trim().toLowerCase() === vNameNorm);
+          vRecs.sort((a,b) => (a.date||'').localeCompare(b.date||'')).forEach(r => {
+            rows.push([mMap[m.id]||'', v.name||'', r.date||'', String(Number(r.value||0).toFixed(2)).replace('.',','), v.unit||'']);
+          });
+        });
+      });
+      if (rows.length <= 1) return toast('Nenhuma leitura no período.', 'warning');
+      _downloadCsv(rows, `vazao-${(client.name||'cliente').replace(/\s+/g,'-')}_${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Agrupado ---
+    document.getElementById('btn-csv-grouped')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const groupBy   = document.getElementById('pdf-group-by')?.value || 'city';
+      const startDate = document.getElementById('pdf-group-start')?.value || '';
+      const endDate   = document.getElementById('pdf-group-end')?.value   || '';
+      let [recs, cls] = await Promise.all([dbGetAll_raw('records'), dbGetAll_raw('clients')]);
+      ({ records: recs, clients: cls } = _csvRoleFilter(recs, cls));
+      if (startDate) recs = recs.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   recs = recs.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+      if (!recs.length) return toast('Nenhum dado no período.', 'warning');
+      const groupLabel = groupBy === 'city' ? 'Cidade' : 'Vendedor';
+      const getKey = cid => { const c = cls.find(cl => Number(cl.id) === Number(cid)); return groupBy === 'city' ? (c?.city||'Sem cidade') : (c?.seller||'Sem vendedor'); };
+      const groups = {};
+      for (const r of recs) {
+        const k = getKey(r.client_id);
+        if (!groups[k]) groups[k] = { kg: 0, count: 0, clientSet: new Set() };
+        groups[k].kg    += parseFloat(r.total)||0;
+        groups[k].count += 1;
+        groups[k].clientSet.add(String(r.client_id));
+      }
+      const totalKg = Object.values(groups).reduce((s,v) => s + v.kg, 0);
+      const rows = [[groupLabel,'Clientes','Registros','Total kg','%']];
+      Object.entries(groups).sort((a,b) => b[1].kg - a[1].kg).forEach(([k, v]) => {
+        rows.push([k, v.clientSet.size, v.count, String(Number(v.kg).toFixed(1)).replace('.',','), String((totalKg > 0 ? v.kg/totalKg*100 : 0).toFixed(1)).replace('.',',')]);
+      });
+      _downloadCsv(rows, `agrupado-${groupBy}_${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Processos e Máquinas ---
+    document.getElementById('btn-csv-machines')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const clientId = document.getElementById('pdf-mach-client')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const [clients, machines, processes] = await Promise.all([dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes')]);
+      const client   = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) return toast('Cliente não encontrado.', 'error');
+      const cMachs   = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const rows     = [['Máquina','Capacidade Máquina (kg)','Processo','Capacidade Processo (kg)']];
+      cMachs.forEach(m => {
+        const mProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
+        if (!mProcs.length) {
+          rows.push([m.name||'', m.capacity ? String(Number(m.capacity)).replace('.',',') : '', '', '']);
+        } else {
+          mProcs.forEach(p => {
+            rows.push([m.name||'', m.capacity ? String(Number(m.capacity)).replace('.',',') : '', p.name||'', p.capacity ? String(Number(p.capacity)).replace('.',',') : '']);
+          });
+        }
+      });
+      if (rows.length <= 1) return toast('Nenhuma máquina cadastrada.', 'warning');
+      _downloadCsv(rows, `maquinas-${(client.name||'cliente').replace(/\s+/g,'-')}.csv`);
+    });
+
+    // --- Excel: Cancelamentos ---
+    document.getElementById('btn-csv-cancel')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const clientId  = document.getElementById('pdf-cancel-client')?.value  || '';
+      const startDate = document.getElementById('pdf-cancel-start')?.value   || '';
+      const endDate   = document.getElementById('pdf-cancel-end')?.value     || '';
+      let [recs, cls, machs, procs] = await Promise.all([dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes')]);
+      ({ records: recs, clients: cls } = _csvRoleFilter(recs, cls));
+      if (clientId) recs = recs.filter(r => String(r.client_id) === String(clientId));
+      if (startDate) recs = recs.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   recs = recs.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+      if (!recs.length) return toast('Nenhum dado no período.', 'warning');
+      const cMap = Object.fromEntries(cls.map(c => [c.id, c.name]));
+      const mMap = Object.fromEntries(machs.map(m => [m.id, m.name]));
+      const pMap = Object.fromEntries(procs.map(p => [p.id, p.name]));
+      const rows = [['Data','Cliente','Máquina','Processo','Executadas','Canceladas','Total kg']];
+      recs.sort((a,b) => (a.date_start||'').localeCompare(b.date_start||'')).forEach(r => {
+        rows.push([(r.date_start||'').slice(0,10), cMap[r.client_id]||'', mMap[r.machine_id]||'', pMap[r.process_id]||'', r.executed||0, r.canceled||0, String(Number(r.total||0).toFixed(1)).replace('.',',')]);
+      });
+      _downloadCsv(rows, `cancelamentos-${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Por Operador ---
+    document.getElementById('btn-csv-operator')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      if (currentUser?.role !== 'admin' && currentUser?.role !== 'gerente') return toast('Sem permissão.', 'error');
+      const startDate = document.getElementById('pdf-operator-start')?.value || '';
+      const endDate   = document.getElementById('pdf-operator-end')?.value   || '';
+      let [recs, cls, machs, procs] = await Promise.all([dbGetAll_raw('records'), dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('processes')]);
+      if (currentUser?.role === 'gerente') {
+        const managed = getManagedSellerNames();
+        const myIds   = new Set(cls.filter(c => managed.has((c.seller||'').toLowerCase())).map(c => Number(c.id)));
+        cls  = cls.filter(c => myIds.has(Number(c.id)));
+        recs = recs.filter(r => myIds.has(Number(r.client_id)));
+      }
+      if (startDate) recs = recs.filter(r => (r.date_start||'').slice(0,10) >= startDate);
+      if (endDate)   recs = recs.filter(r => (r.date_start||'').slice(0,10) <= endDate);
+      if (!recs.length) return toast('Nenhum dado no período.', 'warning');
+      const cMap = Object.fromEntries(cls.map(c => [c.id, c.name]));
+      const mMap = Object.fromEntries(machs.map(m => [m.id, m.name]));
+      const pMap = Object.fromEntries(procs.map(p => [p.id, p.name]));
+      // Resumo por operador primeiro
+      const byOp = {};
+      for (const r of recs) {
+        const op = r.created_by || '(não identificado)';
+        if (!byOp[op]) byOp[op] = { kg: 0, exec: 0, canc: 0, clients: new Set(), rows: [] };
+        byOp[op].kg   += parseFloat(r.total)||0;
+        byOp[op].exec += parseFloat(r.executed)||0;
+        byOp[op].canc += parseFloat(r.canceled)||0;
+        byOp[op].clients.add(String(r.client_id));
+        byOp[op].rows.push(r);
+      }
+      const rows = [['Operador','Registros','Clientes','Total kg','Executadas','Canceladas']];
+      Object.entries(byOp).sort((a,b) => b[1].kg - a[1].kg).forEach(([op, d]) => {
+        rows.push([op, d.rows.length, d.clients.size, String(Number(d.kg).toFixed(1)).replace('.',','), d.exec, d.canc]);
+      });
+      // Linha separadora + detalhe
+      rows.push(['--- DETALHE POR REGISTRO ---','','','','','']);
+      rows.push(['Operador','Data','Cliente','Máquina','Processo','Executadas','Canceladas','Total kg']);
+      Object.entries(byOp).sort((a,b) => b[1].kg - a[1].kg).forEach(([op, d]) => {
+        d.rows.sort((a,b) => (a.date_start||'').localeCompare(b.date_start||'')).forEach(r => {
+          rows.push([op, (r.date_start||'').slice(0,10), cMap[r.client_id]||'', mMap[r.machine_id]||'', pMap[r.process_id]||'', r.executed||0, r.canceled||0, String(Number(r.total||0).toFixed(1)).replace('.',',')]);
+        });
+      });
+      _downloadCsv(rows, `operador-${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
     async function initHomeScreen() {
       // Saudação
       const now = new Date();
