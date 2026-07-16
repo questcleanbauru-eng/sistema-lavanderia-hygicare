@@ -3990,13 +3990,25 @@ ${printScript}
 
       const noteTypeLabel = {manutencao:'🔧 Manutenção', aviso:'⚠️ Aviso', instalacao:'🔌 Instalação', lembrete:'📌 Lembrete'};
 
-      const recordRows = cRecords.map(r =>
-        `<tr><td>${fmtDate(r.date_start||r.created_at)}</td><td>${escHtml(machineMap[r.machine_id]||'-')}</td><td>${escHtml(processMap[r.process_id]||'-')}</td><td style="text-align:right">${(Number(r.capacity)||0).toLocaleString('pt-BR')}</td><td style="text-align:right">${fmtKg(r.total)}</td><td>${r.executed?'✅ Exec.':r.canceled?'❌ Canc.':'⏳ Pend.'}</td></tr>`
-      ).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:12px">Nenhum registro no período</td></tr>';
+      const recGroups = {};
+      for (const r of cRecords) {
+        const key = `${r.date_start||r.created_at||''}|||${r.machine_id}`;
+        if (!recGroups[key]) recGroups[key] = { date: r.date_start||r.created_at||'', machName: machineMap[r.machine_id]||'-', rows: [], totalKg: 0 };
+        recGroups[key].rows.push(r);
+        recGroups[key].totalKg += Number(r.total || 0);
+      }
+      const recordRows = Object.values(recGroups)
+        .sort((a,b) => (a.date||'').localeCompare(b.date||''))
+        .map(g => {
+          const sub = g.rows
+            .sort((a,b) => (Number(b.total)||0) - (Number(a.total)||0))
+            .map(r => `<tr style="background:#f9fafb"><td></td><td></td><td style="padding-left:12px;color:#374151">↳ ${escHtml(processMap[r.process_id]||'-')}</td><td style="text-align:right">${(Number(r.capacity)||0).toLocaleString('pt-BR')}</td><td style="text-align:right">${fmtKg(r.total)}</td><td>${r.executed?'✅ Exec.':r.canceled?'❌ Canc.':'⏳ Pend.'}</td></tr>`).join('');
+          return `<tr style="background:#dbeafe;font-weight:700"><td style="color:#1e3a8a">${fmtDate(g.date)}</td><td style="color:#1e3a8a">${escHtml(g.machName)}</td><td></td><td style="text-align:right"></td><td style="text-align:right;color:#1e3a8a">${fmtKg(g.totalKg)}</td><td></td></tr>${sub}`;
+        }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:12px">Nenhum lançamento no período</td></tr>';
 
       const noteRows = cNotes.map(n =>
         `<tr><td>${fmtDate(n.date)}</td><td>${noteTypeLabel[n.type]||n.type||'-'}</td><td><strong>${escHtml(n.title||'-')}</strong></td><td style="max-width:220px">${escHtml(n.content||'-')}</td><td>${escHtml(n.created_by||'-')}</td></tr>`
-      ).join('') || '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:12px">Nenhuma nota no período</td></tr>';
+      ).join('');
 
       const infoItems = [
         client.cnpj    ? `<div class="ii"><strong>CNPJ/CPF</strong>${escHtml(client.cnpj)}</div>` : '',
@@ -4030,7 +4042,7 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <div class="info-grid">${infoItems}</div>
 <p class="period">📅 Período: <strong>${periodStr}</strong></p>
 <div class="kpis">
-<div class="kpi"><div class="kv">${cRecords.length}</div><div class="kl">Registros</div><div class="kd">relatórios enviados</div></div>
+<div class="kpi"><div class="kv">${cRecords.length}</div><div class="kl">Lançamentos</div><div class="kd">linhas de máquina/processo</div></div>
 <div class="kpi"><div class="kv">${fmtKg(totalKg)}</div><div class="kl">Total kg</div><div class="kd">peso total processado</div></div>
 <div class="kpi"><div class="kv">${totalPcs.toLocaleString('pt-BR')}</div><div class="kl">Peças</div><div class="kd">itens/enxovais processados</div></div>
 <div class="kpi"><div class="kv">${cNotes.length}</div><div class="kl">Notas</div><div class="kd">ocorrências e manutenções</div></div>
@@ -4038,9 +4050,9 @@ td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
 <h2>📋 Histórico de Produção</h2>
 <table><thead><tr><th>Data</th><th>Máquina</th><th>Processo</th><th style="text-align:right">Peças</th><th style="text-align:right">Total kg</th><th>Status</th></tr></thead>
 <tbody>${recordRows}</tbody></table>
-<h2>🔧 Manutenção / Notas</h2>
-<table><thead><tr><th>Data</th><th>Tipo</th><th>Título</th><th>Descrição</th><th>Por</th></tr></thead>
-<tbody>${noteRows}</tbody></table>
+${cNotes.length > 0
+  ? `<h2>🔧 Manutenção / Notas</h2><table><thead><tr><th>Data</th><th>Tipo</th><th>Título</th><th>Descrição</th><th>Por</th></tr></thead><tbody>${noteRows}</tbody></table>`
+  : `<p style="color:#9ca3af;font-size:10px;margin-top:12px;padding:6px 0;border-top:1px solid #f1f5f9">🔧 Manutenção / Notas — nenhuma ocorrência no período</p>`}
 <div class="footer">${getPdfFooterHtml('Ficha do Cliente')}</div>
 </body></html>`;
 
@@ -8190,6 +8202,7 @@ ${recipeSections}
       let records   = await dbGetAll_raw('records');
       const clients   = await dbGetAll_raw('clients');
       const processes = await dbGetAll_raw('processes');
+      const machines  = await dbGetAll_raw('machines');
 
       // Filtro por papel do usuário
       if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
@@ -8260,9 +8273,6 @@ ${recipeSections}
         return (c?.seller || '') === filterSeller;
       });
 
-      // Guardar cópia antes do filtro de data para calcular crescimento
-      const recordsPreDate = [...records];
-
       if (filterStart || filterEnd) {
         // Normaliza para YYYY-MM para comparar com date_start (que é comparado em slice(0,7))
         const fsMonth = filterStart ? filterStart.slice(0, 7) : '';
@@ -8282,25 +8292,6 @@ ${recipeSections}
       const totalCanc  = records.reduce((s, r) => s + parseFloat(r.canceled || 0), 0);
       const cancelPct  = (totalExec + totalCanc) > 0 ? (totalCanc / (totalExec + totalCanc)) * 100 : 0;
       const clientsSet = new Set(records.map(r => r.client_id));
-
-      const ticketMedio  = records.length > 0 ? totalKg / records.length : 0;
-
-      // Crescimento vs período anterior de mesma duração
-      let crescimento = null;
-      if (filterStart && filterEnd) {
-        const [fsYear, fsMon] = filterStart.split('-').map(Number);
-        const [feYear, feMon] = filterEnd.split('-').map(Number);
-        const totalMonths   = (feYear - fsYear) * 12 + (feMon - fsMon) + 1;
-        const prevEndDate   = new Date(fsYear, fsMon - 2, 1);
-        const prevStartDate = new Date(prevEndDate.getFullYear(), prevEndDate.getMonth() - totalMonths + 1, 1);
-        const prevS = `${prevStartDate.getFullYear()}-${String(prevStartDate.getMonth()+1).padStart(2,'0')}`;
-        const prevE = `${prevEndDate.getFullYear()}-${String(prevEndDate.getMonth()+1).padStart(2,'0')}`;
-        const prevKg = recordsPreDate
-          .filter(r => { const m = (r.date_start||'').slice(0,7); return m >= prevS && m <= prevE; })
-          .reduce((s, r) => s + parseFloat(r.total || 0), 0);
-        if (prevKg > 0) crescimento = ((totalKg - prevKg) / prevKg) * 100;
-        else if (totalKg > 0) crescimento = 100;
-      }
 
       // Agregados
       const kgCliente = {};
@@ -8350,10 +8341,68 @@ ${recipeSections}
       }
       const mediaMensal  = _periodMonths      > 0 ? totalKg / _periodMonths      : 0;
       const mediaByDados = monthsSorted.length > 0 ? totalKg / monthsSorted.length : 0;
-      const byMonthWithGrowth = monthsSorted.map(([, d], i) => {
-        const prev   = i > 0 ? monthsSorted[i-1][1].kg : null;
-        const growth = prev && prev > 0 ? ((d.kg - prev) / prev) * 100 : null;
-        return { label: d.label, kg: d.kg, growth };
+      // Enumerar todos os meses do período (incluindo sem dados)
+      const allMonthKeys = [];
+      if (filterStart || filterEnd) {
+        const _fs = filterStart || monthsSorted[0]?.[0] || _rptNowKey;
+        const _feClamp = filterEnd && filterEnd <= _rptNowKey ? filterEnd : _rptNowKey;
+        const [alY, alM] = _fs.split('-').map(Number);
+        const [aeY, aeM] = _feClamp.split('-').map(Number);
+        let ay = alY, am = alM;
+        while (ay < aeY || (ay === aeY && am <= aeM)) {
+          allMonthKeys.push(`${ay}-${String(am).padStart(2,'0')}`);
+          am++; if (am > 12) { am = 1; ay++; }
+        }
+      } else {
+        monthsSorted.forEach(([k]) => allMonthKeys.push(k));
+      }
+
+      const byMonthWithGrowth = allMonthKeys.map((key, i) => {
+        const data  = kgMonth[key];
+        const [_my, _mm2] = key.split('-');
+        const label = new Date(Number(_my), Number(_mm2)-1, 1).toLocaleDateString('pt-BR', { month:'short', year:'numeric' });
+        if (!data) return { label, kg: 0, growth: null, semEnvio: true };
+        const prevKey = allMonthKeys.slice(0, i).reverse().find(k => kgMonth[k]);
+        const prevKg  = prevKey ? kgMonth[prevKey].kg : null;
+        const growth  = prevKg && prevKg > 0 ? ((data.kg - prevKg) / prevKg) * 100 : null;
+        return { label, kg: data.kg, growth, semEnvio: false };
+      });
+
+      // Crescimento: variação do 1º ao último mês com dados no período
+      let crescimento = null;
+      if (monthsSorted.length >= 2) {
+        const firstKg = monthsSorted[0][1].kg;
+        const lastKg  = monthsSorted[monthsSorted.length - 1][1].kg;
+        if (firstKg > 0) crescimento = ((lastKg - firstKg) / firstKg) * 100;
+      }
+
+      // Total de Peças e peso de processos CANCELADO
+      const totalPecas = records.reduce((s, r) => s + (Number(r.executed||0) + Number(r.canceled||0)), 0);
+      const totalKgCancelado = Object.entries(kgProcess)
+        .filter(([name]) => name.toUpperCase().includes('CANCEL'))
+        .reduce((s, [, kg]) => s + kg, 0);
+
+      // Totais por máquina
+      const kgMachine = {};
+      for (const r of records) {
+        const mach = machines.find(m => Number(m.id) === Number(r.machine_id));
+        if (!mach) continue;
+        kgMachine[mach.name] = (kgMachine[mach.name] || 0) + parseFloat(r.total || 0);
+      }
+      const byMachine = Object.entries(kgMachine).sort((a,b) => b[1]-a[1]);
+
+      // Alertas automáticos
+      const alertas = [];
+      const _monthsWithData = new Set(monthsSorted.map(([k]) => k));
+      const _missingMonths  = allMonthKeys.filter(k => !_monthsWithData.has(k));
+      if (_missingMonths.length > 0) {
+        const _ml = _missingMonths.map(k => { const [_ay, _am] = k.split('-'); return new Date(Number(_ay),Number(_am)-1,1).toLocaleDateString('pt-BR',{month:'short',year:'numeric'}); });
+        alertas.push(`Meses sem envio: ${_ml.join(', ')}`);
+      }
+      if (cancelPct > 15) alertas.push(`Taxa de cancelamento elevada: ${cancelPct.toFixed(1)}% (acima de 15%)`);
+      byMonthWithGrowth.forEach(m => {
+        if (!m.semEnvio && m.growth !== null && m.growth < -10)
+          alertas.push(`Queda de ${Math.abs(m.growth).toFixed(1)}% em ${m.label}`);
       });
 
       // Clientes sem atividade no período filtrado
@@ -8402,10 +8451,11 @@ ${recipeSections}
 
       const html = _buildSummaryHtml({
         periodLabel, clientLabel, sellerLabel,
-        totalKg, totalRecords: totalSubmissoes, activeClients: clientsSet.size,
-        cancelPct, ticketMedio: totalSubmissoes > 0 ? totalKg / totalSubmissoes : 0,
+        totalKg, totalPecas, totalRecords: totalSubmissoes, activeClients: clientsSet.size,
+        cancelPct, totalKgCancelado,
         mediaMensal, mediaByDados, crescimento,
-        byClient, byProcess, byMonthWithGrowth, inactiveClients, byCity,
+        byClient, byProcess, byMachine, byMonthWithGrowth, inactiveClients, byCity,
+        allMonths: allMonthKeys, alertas,
         today: new Date().toLocaleDateString('pt-BR')
       });
 
@@ -8419,16 +8469,35 @@ ${recipeSections}
       const fmt = (v, dec = 2) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
       const fmtPct = v => (v >= 0 ? '+' : '') + fmt(v, 1) + '%';
 
-      const kpiCards = [
-        { label: 'Total Processado',    value: `${fmt(d.totalKg)} kg`,         color: '#111827' },
-        { label: 'Relatórios Enviados', value: d.totalRecords,                  color: '#111827' },
-        { label: 'Clientes Ativos',     value: d.activeClients,                 color: '#111827' },
-        { label: 'Média kg/mês',        html: `<div style="line-height:1.5">${fmt(d.mediaMensal)} kg <span style="font-size:0.65em;color:#6b7280;font-weight:400">÷ meses período</span></div><div style="line-height:1.4;font-size:0.88em;color:#b45309">${fmt(d.mediaByDados)} kg <span style="font-size:0.65em;color:#6b7280;font-weight:400">÷ meses c/ envio</span></div>`,  color: '#111827' },
-        { label: 'Cancelamentos',       value: `${fmt(d.cancelPct, 1)}%`,       color: d.cancelPct > 10 ? '#c62828' : '#2e7d32' },
-        d.crescimento !== null
-          ? { label: 'Crescimento',     value: fmtPct(d.crescimento),           color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' }
-          : { label: 'Crescimento',     value: '—',                              color: '#546e7a' }
-      ];
+      const mesesComEnvio = (d.byMonthWithGrowth||[]).filter(m => !m.semEnvio).length;
+      const totalMeses    = (d.allMonths||[]).length;
+
+      const kpiCards = [];
+      kpiCards.push({ label: 'Total Processado', value: `${fmt(d.totalKg)} kg`, color: '#111827' });
+      kpiCards.push({ label: 'Total de Peças', value: (d.totalPecas||0).toLocaleString('pt-BR'), color: '#111827' });
+      kpiCards.push({
+        label: 'Relatórios Enviados',
+        html: `${d.totalRecords}${totalMeses > 0 ? ` <span style="font-size:0.62em;color:#6b7280;font-weight:400">(${mesesComEnvio} de ${totalMeses} mes${totalMeses !== 1 ? 'es' : ''})</span>` : ''}`,
+        color: '#111827'
+      });
+      if (d.activeClients !== 1) {
+        kpiCards.push({ label: 'Clientes Ativos', value: d.activeClients, color: '#111827' });
+      }
+      kpiCards.push({
+        label: 'Média kg/mês',
+        html: `<div style="line-height:1.5">${fmt(d.mediaByDados)} kg <span style="font-size:0.6em;color:#6b7280;font-weight:400">÷ meses c/ envio</span></div><div style="line-height:1.4;font-size:0.82em;color:#9ca3af;margin-top:2px">${fmt(d.mediaMensal)} kg <span style="font-size:0.85em">÷ período</span></div>`,
+        color: '#111827'
+      });
+      kpiCards.push({
+        label: 'Taxa de Cancelamento (pedidos)',
+        html: `<div>${fmt(d.cancelPct, 1)}%</div>${(d.totalKgCancelado||0) > 0 ? `<div style="font-size:0.62em;color:#6b7280;font-weight:400;margin-top:2px">* process. CANCELADO: ${fmt(d.totalKgCancelado||0)} kg</div>` : ''}`,
+        color: d.cancelPct > 10 ? '#c62828' : '#2e7d32'
+      });
+      if (d.crescimento !== null) {
+        kpiCards.push({ label: 'Crescimento (1º→últ. mês)', value: fmtPct(d.crescimento), color: d.crescimento >= 0 ? '#2e7d32' : '#c62828' });
+      } else {
+        kpiCards.push({ label: 'Crescimento (1º→últ. mês)', value: '—', color: '#546e7a' });
+      }
 
       const kpiHtml = kpiCards.map(k =>
         `<div class="kpi-card"><div class="kpi-label">${esc(k.label)}</div><div class="kpi-value" style="color:${k.color}">${k.html || esc(String(k.value))}</div></div>`
@@ -8436,47 +8505,38 @@ ${recipeSections}
 
       const clientRows = d.byClient.map(([name, c], i) => {
         const pctKg = d.totalKg > 0 ? (c.kg / d.totalKg * 100).toFixed(1) : '0.0';
-        return `<tr>
-          <td class="tc">${i+1}</td>
-          <td class="tl">${esc(name)}</td>
-          <td class="tc">${fmt(c.kg)} kg</td>
-          <td class="tc">${c.recs}</td>
-          <td class="tc">${pctKg}%</td>
-        </tr>`;
+        return `<tr><td class="tc">${i+1}</td><td class="tl">${esc(name)}</td><td class="tc">${fmt(c.kg)} kg</td><td class="tc">${c.recs}</td><td class="tc">${pctKg}%</td></tr>`;
       }).join('');
 
       const procRows = d.byProcess.map(([name, kg], i) => {
         const pctKg = d.totalKg > 0 ? (kg / d.totalKg * 100).toFixed(1) : '0.0';
-        return `<tr>
-          <td class="tc">${i+1}</td>
-          <td class="tl">${esc(name)}</td>
-          <td class="tc">${fmt(kg)} kg</td>
-          <td class="tc">${pctKg}%</td>
-        </tr>`;
+        return `<tr><td class="tc">${i+1}</td><td class="tl">${esc(name)}</td><td class="tc">${fmt(kg)} kg</td><td class="tc">${pctKg}%</td></tr>`;
       }).join('');
 
-      const monthRows = d.byMonthWithGrowth.map(m => {
+      const machRows = (d.byMachine || []).map(([name, kg], i) => {
+        const pctKg = d.totalKg > 0 ? (kg / d.totalKg * 100).toFixed(1) : '0.0';
+        return `<tr><td class="tc">${i+1}</td><td class="tl">${esc(name)}</td><td class="tc">${fmt(kg)} kg</td><td class="tc">${pctKg}%</td></tr>`;
+      }).join('');
+
+      const monthRows = (d.byMonthWithGrowth||[]).map(m => {
+        if (m.semEnvio) {
+          return `<tr style="opacity:0.5"><td class="tl">${esc(m.label)}</td><td class="tc" style="color:#9e9e9e;font-style:italic">— sem envio</td><td class="tc">—</td></tr>`;
+        }
         const gHtml = m.growth !== null
           ? `<span style="color:${m.growth >= 0 ? '#2e7d32' : '#c62828'};font-weight:bold">${m.growth >= 0 ? '+' : ''}${fmt(m.growth, 1)}%</span>`
           : '—';
         return `<tr><td class="tl">${esc(m.label)}</td><td class="tc">${fmt(m.kg)} kg</td><td class="tc">${gHtml}</td></tr>`;
       }).join('');
-      const monthFooter = d.byMonthWithGrowth.length > 1
+      const monthFooter = mesesComEnvio > 1
         ? `<tfoot>
-            <tr><td class="tl" style="font-weight:bold;color:#374151">Média ÷ meses período</td><td class="tc" style="font-weight:bold;color:#374151">${fmt(d.mediaMensal)} kg/mês</td><td></td></tr>
             <tr><td class="tl" style="font-weight:bold;color:#b45309">Média ÷ meses c/ envio</td><td class="tc" style="font-weight:bold;color:#b45309">${fmt(d.mediaByDados)} kg/mês</td><td></td></tr>
+            <tr><td class="tl" style="font-weight:bold;color:#374151">Média ÷ período completo</td><td class="tc" style="font-weight:bold;color:#374151">${fmt(d.mediaMensal)} kg/mês</td><td></td></tr>
            </tfoot>`
         : '';
 
       const cityRows = (d.byCity || []).map(([city, v], i) => {
         const pct = d.totalKg > 0 ? (v.kg / d.totalKg * 100).toFixed(1) : '0.0';
-        return `<tr>
-          <td class="tc">${i+1}</td>
-          <td class="tl">${esc(city)}</td>
-          <td class="tc">${v.clients}</td>
-          <td class="tc">${fmt(v.kg)} kg</td>
-          <td class="tc">${pct}%</td>
-        </tr>`;
+        return `<tr><td class="tc">${i+1}</td><td class="tl">${esc(city)}</td><td class="tc">${v.clients}</td><td class="tc">${fmt(v.kg)} kg</td><td class="tc">${pct}%</td></tr>`;
       }).join('');
 
       let inactiveSec = '';
@@ -8484,11 +8544,12 @@ ${recipeSections}
         const chips = d.inactiveClients.map(c =>
           `<span class="inactive-chip">${esc(c.name || '#'+c.id)}</span>`
         ).join('');
-        inactiveSec = `<div class="sec">
-          <div class="sec-hd" style="background:#78909c">CLIENTES SEM ATIVIDADE NO PERÍODO (${d.inactiveClients.length})</div>
-          <div style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
-        </div>`;
+        inactiveSec = `<div class="sec"><div class="sec-hd" style="background:#78909c">CLIENTES SEM ATIVIDADE NO PERÍODO (${d.inactiveClients.length})</div><div style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px">${chips}</div></div>`;
       }
+
+      const alertasSec = (d.alertas || []).length > 0
+        ? `<div class="sec" style="border-color:#fbbf24"><div class="sec-hd" style="background:#d97706">⚠️ ALERTAS AUTOMÁTICOS (${d.alertas.length})</div><ul style="list-style:none;padding:8px 12px;margin:0">${d.alertas.map(a => `<li style="padding:2px 0;font-size:9px;color:#92400e">⚠️ ${esc(a)}</li>`).join('')}</ul></div>`
+        : '';
 
       let filterInfo = `Período: <strong>${esc(d.periodLabel)}</strong>`;
       if (d.clientLabel) filterInfo += ` · Cliente: <strong>${esc(d.clientLabel)}</strong>`;
@@ -8504,8 +8565,6 @@ ${recipeSections}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
 .hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:60px;padding:0 12px;gap:10px;margin-bottom:8px}
-.hdr-logo{font-weight:900;font-size:14px;letter-spacing:.04em;flex-shrink:0;color:#fff}
-.hdr-logo-sub{font-size:8px;opacity:.65;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
 .hdr-c{flex:1;text-align:center;line-height:1.4}
 .hdr-c h1{font-size:16px;font-weight:bold;color:#fff}
 .hdr-info{font-size:9px;color:#d1d5db;margin-top:3px}
@@ -8555,6 +8614,7 @@ tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e
   </div>
 </div>
 <div class="filter-info">${filterInfo}</div>
+${alertasSec}
 <div class="kpi-grid">${kpiHtml}</div>
 <div class="sec">
   <div class="sec-hd">TOTAIS POR CLIENTE</div>
@@ -8571,6 +8631,7 @@ tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e
     <tbody>${procRows || '<tr><td colspan="4" class="tc" style="color:#9e9e9e;padding:12px">Sem dados</td></tr>'}</tbody>
   </table>
 </div>
+${(d.byMachine||[]).length > 0 ? `<div class="sec"><div class="sec-hd">TOTAIS POR MÁQUINA</div><table><thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Máquina</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead><tbody>${machRows}</tbody></table></div>` : ''}
 <div class="sec">
   <div class="sec-hd">EVOLUÇÃO MENSAL</div>
   <table>
@@ -8579,13 +8640,7 @@ tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e
     ${monthFooter}
   </table>
 </div>
-${(d.byCity || []).length > 1 ? `<div class="sec">
-  <div class="sec-hd">TOTAIS POR CIDADE</div>
-  <table>
-    <thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Cidade</th><th class="tc">Clientes</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead>
-    <tbody>${cityRows}</tbody>
-  </table>
-</div>` : ''}
+${(d.byCity || []).length > 1 ? `<div class="sec"><div class="sec-hd">TOTAIS POR CIDADE</div><table><thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Cidade</th><th class="tc">Clientes</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead><tbody>${cityRows}</tbody></table></div>` : ''}
 ${inactiveSec}
 <div class="rpt-footer">${getPdfFooterHtml('Relatório Resumo')}</div>
 </body>
