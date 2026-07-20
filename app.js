@@ -3735,8 +3735,8 @@ ${printScript}
             created_at: new Date().toISOString(), synced_at: new Date().toISOString() };
           const newId = await dbAdd('client_notes', saved);
           saved.id = newId;
-          await postToSheetDB(SHEETS.CLIENT_NOTES, saved);
-          toast('Nota criada!', 'success');
+          const okNew = await postToSheetDB(SHEETS.CLIENT_NOTES, saved);
+          toast(okNew ? 'Nota criada e sincronizada!' : 'Nota salva localmente (verifique o GAS)', okNew ? 'success' : 'warning');
         }
         document.getElementById('modal-note').classList.add('hidden');
         await renderClientNotesList();
