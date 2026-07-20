@@ -3498,9 +3498,10 @@ ${printScript}
       const alerts = allNotes
         .filter(n => n.scheduled_date && n.scheduled_date <= futureLimitStr && clientMap[String(n.client_id)])
         .map(n => {
-          const [sy, sm, sd] = (n.scheduled_date || '').split('-').map(Number);
-          const schedDate = new Date(sy, sm - 1, sd);
-          const daysUntil = Math.floor((schedDate - today) / 86400000);
+          const sd      = String(n.scheduled_date || '').substring(0, 10);
+          const [sy,sm,sday] = sd.split('-').map(Number);
+          const diffMs  = new Date(sy, sm - 1, sday) - today;
+          const daysUntil = Number.isFinite(diffMs) ? Math.round(diffMs / 86400000) : 0;
           return { note: n, client: clientMap[String(n.client_id)], daysUntil };
         })
         .sort((a, b) => (a.note.scheduled_date || '').localeCompare(b.note.scheduled_date || ''));
@@ -3715,12 +3716,19 @@ ${printScript}
         const badgeClass = { manutencao: 'badge', aviso: 'badge-yellow', instalacao: 'badge', lembrete: 'badge-green' }[n.type] || 'badge-gray';
         let schedChip = '';
         if (n.scheduled_date) {
-          const [sy,sm,sd] = n.scheduled_date.split('-').map(Number);
-          const diff = Math.floor((new Date(sy,sm-1,sd) - _todayNotes) / 86400000);
-          const clr  = diff < 0 ? '#dc2626' : diff === 0 ? '#d97706' : '#1d4ed8';
-          const bg   = diff < 0 ? '#fef2f2' : diff === 0 ? '#fffbeb' : '#eff6ff';
-          const lbl  = diff < 0 ? `Atrasado ${Math.abs(diff)}d` : diff === 0 ? 'Hoje!' : `Em ${diff}d`;
-          schedChip  = `<span class="detail-chip" style="background:${bg};color:${clr};font-weight:700;border:1px solid ${clr}33">📅 Agendado: ${fmtDate(n.scheduled_date)} — ${lbl}</span>`;
+          const sd      = String(n.scheduled_date).substring(0, 10);
+          const isPast  = sd < _todayStr;
+          const isToday = sd === _todayStr;
+          const clr     = isPast ? '#dc2626' : isToday ? '#d97706' : '#1d4ed8';
+          const bg      = isPast ? '#fef2f2' : isToday ? '#fffbeb' : '#eff6ff';
+          const [sy,sm,sday] = sd.split('-').map(Number);
+          const diffMs  = new Date(sy, sm - 1, sday) - _todayNotes;
+          const diff    = Number.isFinite(diffMs) ? Math.round(diffMs / 86400000) : null;
+          const lbl     = diff === null ? (isPast ? 'Atrasado' : isToday ? 'Hoje!' : 'Agendado')
+                        : diff < 0 ? `Atrasado ${Math.abs(diff)}d`
+                        : diff === 0 ? 'Hoje!'
+                        : `Em ${diff}d`;
+          schedChip     = `<span class="detail-chip" style="background:${bg};color:${clr};font-weight:700;border:1px solid ${clr}33">📅 Agendado: ${fmtDate(sd)} — ${lbl}</span>`;
         }
         return `
           <div class="list-item" style="border-left-color:${t.color}">
