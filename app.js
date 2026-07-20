@@ -7648,6 +7648,11 @@ ${recipeSections}
     let _charts = {};
     const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor','chart-comparativo-mensal'];
     const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
+    function colorForProcess(name) {
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+      return CHART_COLORS[Math.abs(h) % CHART_COLORS.length];
+    }
 
     function _applyChartPresetDates() {
       const preset = document.querySelector('.chart-preset-btn.active')?.dataset?.preset || 'year';
@@ -8011,7 +8016,7 @@ ${recipeSections}
         type: 'doughnut',
         data: {
           labels: sortedProc.map(e => e[0]),
-          datasets: [{ data: sortedProc.map(e => +e[1].toFixed(2)), backgroundColor: CHART_COLORS }]
+          datasets: [{ data: sortedProc.map(e => +e[1].toFixed(2)), backgroundColor: sortedProc.map(([name]) => colorForProcess(name)) }]
         },
         options: {
           responsive: true,
