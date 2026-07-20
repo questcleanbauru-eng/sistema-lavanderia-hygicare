@@ -3552,10 +3552,16 @@ ${printScript}
                 </div>
                 ${note.content ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.25rem">${escHtml(note.content)}</div>` : ''}
               </div>
-              <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;flex-shrink:0;white-space:nowrap"
-                onclick="window._editNote(${note.id})">
-                ✏️ Ver
-              </button>
+              <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
+                <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;white-space:nowrap"
+                  onclick="window._editNote(${note.id})">
+                  ✏️ Ver
+                </button>
+                <button style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;white-space:nowrap"
+                  onclick="window._concludeScheduled(${note.id}, this)">
+                  ✅ Concluir
+                </button>
+              </div>
             </div>
           </div>`;
         }).join('');
@@ -3801,6 +3807,20 @@ ${printScript}
         toast(ok ? 'Nota excluída!' : 'Nota excluída localmente', ok ? 'success' : 'warning');
         await renderClientNotesList();
       } finally { hideOverlay(); }
+    };
+
+    window._concludeScheduled = async function(id, el) {
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
+      try {
+        const notes = await dbGetAll_raw('client_notes');
+        const note  = notes.find(n => Number(n.id) === Number(id));
+        if (!note) return;
+        const updated = { ...note, scheduled_date: '', synced_at: new Date().toISOString() };
+        await dbPut('client_notes', updated);
+        const ok = await patchSheetDB(SHEETS.CLIENT_NOTES, updated.id, updated);
+        toast(ok ? 'Agendamento concluído!' : 'Concluído localmente (sync pendente)', ok ? 'success' : 'warning');
+        await Promise.all([renderAlertsScreen(), refreshAlertsBadge()]);
+      } finally { if (el) { el.disabled = false; el.textContent = '✅ Concluir'; } }
     };
 
     // Salvar nota
