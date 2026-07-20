@@ -7648,9 +7648,15 @@ ${recipeSections}
     let _charts = {};
     const CHART_IDS = ['chart-por-mes','chart-kg-cliente','chart-exec-cancel','chart-kg-maquina','chart-por-vendedor','chart-comparativo-mensal'];
     const CHART_COLORS = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
-    function colorForProcess(name) {
+    const _procGroupsFallback = ['#546e7a','#78909c','#90a4ae','#607d8b','#455a64','#37474f'];
+    function colorForProcess(name, fi = 0) {
+      const upper = (name || '').toUpperCase().trim();
+      const groups = (JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}').groups) || [];
+      for (const grp of groups) {
+        if ((grp.processes || []).some(p => p.toUpperCase() === upper)) return grp.color;
+      }
       let h = 0;
-      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+      for (let i = 0; i < upper.length; i++) h = (h * 31 + upper.charCodeAt(i)) & 0xffffffff;
       return CHART_COLORS[Math.abs(h) % CHART_COLORS.length];
     }
 
