@@ -1722,7 +1722,7 @@ ${printScript}
         for (const r of results) {
           if (r.status !== 'fulfilled') continue;
           const { store, items } = r.value;
-          if (store === 'users' || items.length > 0) {
+          if (store === 'users' || store === 'client_notes' || items.length > 0) {
             await saveToStore(store, items);
           }
         }
@@ -1822,7 +1822,7 @@ ${printScript}
           const result = results[i];
           if (result.status === 'fulfilled') {
             const items = Array.isArray(result.value) ? result.value : [];
-            if (store === 'users' || items.length > 0) {
+            if (store === 'users' || store === 'client_notes' || items.length > 0) {
               const saved = await saveToStore(store, items);
               imported += saved;
             }
