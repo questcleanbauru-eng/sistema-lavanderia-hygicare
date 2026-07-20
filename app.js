@@ -3479,25 +3479,93 @@ ${printScript}
       return { overdue, alertDays };
     }
 
+    async function _computeScheduledAlerts() {
+      const alertDays = parseInt(localStorage.getItem('hygicare_cfg_alert_days') || '60');
+      const allNotes  = await dbGetAll_raw('client_notes');
+      let clients     = await window.getAll('clients');
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        clients = clients.filter(c => managed.has((c.seller || '').toLowerCase()));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sn = (currentUser.sellerName || '').toLowerCase();
+        clients = clients.filter(c => (c.seller || '').toLowerCase() === sn);
+      }
+      const clientMap = Object.fromEntries(clients.map(c => [String(c.id), c]));
+      const today = new Date(); today.setHours(0,0,0,0);
+      const todayStr = today.toISOString().split('T')[0];
+      const futureLimit = new Date(today); futureLimit.setDate(futureLimit.getDate() + alertDays);
+      const futureLimitStr = futureLimit.toISOString().split('T')[0];
+      const alerts = allNotes
+        .filter(n => n.scheduled_date && n.scheduled_date <= futureLimitStr && clientMap[String(n.client_id)])
+        .map(n => {
+          const daysUntil = Math.floor((new Date(n.scheduled_date + 'T00:00:00') - today) / 86400000);
+          return { note: n, client: clientMap[String(n.client_id)], daysUntil };
+        })
+        .sort((a, b) => (a.note.scheduled_date || '').localeCompare(b.note.scheduled_date || ''));
+      return { alerts, todayStr };
+    }
+
     async function refreshAlertsBadge() {
-      const { overdue, alertDays } = await _computeOverdue();
-      updateAlertsBadge(overdue.length, alertDays);
+      const [{ overdue, alertDays }, { alerts }] = await Promise.all([_computeOverdue(), _computeScheduledAlerts()]);
+      updateAlertsBadge(overdue.length + alerts.length, alertDays);
     }
 
     async function renderAlertsScreen() {
-      const { overdue, alertDays } = await _computeOverdue();
-      updateAlertsBadge(overdue.length, alertDays);
+      const [{ overdue, alertDays }, { alerts: scheduled, todayStr }] = await Promise.all([
+        _computeOverdue(), _computeScheduledAlerts()
+      ]);
+      updateAlertsBadge(overdue.length + scheduled.length, alertDays);
 
       const countEl = document.getElementById('alerts-count-badge');
-      if (countEl) countEl.textContent = overdue.length;
+      if (countEl) countEl.textContent = overdue.length + scheduled.length;
       const daysEl = document.getElementById('alerts-days-display');
       if (daysEl) daysEl.textContent = alertDays;
 
       const list = document.getElementById('alerts-list');
       if (!list) return;
 
-      if (!overdue.length) {
-        list.innerHTML = `<div class="empty-state">✅ Tudo em dia!<p>Nenhum cliente está há mais de ${alertDays} dias sem relatório.</p></div>`;
+      // ── Seção de agendamentos ─────────────────────────────
+      let scheduledHtml = '';
+      if (scheduled.length) {
+        const NOTE_TYPE_ICONS = { manutencao:'🔧', aviso:'⚠️', instalacao:'🔌', lembrete:'📌' };
+        const cards = scheduled.map(({ note, client, daysUntil }) => {
+          const overdue = daysUntil < 0;
+          const isToday = daysUntil === 0;
+          const bg     = overdue ? '#fef2f2' : isToday ? '#fffbeb' : '#eff6ff';
+          const border = overdue ? '#ef4444' : isToday ? '#f59e0b' : '#3b82f6';
+          const clr    = overdue ? '#dc2626' : isToday ? '#d97706' : '#1d4ed8';
+          const icon   = NOTE_TYPE_ICONS[note.type] || '📋';
+          const label  = overdue
+            ? `Atrasado ${Math.abs(daysUntil)} dia${Math.abs(daysUntil)!==1?'s':''}`
+            : isToday ? 'Hoje!'
+            : `Em ${daysUntil} dia${daysUntil!==1?'s':''}`;
+          return `<div style="background:${bg};border:1px solid ${border};border-left:4px solid ${border};border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.35rem">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
+              <div style="min-width:0">
+                <div style="font-weight:700;font-size:0.92rem;color:var(--text)">${icon} ${escHtml(note.title)}</div>
+                <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">👤 ${escHtml(client.name)}</div>
+                <div style="font-size:0.8rem;margin-top:0.3rem;display:flex;gap:0.75rem;align-items:center">
+                  <span style="color:${clr};font-weight:700">📅 ${fmtDate(note.scheduled_date)} — ${label}</span>
+                </div>
+                ${note.content ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.25rem">${escHtml(note.content)}</div>` : ''}
+              </div>
+              <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;flex-shrink:0;white-space:nowrap"
+                onclick="window._editNote(${note.id})">
+                ✏️ Ver
+              </button>
+            </div>
+          </div>`;
+        }).join('');
+        scheduledHtml = `<div style="margin-bottom:1.2rem">
+          <div style="font-weight:700;font-size:0.88rem;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
+            📅 Agendamentos <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(${scheduled.length} lembrete${scheduled.length!==1?'s':''})</span>
+          </div>
+          ${cards}
+        </div>`;
+      }
+
+      if (!overdue.length && !scheduled.length) {
+        list.innerHTML = `<div class="empty-state">✅ Tudo em dia!<p>Nenhum cliente está há mais de ${alertDays} dias sem relatório e não há agendamentos pendentes.</p></div>`;
         return;
       }
 
@@ -3509,7 +3577,7 @@ ${printScript}
         bySeller[seller].push(item);
       });
 
-      list.innerHTML = Object.entries(bySeller).map(([seller, items]) => {
+      const overdueHtml = overdue.length ? Object.entries(bySeller).map(([seller, items]) => {
         const waMsg = `*Hygicare — Aviso de Relatórios Pendentes*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
           items.map(({client, daysSince}) =>
             `• ${client.name}${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias' : 'sem registros'}`
@@ -3552,7 +3620,13 @@ ${printScript}
           </div>
           ${cardsHtml}
         </div>`;
-      }).join('');
+      }).join('') : '';
+
+      list.innerHTML = scheduledHtml + (overdue.length
+        ? `<div style="font-weight:700;font-size:0.88rem;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
+            ⏱ Clientes sem relatório <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(há mais de ${alertDays} dias)</span>
+           </div>${overdueHtml}`
+        : '');
     }
 
     window.renderAlertsScreen    = renderAlertsScreen;
@@ -3676,12 +3750,13 @@ ${printScript}
           .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
         _makeSearchable(sel);
       }
-      document.getElementById('note-edit-id').value  = note?.id || '';
-      document.getElementById('note-client').value   = note?.client_id || '';
-      document.getElementById('note-type').value     = note?.type || 'manutencao';
-      document.getElementById('note-date').value     = note?.date || new Date().toISOString().slice(0,10);
-      document.getElementById('note-title').value    = note?.title || '';
-      document.getElementById('note-content').value  = note?.content || '';
+      document.getElementById('note-edit-id').value         = note?.id || '';
+      document.getElementById('note-client').value          = note?.client_id || '';
+      document.getElementById('note-type').value            = note?.type || 'manutencao';
+      document.getElementById('note-date').value            = note?.date || new Date().toISOString().slice(0,10);
+      document.getElementById('note-title').value           = note?.title || '';
+      document.getElementById('note-content').value         = note?.content || '';
+      document.getElementById('note-scheduled-date').value  = note?.scheduled_date || '';
       document.getElementById('modal-note-title').textContent = note ? '✏️ Editar Nota' : '📋 Nova Nota';
       document.getElementById('modal-note').classList.remove('hidden');
     }
@@ -3709,12 +3784,13 @@ ${printScript}
     // Salvar nota
     document.getElementById('form-note')?.addEventListener('submit', async e => {
       e.preventDefault();
-      const editId   = document.getElementById('note-edit-id').value;
-      const clientId = Number(document.getElementById('note-client').value);
-      const type     = document.getElementById('note-type').value;
-      const date     = document.getElementById('note-date').value;
-      const title    = document.getElementById('note-title').value.trim();
-      const content  = document.getElementById('note-content').value.trim();
+      const editId        = document.getElementById('note-edit-id').value;
+      const clientId      = Number(document.getElementById('note-client').value);
+      const type          = document.getElementById('note-type').value;
+      const date          = document.getElementById('note-date').value;
+      const title         = document.getElementById('note-title').value.trim();
+      const content       = document.getElementById('note-content').value.trim();
+      const scheduledDate = document.getElementById('note-scheduled-date').value || '';
 
       if (!clientId || !type || !date || !title) return toast('Preencha os campos obrigatórios.', 'warning');
 
@@ -3725,12 +3801,12 @@ ${printScript}
         if (editId) {
           const allNotes = await dbGetAll_raw('client_notes');
           const existing = allNotes.find(n => Number(n.id) === Number(editId));
-          saved = { ...existing, client_id: clientId, type, date, title, content, synced_at: new Date().toISOString() };
+          saved = { ...existing, client_id: clientId, type, date, title, content, scheduled_date: scheduledDate, synced_at: new Date().toISOString() };
           await dbPut('client_notes', saved);
           const ok = await patchSheetDB(SHEETS.CLIENT_NOTES, saved.id, saved);
           toast(ok ? 'Nota atualizada!' : 'Nota atualizada localmente', ok ? 'success' : 'warning');
         } else {
-          saved = { client_id: clientId, type, date, title, content,
+          saved = { client_id: clientId, type, date, title, content, scheduled_date: scheduledDate,
             created_by: currentUser?.name || currentUser?.username || '',
             created_at: new Date().toISOString(), synced_at: new Date().toISOString() };
           const newId = await dbAdd('client_notes', saved);
@@ -3740,6 +3816,7 @@ ${printScript}
         }
         document.getElementById('modal-note').classList.add('hidden');
         await renderClientNotesList();
+        await refreshAlertsBadge();
 
         // Oferecer compartilhamento no WhatsApp
         const clients = await window.getAll('clients');
@@ -3751,6 +3828,7 @@ ${printScript}
           `*Data:* ${fmtDate(date)}`,
           `*Título:* ${title}`,
         ];
+        if (scheduledDate) msgLines.push(`*Agendado para:* ${fmtDate(scheduledDate)}`);
         if (content) msgLines.push(`*Detalhe:* ${content}`);
         const waMsg = msgLines.join('\n');
         document.getElementById('whatsapp-preview').textContent = waMsg;

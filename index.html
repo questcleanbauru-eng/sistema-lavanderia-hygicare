@@ -212,8 +212,12 @@
             <input type="text" id="note-title" class="form-input" required placeholder="Ex: Troca de correia da máquina 01">
           </div>
           <div class="form-field">
+            <label>📅 Agendar lembrete <span style="color:var(--muted);font-size:0.78rem;font-weight:normal">(opcional — aparece nos Avisos)</span></label>
+            <input type="date" id="note-scheduled-date" class="form-input">
+          </div>
+          <div class="form-field">
             <label>Descrição</label>
-            <textarea id="note-content" class="form-input" rows="4" placeholder="Detalhes do ocorrido, observações importantes..."></textarea>
+            <textarea id="note-content" class="form-input" rows="3" placeholder="Detalhes do ocorrido, observações importantes..."></textarea>
           </div>
           <div class="form-footer">
             <button type="button" class="btn-secondary" id="modal-note-cancel">Cancelar</button>

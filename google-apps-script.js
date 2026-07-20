@@ -38,7 +38,7 @@ const HEADERS = {
                     'replaces_id','edit_notes','rejection_notes',
                     'approved_by','approved_at','steps','created_at'],
   ReceitaProdutos: ['id','name','category','created_at'],
-  ClienteNotas:    ['id','client_id','type','title','content','date','created_by','created_at','synced_at'],
+  ClienteNotas:    ['id','client_id','type','title','content','date','created_by','created_at','synced_at','scheduled_date'],
   Config:          ['chave','valor'],
   AppConfig:       ['id','key','active','message','updated_at'],
 };
