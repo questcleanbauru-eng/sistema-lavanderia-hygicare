@@ -3498,7 +3498,9 @@ ${printScript}
       const alerts = allNotes
         .filter(n => n.scheduled_date && n.scheduled_date <= futureLimitStr && clientMap[String(n.client_id)])
         .map(n => {
-          const daysUntil = Math.floor((new Date(n.scheduled_date + 'T00:00:00') - today) / 86400000);
+          const [sy, sm, sd] = (n.scheduled_date || '').split('-').map(Number);
+          const schedDate = new Date(sy, sm - 1, sd);
+          const daysUntil = Math.floor((schedDate - today) / 86400000);
           return { note: n, client: clientMap[String(n.client_id)], daysUntil };
         })
         .sort((a, b) => (a.note.scheduled_date || '').localeCompare(b.note.scheduled_date || ''));
@@ -3705,10 +3707,21 @@ ${printScript}
         return;
       }
 
+      const _todayNotes = new Date(); _todayNotes.setHours(0,0,0,0);
+      const _todayStr   = _todayNotes.toISOString().split('T')[0];
       list.innerHTML = `<div class="items-list">${filtered.map(n => {
         const client = clients.find(c => String(c.id) === String(n.client_id));
         const t = NOTE_TYPES[n.type] || { icon: '📋', label: n.type || '—', color: '#64748b', bg: '#f8fafc' };
         const badgeClass = { manutencao: 'badge', aviso: 'badge-yellow', instalacao: 'badge', lembrete: 'badge-green' }[n.type] || 'badge-gray';
+        let schedChip = '';
+        if (n.scheduled_date) {
+          const [sy,sm,sd] = n.scheduled_date.split('-').map(Number);
+          const diff = Math.floor((new Date(sy,sm-1,sd) - _todayNotes) / 86400000);
+          const clr  = diff < 0 ? '#dc2626' : diff === 0 ? '#d97706' : '#1d4ed8';
+          const bg   = diff < 0 ? '#fef2f2' : diff === 0 ? '#fffbeb' : '#eff6ff';
+          const lbl  = diff < 0 ? `Atrasado ${Math.abs(diff)}d` : diff === 0 ? 'Hoje!' : `Em ${diff}d`;
+          schedChip  = `<span class="detail-chip" style="background:${bg};color:${clr};font-weight:700;border:1px solid ${clr}33">📅 Agendado: ${fmtDate(n.scheduled_date)} — ${lbl}</span>`;
+        }
         return `
           <div class="list-item" style="border-left-color:${t.color}">
             <div class="list-item-content">
@@ -3720,6 +3733,7 @@ ${printScript}
                 <span class="detail-chip">👤 ${escHtml(client?.name || '—')}</span>
                 <span class="detail-chip">📅 ${fmtDate(n.date)}</span>
                 <span class="detail-chip">✍️ ${escHtml(n.created_by || '—')}</span>
+                ${schedChip}
                 ${n.content ? `<span class="detail-chip" style="width:100%;white-space:pre-wrap;line-height:1.5">💬 ${escHtml(n.content)}</span>` : ''}
               </div>
             </div>
