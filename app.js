@@ -4115,18 +4115,19 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
         : cMachines.map(m => {
             const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
             if (!mv.length) return '';
+            const recDateStr = r => ((r.date || r.created_at || '').substring(0, 10));
             const pumpSections = mv.map(v => {
               const vNameNorm = (v.name || '').trim().toLowerCase();
               let vRecs = clientRecs.filter(r =>
                 Number(r.machine_id) === Number(m.id) &&
                 (r.vazao_name || '').trim().toLowerCase() === vNameNorm);
-              if (startDate) vRecs = vRecs.filter(r => (r.date || '') >= startDate);
-              if (endDate)   vRecs = vRecs.filter(r => (r.date || '') <= endDate);
-              const sorted = vRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+              if (startDate) vRecs = vRecs.filter(r => recDateStr(r) >= startDate);
+              if (endDate)   vRecs = vRecs.filter(r => recDateStr(r) <= endDate);
+              const sorted = vRecs.sort((a,b) => recDateStr(b).localeCompare(recDateStr(a)));
               const unit = escHtml(v.unit || '-');
               const detailRows = sorted.length
                 ? sorted.map(r => `<tr>
-                    <td>${fmtD(r.date)}</td>
+                    <td>${fmtD(r.date || r.created_at)}</td>
                     <td style="text-align:right;font-weight:600">${fmtVal(r.value)}</td>
                     <td style="color:#6b7280">${unit}</td>
                   </tr>`).join('')
@@ -4140,16 +4141,16 @@ td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{backgro
             // Registros de manutenção desta máquina
             let maintRecs = clientRecs.filter(r =>
               Number(r.machine_id) === Number(m.id) && r.vazao_name === '__manutencao__');
-            if (startDate) maintRecs = maintRecs.filter(r => (r.date || '') >= startDate);
-            if (endDate)   maintRecs = maintRecs.filter(r => (r.date || '') <= endDate);
-            maintRecs.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+            if (startDate) maintRecs = maintRecs.filter(r => recDateStr(r) >= startDate);
+            if (endDate)   maintRecs = maintRecs.filter(r => recDateStr(r) <= endDate);
+            maintRecs.sort((a,b) => recDateStr(b).localeCompare(recDateStr(a)));
             const maintSection = maintRecs.length ? `
 <div class="pump-block" style="margin-top:8px">
   <div class="pump-title" style="background:#fff7ed;border-left-color:#d97706;color:#92400e">
     🔧 Manutenção <span class="pump-count" style="color:#b45309">${maintRecs.length} registro${maintRecs.length!==1?'s':''}</span>
   </div>
   <table><thead><tr><th style="background:#d97706">Data</th><th style="background:#d97706" colspan="2">Observação</th></tr></thead>
-  <tbody>${maintRecs.map(r => `<tr><td>${fmtD(r.date)}</td><td colspan="2" style="color:#92400e;font-style:italic">Em manutenção</td></tr>`).join('')}</tbody></table>
+  <tbody>${maintRecs.map(r => `<tr><td>${fmtD(r.date || r.created_at)}</td><td colspan="2" style="color:#92400e;font-style:italic">Em manutenção</td></tr>`).join('')}</tbody></table>
 </div>` : '';
             return `<h3>⚙️ ${escHtml(m.name)}</h3>${pumpSections}${maintSection}`;
           }).join('') || '<p style="color:#94a3b8;text-align:center;padding:16px">Nenhuma vazão cadastrada para este cliente.</p>';
