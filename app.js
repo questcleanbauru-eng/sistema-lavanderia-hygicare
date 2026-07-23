@@ -441,7 +441,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       for (const grp of savedGroups) {
         if ((grp.processes||[]).some(p => p.toUpperCase() === upper)) return grp.color;
       }
-      return PROC_COLORS[upper] || colorForProcess(name, fi);
+      if (PROC_COLORS[upper]) return PROC_COLORS[upper];
+      // Cor pelo grupo configurado (já verificado acima via savedGroups)
+      // Fallback: hash colorido pelo nome (mesma lógica de colorForProcess)
+      const CLR_PALETTE = ['#2563eb','#16a34a','#f59e0b','#7c3aed','#0891b2','#be185d','#ea580c','#dc2626'];
+      let h = 0;
+      for (let ci = 0; ci < upper.length; ci++) h = (h * 31 + upper.charCodeAt(ci)) & 0xffffffff;
+      return CLR_PALETTE[Math.abs(h) % CLR_PALETTE.length];
     };
 
     // Agrupar linhas por máquina
