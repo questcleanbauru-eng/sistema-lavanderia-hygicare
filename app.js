@@ -1447,44 +1447,74 @@ ${printScript}
       callGAS('upsert', 'Config', { chave: 'hygicare_note_types', valor: json });
     }
 
+    const NT_EMOJIS = ['🔧','⚠️','🔌','📌','📋','📝','✅','❌','🔔','📞','💰','📦','🔑','⭐','🔍','📅','💬','🤝','⚙️','🛠️','🔒','💼','✍️','♻️','🧹','👕','🧺','💧','🌡️','⚡','🚗','🏠','💡','🎯','🔶','🔷','👁️','📊','🚀','🏷️'];
+
+    function _ntOpenPicker(btn, idx) {
+      document.querySelectorAll('.nt-picker').forEach(p => p.remove());
+      const picker = document.createElement('div');
+      picker.className = 'nt-picker';
+      picker.style.cssText = 'position:absolute;z-index:9999;background:#fff;border:1px solid var(--border);border-radius:10px;padding:0.5rem;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:260px';
+      NT_EMOJIS.forEach(em => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = em;
+        b.style.cssText = 'font-size:1.3rem;border:none;background:none;cursor:pointer;padding:4px;border-radius:6px;line-height:1';
+        b.addEventListener('click', () => {
+          const types2 = getNoteTypes();
+          types2[idx].icon = em;
+          _ntSave(types2);
+          picker.remove();
+          renderNoteTypesAdmin();
+        });
+        b.addEventListener('mouseover', () => b.style.background = '#f1f5f9');
+        b.addEventListener('mouseout',  () => b.style.background = 'none');
+        picker.appendChild(b);
+      });
+      const rect = btn.getBoundingClientRect();
+      const wrap = btn.closest('#admin-note-types');
+      picker.style.left = '0';
+      picker.style.top  = '100%';
+      picker.style.marginTop = '4px';
+      btn.style.position = 'relative';
+      btn.appendChild(picker);
+      const close = e => { if (!picker.contains(e.target) && e.target !== btn) { picker.remove(); document.removeEventListener('click', close, true); } };
+      setTimeout(() => document.addEventListener('click', close, true), 10);
+    }
+
     function renderNoteTypesAdmin() {
       const container = document.getElementById('admin-note-types');
       if (!container) return;
       const types = getNoteTypes();
 
       const rows = types.map((t, i) => `
-        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.5rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.4rem;background:var(--surface)">
-          <input type="text" value="${escHtml(t.icon)}" data-ni="${i}" placeholder="🔧"
-            style="width:2.4rem;text-align:center;font-size:1.1rem;border:1px solid var(--border);border-radius:5px;padding:3px;background:#fff"
-            title="Emoji do tipo" maxlength="4">
-          <input type="text" value="${escHtml(t.label)}" data-nl="${i}" placeholder="Nome"
-            style="flex:1;border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:0.85rem;font-weight:600;background:#fff">
-          <label style="font-size:0.72rem;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
-            Cor
-            <input type="color" value="${t.color}" data-nc="${i}"
-              style="width:28px;height:28px;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:1px">
-          </label>
-          <label style="font-size:0.72rem;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
-            Fundo
-            <input type="color" value="${t.bg}" data-nb="${i}"
-              style="width:28px;height:28px;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:1px">
-          </label>
-          <div style="width:70px;background:${t.bg};color:${t.color};border:1.5px solid ${t.color};border-radius:5px;padding:2px 6px;font-size:0.75rem;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden">
-            ${t.icon} ${escHtml(t.label)}
+        <div style="border:1px solid var(--border);border-radius:10px;margin-bottom:0.5rem;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.6rem;background:var(--surface)">
+            <button type="button" data-ni="${i}"
+              style="font-size:1.4rem;border:1.5px solid var(--border);border-radius:8px;padding:2px 6px;background:#fff;cursor:pointer;line-height:1;flex-shrink:0"
+              title="Escolher ícone">${t.icon}</button>
+            <input type="text" value="${escHtml(t.label)}" data-nl="${i}" placeholder="Nome do tipo"
+              style="flex:1;border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:0.88rem;font-weight:600;min-width:0">
+            ${types.length > 1 ? `<button type="button" data-ndel="${i}" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:1rem;padding:2px 6px;flex-shrink:0" title="Remover">✕</button>` : ''}
           </div>
-          ${types.length > 1 ? `<button data-ndel="${i}" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:0.9rem;padding:2px 6px;border-radius:4px" title="Remover tipo">✕</button>` : ''}
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.35rem 0.6rem;background:#f8fafc;border-top:1px solid var(--border)">
+            <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.75rem;color:var(--muted);cursor:pointer">
+              Cor <input type="color" value="${t.color}" data-nc="${i}" style="width:30px;height:26px;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:1px">
+            </label>
+            <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.75rem;color:var(--muted);cursor:pointer">
+              Fundo <input type="color" value="${t.bg}" data-nb="${i}" style="width:30px;height:26px;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:1px">
+            </label>
+            <div style="margin-left:auto;background:${t.bg};color:${t.color};border:1.5px solid ${t.color};border-radius:6px;padding:3px 8px;font-size:0.78rem;font-weight:700;white-space:nowrap">
+              ${t.icon} ${escHtml(t.label)}
+            </div>
+          </div>
         </div>`).join('');
 
       container.innerHTML = `
         ${rows}
-        <button id="btn-nt-add" style="margin-top:0.3rem;font-size:0.82rem;padding:4px 14px;border:1.5px dashed var(--primary);border-radius:7px;background:#fff;color:var(--primary);cursor:pointer;font-weight:700;width:100%">+ Novo Tipo</button>`;
+        <button id="btn-nt-add" style="margin-top:0.3rem;font-size:0.85rem;padding:6px 14px;border:1.5px dashed var(--primary);border-radius:8px;background:#fff;color:var(--primary);cursor:pointer;font-weight:700;width:100%">+ Novo Tipo</button>`;
 
-      container.querySelectorAll('input[data-ni]').forEach(el => {
-        el.addEventListener('input', () => {
-          const i = Number(el.dataset.ni), types2 = getNoteTypes();
-          types2[i].icon = el.value.trim() || '📋';
-          _ntSave(types2); renderNoteTypesAdmin();
-        });
+      container.querySelectorAll('button[data-ni]').forEach(el => {
+        el.addEventListener('click', () => _ntOpenPicker(el, Number(el.dataset.ni)));
       });
       container.querySelectorAll('input[data-nl]').forEach(el => {
         el.addEventListener('change', () => {
