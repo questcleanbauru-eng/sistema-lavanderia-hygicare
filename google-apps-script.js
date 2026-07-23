@@ -25,7 +25,7 @@ const HEADERS = {
   Clientes:       ['id','name','city','seller','email_client','send_client',
                    'email_seller','send_seller','price_kg','created_at'],
   Maquinas:       ['id','name','client_id','capacity','created_at'],
-  Processos:      ['id','name','machine_id','capacity','created_at'],
+  Processos:      ['id','name','machine_id','capacity','active','created_at'],
   Registros:      ['id','client_id','machine_id','process_id','executed',
                    'canceled','capacity','total','date_start','date_end',
                    'price_kg','created_at','synced_at'],

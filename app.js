@@ -2558,6 +2558,21 @@ ${printScript}
     window._deleteMachine = deleteMachine;
     window._editProcess  = editProcess;
     window._deleteProcess = deleteProcess;
+    window._toggleProcessActive = async function(id, el) {
+      if (el) { el.disabled = true; }
+      try {
+        const all = await dbGetAll_raw('processes');
+        const proc = all.find(p => Number(p.id) === Number(id));
+        if (!proc) return;
+        const updated = { ...proc, active: proc.active === false ? true : false };
+        await dbPut('processes', updated);
+        await patchSheetDB(SHEETS.PROCESSES, updated.id, updated);
+        await renderProcessesList(
+          document.getElementById('search-processes')?.value || '',
+          Number(document.getElementById('filter-process-machine')?.value || 0)
+        );
+      } finally { if (el) el.disabled = false; }
+    };
 
     // =====================================================
     // RENDER — CLIENTES
@@ -2863,19 +2878,20 @@ ${printScript}
           </div>
           <div id="${groupId}">
             ${orderedItems.map(({ p, machine }, i) => {
+              const isActive = p.active !== false;
               const capStr = p.capacity ? `${p.capacity} kg` : `${machine?.capacity || 0} kg (da máquina)`;
               const mid    = machine?.id;
-              // índice dentro da mesma máquina (para habilitar/desabilitar botões)
               const machProcs = orderedItems.filter(it => Number(it.machine?.id) === Number(mid));
               const posInMach = machProcs.indexOf(orderedItems[i]);
               const firstInMach = posInMach === 0;
               const lastInMach  = posInMach === machProcs.length - 1;
               return `
-                <div class="list-item">
+                <div class="list-item" style="${isActive ? '' : 'opacity:0.5;background:#f8fafc'}">
                   <div class="list-item-content">
                     <div class="list-item-name">
                       🔄 ${p.name}
                       <span class="badge badge-yellow">${capStr}</span>
+                      ${isActive ? '' : '<span class="badge badge-gray">Desativado</span>'}
                     </div>
                     <div class="list-item-details">
                       <span class="detail-chip">⚙️ ${machine?.name || 'Máquina não encontrada'}</span>
@@ -2888,6 +2904,7 @@ ${printScript}
                       <button style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;width:24px;height:22px;padding:0;font-size:0.6rem;line-height:1;cursor:pointer;color:#475569;min-height:unset;opacity:${lastInMach?'0.3':'1'}" onclick="window._moveProcess(${p.id},${mid},'down')" ${lastInMach?'disabled':''}>▼</button>
                     </div>` : ''}
                     ${canEditP ? `<button class="btn-edit" onclick="window._editProcess(${p.id})">✏️ Editar</button>` : ''}
+                    ${canEditP ? `<button class="${isActive ? 'btn-secondary' : 'btn-edit'}" style="font-size:0.78rem" onclick="window._toggleProcessActive(${p.id},this)">${isActive ? '🚫 Desativar' : '✅ Ativar'}</button>` : ''}
                     ${canDo('delete_process') ? `<button class="btn-danger" onclick="window._deleteProcess(${p.id}, this)">🗑️</button>` : ''}
                   </div>
                 </div>
@@ -2957,7 +2974,7 @@ ${printScript}
       }
 
       for (const m of machines) {
-        const rawProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
+        const rawProcs = processes.filter(p => Number(p.machine_id) === Number(m.id) && p.active !== false);
         const procs    = _applyOrder(rawProcs, procOrder, m.id, 'id');
         const block = document.createElement('div');
         block.className = 'machine-block';
