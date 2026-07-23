@@ -195,12 +195,7 @@
           <div class="form-row-2col">
             <div class="form-field">
               <label>Tipo *</label>
-              <select id="note-type" class="form-input" required>
-                <option value="manutencao">🔧 Manutenção</option>
-                <option value="aviso">⚠️ Aviso</option>
-                <option value="instalacao">🔌 Instalação</option>
-                <option value="lembrete">📌 Lembrete</option>
-              </select>
+              <select id="note-type" class="form-input" required></select>
             </div>
             <div class="form-field">
               <label>Data *</label>
@@ -826,6 +821,22 @@
             <button class="btn-primary" style="font-size:0.88rem;white-space:nowrap" onclick="show('screen-pdf-config');initPdfConfigScreen()">⚙️ Configurar Layout</button>
           </div>
 
+          <!-- Card Tipos de Nota -->
+          <div class="card" style="margin-top:1.2rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+                 onclick="(function(b,a){const o=b.style.display!=='none';b.style.display=o?'none':'block';a.textContent=o?'▶':'▼'})(document.getElementById('nt-body'),this.querySelector('.nt-arr'))">
+              <h3 style="margin:0;font-size:1.05rem;color:#1e40af">🗂️ Tipos de Nota (Histórico)</h3>
+              <span class="nt-arr" style="font-size:0.75rem;color:var(--muted);min-width:14px;text-align:right">▼</span>
+            </div>
+            <div id="nt-body">
+              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 1rem">Personalize os tipos de nota usados no Histórico de Clientes. Alterações são salvas automaticamente na planilha.</p>
+              <div id="admin-note-types"></div>
+              <div style="margin-top:0.75rem">
+                <button id="btn-reset-note-types" class="btn-secondary" style="font-size:0.82rem">↺ Restaurar padrão</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Card Cores dos Processos -->
           <div class="card" style="margin-top:1.2rem">
             <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
@@ -1001,10 +1012,6 @@
             </select>
             <select id="note-filter-type" class="filter-select">
               <option value="">🗂️ Todos os tipos</option>
-              <option value="manutencao">🔧 Manutenção</option>
-              <option value="aviso">⚠️ Aviso</option>
-              <option value="instalacao">🔌 Instalação</option>
-              <option value="lembrete">📌 Lembrete</option>
             </select>
           </div>
           <div id="notes-list"></div>

@@ -810,7 +810,7 @@ ${printScript}
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
-        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
+        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
         if (screenId === 'screen-alerts')  await renderAlertsScreen();
       });
     });
@@ -828,7 +828,7 @@ ${printScript}
         if (screenId === 'screen-recipes')      await initRecipesScreen();
         if (screenId === 'screen-client-notes') await initClientNotesScreen();
         if (screenId === 'screen-users')        await renderUsersList();
-        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
+        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
       });
     });
@@ -974,7 +974,7 @@ ${printScript}
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
         if (screenId === 'screen-users')        await renderUsersList();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); testApis(); }
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
       });
     });
 
@@ -1440,6 +1440,95 @@ ${printScript}
         });
       }
     }
+
+    function _ntSave(types) {
+      const json = JSON.stringify(types);
+      localStorage.setItem('hygicare_note_types', json);
+      callGAS('upsert', 'Config', { chave: 'hygicare_note_types', valor: json });
+    }
+
+    function renderNoteTypesAdmin() {
+      const container = document.getElementById('admin-note-types');
+      if (!container) return;
+      const types = getNoteTypes();
+
+      const rows = types.map((t, i) => `
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.5rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.4rem;background:var(--surface)">
+          <input type="text" value="${escHtml(t.icon)}" data-ni="${i}" placeholder="🔧"
+            style="width:2.4rem;text-align:center;font-size:1.1rem;border:1px solid var(--border);border-radius:5px;padding:3px;background:#fff"
+            title="Emoji do tipo" maxlength="4">
+          <input type="text" value="${escHtml(t.label)}" data-nl="${i}" placeholder="Nome"
+            style="flex:1;border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:0.85rem;font-weight:600;background:#fff">
+          <label style="font-size:0.72rem;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
+            Cor
+            <input type="color" value="${t.color}" data-nc="${i}"
+              style="width:28px;height:28px;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:1px">
+          </label>
+          <label style="font-size:0.72rem;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
+            Fundo
+            <input type="color" value="${t.bg}" data-nb="${i}"
+              style="width:28px;height:28px;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:1px">
+          </label>
+          <div style="width:70px;background:${t.bg};color:${t.color};border:1.5px solid ${t.color};border-radius:5px;padding:2px 6px;font-size:0.75rem;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden">
+            ${t.icon} ${escHtml(t.label)}
+          </div>
+          ${types.length > 1 ? `<button data-ndel="${i}" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:0.9rem;padding:2px 6px;border-radius:4px" title="Remover tipo">✕</button>` : ''}
+        </div>`).join('');
+
+      container.innerHTML = `
+        ${rows}
+        <button id="btn-nt-add" style="margin-top:0.3rem;font-size:0.82rem;padding:4px 14px;border:1.5px dashed var(--primary);border-radius:7px;background:#fff;color:var(--primary);cursor:pointer;font-weight:700;width:100%">+ Novo Tipo</button>`;
+
+      container.querySelectorAll('input[data-ni]').forEach(el => {
+        el.addEventListener('input', () => {
+          const i = Number(el.dataset.ni), types2 = getNoteTypes();
+          types2[i].icon = el.value.trim() || '📋';
+          _ntSave(types2); renderNoteTypesAdmin();
+        });
+      });
+      container.querySelectorAll('input[data-nl]').forEach(el => {
+        el.addEventListener('change', () => {
+          const i = Number(el.dataset.nl), types2 = getNoteTypes();
+          if (!el.value.trim()) return;
+          types2[i].label = el.value.trim();
+          _ntSave(types2); renderNoteTypesAdmin();
+        });
+      });
+      container.querySelectorAll('input[data-nc]').forEach(el => {
+        el.addEventListener('input', () => {
+          const i = Number(el.dataset.nc), types2 = getNoteTypes();
+          types2[i].color = el.value;
+          _ntSave(types2); renderNoteTypesAdmin();
+        });
+      });
+      container.querySelectorAll('input[data-nb]').forEach(el => {
+        el.addEventListener('input', () => {
+          const i = Number(el.dataset.nb), types2 = getNoteTypes();
+          types2[i].bg = el.value;
+          _ntSave(types2); renderNoteTypesAdmin();
+        });
+      });
+      container.querySelectorAll('button[data-ndel]').forEach(el => {
+        el.addEventListener('click', () => {
+          const i = Number(el.dataset.ndel), types2 = getNoteTypes();
+          types2.splice(i, 1);
+          _ntSave(types2); renderNoteTypesAdmin();
+        });
+      });
+      document.getElementById('btn-nt-add')?.addEventListener('click', () => {
+        const types2 = getNoteTypes();
+        types2.push({ key: 'tipo_' + Date.now(), icon: '📋', label: 'Novo Tipo', color: '#64748b', bg: '#f8fafc' });
+        _ntSave(types2); renderNoteTypesAdmin();
+      });
+    }
+
+    document.getElementById('btn-reset-note-types')?.addEventListener('click', () => {
+      if (!confirm('Restaurar tipos padrão? (Manutenção, Aviso, Instalação, Lembrete)')) return;
+      localStorage.removeItem('hygicare_note_types');
+      callGAS('upsert', 'Config', { chave: 'hygicare_note_types', valor: '' });
+      renderNoteTypesAdmin();
+      toast('Tipos restaurados para o padrão', 'info', 2000);
+    });
 
     document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
       if (!confirm('Remover todos os grupos e configurações de cor?')) return;
@@ -2135,7 +2224,7 @@ ${printScript}
         const res = await r.json();
         addApiCount(1, 'read');
         const rows = res.data || [];
-        const managed = ['hygicare_proc_groups', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
+        const managed = ['hygicare_proc_groups', 'hygicare_note_types', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
           'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text',
           'hygicare_machine_order', 'hygicare_process_order'];
         rows.forEach(row => {
@@ -3530,7 +3619,7 @@ ${printScript}
       // ── Seção de agendamentos ─────────────────────────────
       let scheduledHtml = '';
       if (scheduled.length) {
-        const NOTE_TYPE_ICONS = { manutencao:'🔧', aviso:'⚠️', instalacao:'🔌', lembrete:'📌' };
+        const NOTE_TYPE_ICONS = Object.fromEntries(getNoteTypes().map(t => [t.key, t.icon]));
         const cards = scheduled.map(({ note, client, daysUntil }) => {
           const overdue = daysUntil < 0;
           const isToday = daysUntil === 0;
@@ -3667,12 +3756,22 @@ ${printScript}
     // =====================================================
     // TELA HISTÓRICO DE CLIENTES
     // =====================================================
-    const NOTE_TYPES = {
-      manutencao: { icon: '🔧', label: 'Manutenção', color: '#2563eb', bg: '#eff6ff' },
-      aviso:      { icon: '⚠️', label: 'Aviso',      color: '#b45309', bg: '#fffbeb' },
-      instalacao: { icon: '🔌', label: 'Instalação', color: '#7c3aed', bg: '#f5f3ff' },
-      lembrete:   { icon: '📌', label: 'Lembrete',   color: '#15803d', bg: '#f0fdf4' },
-    };
+    const DEFAULT_NOTE_TYPES = [
+      { key: 'manutencao', icon: '🔧', label: 'Manutenção', color: '#2563eb', bg: '#eff6ff' },
+      { key: 'aviso',      icon: '⚠️', label: 'Aviso',      color: '#b45309', bg: '#fffbeb' },
+      { key: 'instalacao', icon: '🔌', label: 'Instalação', color: '#7c3aed', bg: '#f5f3ff' },
+      { key: 'lembrete',   icon: '📌', label: 'Lembrete',   color: '#15803d', bg: '#f0fdf4' },
+    ];
+    function getNoteTypes() {
+      try {
+        const s = JSON.parse(localStorage.getItem('hygicare_note_types') || '[]');
+        return Array.isArray(s) && s.length ? s : DEFAULT_NOTE_TYPES;
+      } catch { return DEFAULT_NOTE_TYPES; }
+    }
+    function getNoteTypesMap() {
+      return Object.fromEntries(getNoteTypes().map(t => [t.key, t]));
+    }
+    const NOTE_TYPES = getNoteTypesMap();
 
     async function renderClientNotesList() {
       const list = document.getElementById('notes-list');
@@ -3696,6 +3795,14 @@ ${printScript}
           .forEach(c => { filterClient.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
         if (cur) filterClient.value = cur;
         _makeSearchable(filterClient);
+      }
+      // Popular filtro de tipos dinamicamente
+      const filterType = document.getElementById('note-filter-type');
+      if (filterType) {
+        const curType = filterType.value;
+        filterType.innerHTML = '<option value="">🗂️ Todos os tipos</option>';
+        getNoteTypes().forEach(t => { filterType.innerHTML += `<option value="${t.key}">${t.icon} ${escHtml(t.label)}</option>`; });
+        if (curType) filterType.value = curType;
       }
 
       const clientFilter = filterClient?.value || '';
@@ -3778,9 +3885,14 @@ ${printScript}
           .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
         _makeSearchable(sel);
       }
+      const typeSel = document.getElementById('note-type');
+      if (typeSel) {
+        typeSel.innerHTML = '';
+        getNoteTypes().forEach(t => { typeSel.innerHTML += `<option value="${t.key}">${t.icon} ${escHtml(t.label)}</option>`; });
+      }
       document.getElementById('note-edit-id').value         = note?.id || '';
       document.getElementById('note-client').value          = note?.client_id || '';
-      document.getElementById('note-type').value            = note?.type || 'manutencao';
+      document.getElementById('note-type').value            = note?.type || getNoteTypes()[0]?.key || 'manutencao';
       document.getElementById('note-date').value            = note?.date || new Date().toISOString().slice(0,10);
       document.getElementById('note-title').value           = note?.title || '';
       document.getElementById('note-content').value         = note?.content || '';
@@ -4108,7 +4220,7 @@ ${printScript}
         ? `${startDate ? fmtDate(startDate) : 'início'} a ${endDate ? fmtDate(endDate) : 'hoje'}`
         : 'Todo o período';
 
-      const noteTypeLabel = {manutencao:'🔧 Manutenção', aviso:'⚠️ Aviso', instalacao:'🔌 Instalação', lembrete:'📌 Lembrete'};
+      const noteTypeLabel = Object.fromEntries(getNoteTypes().map(t => [t.key, `${t.icon} ${t.label}`]));
 
       const recGroups = {};
       for (const r of cRecords) {
@@ -4706,7 +4818,7 @@ ${opSections}
       if (endDate)   cNotes = cNotes.filter(n => (n.date||'').slice(0,10) <= endDate);
       const mMap = Object.fromEntries(machines.map(m => [m.id, m.name]));
       const pMap = Object.fromEntries(processes.map(p => [p.id, p.name]));
-      const noteTypeLabel = {manutencao:'Manutenção', aviso:'Aviso', instalacao:'Instalação', lembrete:'Lembrete'};
+      const noteTypeLabel = Object.fromEntries(getNoteTypes().map(t => [t.key, t.label]));
       const rows = [['Seção','Data','Máquina / Tipo','Processo / Título','Executadas / Conteúdo','Canceladas','Total kg','Status / Autor']];
       cRecs.sort((a,b) => (a.date_start||'').localeCompare(b.date_start||'')).forEach(r => {
         rows.push(['Produção',(r.date_start||'').slice(0,10), mMap[r.machine_id]||'', pMap[r.process_id]||'', r.executed||0, r.canceled||0, String(Number(r.total||0).toFixed(1)).replace('.',','), r.executed?'Executado':r.canceled?'Cancelado':'Pendente']);
