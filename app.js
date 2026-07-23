@@ -441,7 +441,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       for (const grp of savedGroups) {
         if ((grp.processes||[]).some(p => p.toUpperCase() === upper)) return grp.color;
       }
-      return PROC_COLORS[upper] || FALLBACK[fi % FALLBACK.length];
+      return PROC_COLORS[upper] || colorForProcess(name, fi);
     };
 
     // Agrupar linhas por máquina
@@ -2861,8 +2861,10 @@ ${printScript}
         const f = filter.toLowerCase();
         processes = processes.filter(p => {
           const machine = machines.find(m => Number(m.id) === Number(p.machine_id));
+          const client  = clients.find(c => Number(c.id) === Number(machine?.client_id));
           return (p.name || '').toLowerCase().includes(f) ||
-                 (machine?.name || '').toLowerCase().includes(f);
+                 (machine?.name || '').toLowerCase().includes(f) ||
+                 (client?.name || '').toLowerCase().includes(f);
         });
       }
 
