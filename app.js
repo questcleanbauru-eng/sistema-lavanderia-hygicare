@@ -1453,13 +1453,14 @@ ${printScript}
       document.querySelectorAll('.nt-picker').forEach(p => p.remove());
       const picker = document.createElement('div');
       picker.className = 'nt-picker';
-      picker.style.cssText = 'position:absolute;z-index:9999;background:#fff;border:1px solid var(--border);border-radius:10px;padding:0.5rem;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:260px';
+      picker.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:0.5rem;box-shadow:0 8px 24px rgba(0,0,0,0.18);display:grid;grid-template-columns:repeat(8,1fr);gap:3px;width:280px';
       NT_EMOJIS.forEach(em => {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = em;
-        b.style.cssText = 'font-size:1.3rem;border:none;background:none;cursor:pointer;padding:4px;border-radius:6px;line-height:1';
-        b.addEventListener('click', () => {
+        b.style.cssText = 'font-size:1.25rem;border:none;background:none;cursor:pointer;padding:5px;border-radius:6px;line-height:1;text-align:center';
+        b.addEventListener('click', e => {
+          e.stopPropagation();
           const types2 = getNoteTypes();
           types2[idx].icon = em;
           _ntSave(types2);
@@ -1470,13 +1471,14 @@ ${printScript}
         b.addEventListener('mouseout',  () => b.style.background = 'none');
         picker.appendChild(b);
       });
+      document.body.appendChild(picker);
+      // Posicionar abaixo do botão
       const rect = btn.getBoundingClientRect();
-      const wrap = btn.closest('#admin-note-types');
-      picker.style.left = '0';
-      picker.style.top  = '100%';
-      picker.style.marginTop = '4px';
-      btn.style.position = 'relative';
-      btn.appendChild(picker);
+      const top  = rect.bottom + 4 + window.scrollY;
+      let   left = rect.left   + window.scrollX;
+      if (left + 280 > window.innerWidth - 8) left = window.innerWidth - 288;
+      picker.style.top  = top  + 'px';
+      picker.style.left = left + 'px';
       const close = e => { if (!picker.contains(e.target) && e.target !== btn) { picker.remove(); document.removeEventListener('click', close, true); } };
       setTimeout(() => document.addEventListener('click', close, true), 10);
     }
