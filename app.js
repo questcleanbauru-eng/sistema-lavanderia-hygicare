@@ -3908,12 +3908,22 @@ ${printScript}
         getNoteTypes().forEach(t => { typeSel.innerHTML += `<option value="${t.key}">${t.icon} ${escHtml(t.label)}</option>`; });
       }
       document.getElementById('note-edit-id').value         = note?.id || '';
-      document.getElementById('note-client').value          = note?.client_id || '';
+      // Cliente: setar o select E atualizar o texto do ss-input customizado
+      if (sel && note?.client_id) {
+        sel.value = String(note.client_id);
+        const ssInput = sel.closest('.ss-wrap')?.querySelector('.ss-input');
+        if (ssInput) {
+          const opt = Array.from(sel.options).find(o => String(o.value) === String(note.client_id));
+          ssInput.value = opt ? opt.text : '';
+        }
+      }
       document.getElementById('note-type').value            = note?.type || getNoteTypes()[0]?.key || 'manutencao';
-      document.getElementById('note-date').value            = note?.date || new Date().toISOString().slice(0,10);
+      // Normalizar data — remove timestamp se vier do GAS ("2026-07-20T00:00:00")
+      const noteDate = (note?.date || '').substring(0, 10) || new Date().toISOString().slice(0, 10);
+      document.getElementById('note-date').value            = noteDate;
       document.getElementById('note-title').value           = note?.title || '';
       document.getElementById('note-content').value         = note?.content || '';
-      document.getElementById('note-scheduled-date').value  = note?.scheduled_date || '';
+      document.getElementById('note-scheduled-date').value  = (note?.scheduled_date || '').substring(0, 10);
       document.getElementById('modal-note-title').textContent = note ? '✏️ Editar Nota' : '📋 Nova Nota';
       document.getElementById('modal-note').classList.remove('hidden');
     }
