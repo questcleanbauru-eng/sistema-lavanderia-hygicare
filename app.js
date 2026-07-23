@@ -3256,6 +3256,7 @@ ${printScript}
           }
         }
         let synced = 0;
+        const _savedIds = []; // rastrear IDs para rollback em caso de erro
         for (const r of rows) {
           const machine = allMachines.find(m => Number(m.id) === Number(r.machine_id));
           const process = allProcesses.find(p => Number(p.id) === Number(r.process_id));
@@ -3269,14 +3270,22 @@ ${printScript}
 
           const ok = await callGAS('insert', SHEETS.RECORDS, rWithId);
           if (ok) {
+            _savedIds.push(newId);
             synced++;
-            // Substitui a última linha pelo check
             logEl.lastChild.textContent = `✅ ${label}`;
           } else {
+            // Rollback: desfaz registro atual e todos já enviados no lote
             await dbDelete('records', newId);
+            if (_savedIds.length) {
+              logLine('↩️', `Desfazendo ${_savedIds.length} registro(s) já enviados...`);
+              for (const sid of _savedIds) {
+                await dbDelete('records', sid);
+                await deleteSheetDB(SHEETS.RECORDS, sid);
+              }
+            }
             logEl.lastChild.textContent = `❌ Falhou: ${label}`;
-            logLine('🛑', 'Envio interrompido — verifique a conexão e tente novamente.');
-            toast('Erro ao enviar. Verifique a conexão.', 'error', 7000);
+            logLine('🛑', 'Envio cancelado e registros desfeitos. Verifique a conexão e tente novamente.');
+            toast('Erro ao enviar — lote desfeito. Tente novamente.', 'error', 7000);
             return;
           }
         }
