@@ -138,6 +138,31 @@ function confirmAction(msg, confirmLabel = 'Confirmar', danger = true) {
   });
 }
 
+// ---------- DIALOG DE VAZÃO ----------
+function _vazaoPrompt(machineCount) {
+  return new Promise(resolve => {
+    const plural = machineCount > 1 ? ` para cada uma das ${machineCount} máquinas` : '';
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:1.5rem 1.25rem;max-width:340px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+        <div style="font-size:1.75rem;text-align:center;margin-bottom:0.4rem">💧</div>
+        <h3 style="font-size:1rem;font-weight:700;color:#1e293b;text-align:center;margin-bottom:0.4rem">Cadastrar Bombas de Vazão?</h3>
+        <p style="font-size:0.83rem;color:#64748b;text-align:center;margin-bottom:1.25rem;line-height:1.4">Criar automaticamente BOMBA 1 a BOMBA N${plural}?</p>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+          <button id="_vz-5" style="flex:1;padding:0.7rem;background:#3b82f6;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:0.9rem">5 Bombas</button>
+          <button id="_vz-6" style="flex:1;padding:0.7rem;background:#3b82f6;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:0.9rem">6 Bombas</button>
+        </div>
+        <button id="_vz-no" style="width:100%;padding:0.6rem;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:10px;font-weight:600;cursor:pointer;font-size:0.875rem">Não, obrigado</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = v => { overlay.remove(); resolve(v); };
+    overlay.querySelector('#_vz-5').onclick = () => close(5);
+    overlay.querySelector('#_vz-6').onclick = () => close(6);
+    overlay.querySelector('#_vz-no').onclick = () => close(null);
+  });
+}
+
 // ---------- API COUNTER ----------
 const API_KEY       = 'hygicare_api_count';        // escrita
 const API_KEY_READ  = 'hygicare_api_count_read';   // leitura
@@ -1773,6 +1798,8 @@ ${printScript}
       processMachineSelect.value = '';
       document.getElementById('process-rows').innerHTML = _processRowHtml();
       document.getElementById('process-add-row-wrap').style.display = '';
+      const cpWrap = document.getElementById('process-copy-all-wrap');
+      if (cpWrap) { cpWrap.style.display = ''; document.getElementById('process-copy-all').checked = false; }
       formProcessCard.classList.remove('hidden');
     };
 
@@ -2362,6 +2389,7 @@ ${printScript}
           const allClients = await dbGetAll_raw('clients');
           const c = allClients.find(c => Number(c.id) === Number(clientId));
           let saved = 0;
+          const _savedMachines = [];
           for (const row of rows) {
             const name = row.querySelector('.mach-name').value.trim();
             if (!name) continue;
@@ -2372,9 +2400,36 @@ ${printScript}
             data.id = id;
             await postToSheetDB(SHEETS.MACHINES, data);
             notifyEmail('nova_maquina', { name, clientName: c?.name || '' });
+            _savedMachines.push({ id, name });
             saved++;
           }
           toast(saved > 1 ? `${saved} máquinas salvas!` : 'Máquina salva!', 'success');
+
+          await refreshMachinesForProcessSelect();
+          await renderMachinesList();
+          await updateSyncStatus();
+          closePanel(formMachineCard, formMachine);
+          document.getElementById('machine-rows').innerHTML = '';
+
+          if (_savedMachines.length > 0) {
+            const n = await _vazaoPrompt(_savedMachines.length);
+            if (n) {
+              showOverlay('Cadastrando bombas de vazão...');
+              try {
+                for (const { id: mid } of _savedMachines) {
+                  for (let i = 1; i <= n; i++) {
+                    const vd = { machine_id: mid, name: `BOMBA ${i}`, unit: 'L/min', created_at: new Date().toISOString() };
+                    const vid = await dbAdd('vazoes', vd);
+                    vd.id = vid;
+                    await postToSheetDB(SHEETS.VAZOES, vd);
+                  }
+                }
+                const plural = _savedMachines.length > 1 ? ` para ${_savedMachines.length} máquinas` : '';
+                toast(`${n} bombas cadastradas${plural}!`, 'success');
+              } finally { hideOverlay(); }
+            }
+          }
+          return;
         }
 
         await refreshMachinesForProcessSelect();
@@ -2421,6 +2476,7 @@ ${printScript}
           const existing = (await dbGetAll_raw('processes')).filter(p => Number(p.machine_id) === machineId);
           const existingNames = new Set(existing.map(p => (p.name || '').toLowerCase().trim()));
           let saved = 0, skipped = 0;
+          const _newProcesses = [];
           for (const row of rows) {
             const name = row.querySelector('.proc-name').value.trim();
             if (!name) continue;
@@ -2433,17 +2489,46 @@ ${printScript}
             data.id = id;
             await postToSheetDB(SHEETS.PROCESSES, data);
             notifyEmail('novo_processo', { name, machineName: m?.name || '' });
+            _newProcesses.push({ name, capacity: capVal ? parseFloat(capVal) : null });
             saved++;
           }
           if (skipped > 0) toast(`⚠️ ${skipped} processo(s) ignorado(s) — já existem nessa máquina`, 'warning', 4000);
           if (saved > 0) toast(saved > 1 ? `${saved} processos salvos!` : 'Processo salvo!', 'success');
           else if (skipped === 0) toast('Nenhum processo para salvar', 'warning');
+
+          const copyAll = document.getElementById('process-copy-all')?.checked;
+          if (copyAll && _newProcesses.length > 0 && m?.client_id) {
+            const otherMachines = allMachines.filter(om => Number(om.client_id) === Number(m.client_id) && Number(om.id) !== machineId);
+            if (otherMachines.length > 0) {
+              showOverlay('Copiando processos...');
+              try {
+                const allProcs = await dbGetAll_raw('processes');
+                let copyCount = 0;
+                for (const om of otherMachines) {
+                  const omExisting = new Set(allProcs.filter(p => Number(p.machine_id) === Number(om.id)).map(p => (p.name || '').toLowerCase().trim()));
+                  for (const { name, capacity } of _newProcesses) {
+                    if (omExisting.has(name.toLowerCase())) continue;
+                    const cd = { machine_id: Number(om.id), name, capacity, created_at: new Date().toISOString() };
+                    const cid = await dbAdd('processes', cd);
+                    cd.id = cid;
+                    await postToSheetDB(SHEETS.PROCESSES, cd);
+                    copyCount++;
+                  }
+                }
+                if (copyCount > 0) toast(`${copyCount} processo(s) copiado(s) para ${otherMachines.length} outra(s) máquina(s)!`, 'success', 5000);
+              } finally { hideOverlay(); }
+            } else {
+              toast('Nenhuma outra máquina encontrada para este cliente', 'warning');
+            }
+          }
         }
 
         await renderProcessesList();
         await updateSyncStatus();
         closePanel(formProcessCard, formProcess);
         document.getElementById('process-rows').innerHTML = '';
+        const cpyCb = document.getElementById('process-copy-all');
+        if (cpyCb) cpyCb.checked = false;
 
       } catch (err) {
         toast('Erro ao salvar processo: ' + err.message, 'error');
@@ -2565,6 +2650,8 @@ ${printScript}
       processMachineSelect.value = p.machine_id;
       document.getElementById('process-rows').innerHTML = _processRowHtml(p.name || '', p.capacity || '');
       document.getElementById('process-add-row-wrap').style.display = 'none';
+      const cpWrap = document.getElementById('process-copy-all-wrap');
+      if (cpWrap) cpWrap.style.display = 'none';
       formProcessCard.classList.remove('hidden');
       formProcessCard.scrollIntoView({ behavior: 'smooth' });
     }
