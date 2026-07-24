@@ -2370,6 +2370,13 @@ ${printScript}
 
       const editId = editMachineIdField.value ? Number(editMachineIdField.value) : null;
       const submitBtn = formMachine.querySelector('button[type="submit"]');
+
+      // Para criação: pergunta sobre bombas ANTES de salvar
+      let _vazaoBombas = null;
+      if (!editId) {
+        _vazaoBombas = await _vazaoPrompt(1);
+      }
+
       setSaving(true, submitBtn);
       try {
         if (editId) {
@@ -2405,32 +2412,18 @@ ${printScript}
           }
           toast(saved > 1 ? `${saved} máquinas salvas!` : 'Máquina salva!', 'success');
 
-          await refreshMachinesForProcessSelect();
-          await renderMachinesList();
-          await updateSyncStatus();
-          closePanel(formMachineCard, formMachine);
-          document.getElementById('machine-rows').innerHTML = '';
-          setSaving(false, submitBtn);
-
-          if (_savedMachines.length > 0) {
-            const n = await _vazaoPrompt(_savedMachines.length);
-            if (n) {
-              showOverlay('Cadastrando bombas de vazão...');
-              try {
-                for (const { id: mid } of _savedMachines) {
-                  for (let i = 1; i <= n; i++) {
-                    const vd = { machine_id: mid, name: `BOMBA ${i}`, unit: 'L/min', created_at: new Date().toISOString() };
-                    const vid = await dbAdd('vazoes', vd);
-                    vd.id = vid;
-                    await postToSheetDB(SHEETS.VAZOES, vd);
-                  }
-                }
-                const plural = _savedMachines.length > 1 ? ` para ${_savedMachines.length} máquinas` : '';
-                toast(`${n} bombas cadastradas${plural}!`, 'success');
-              } finally { hideOverlay(); }
+          if (_vazaoBombas && _savedMachines.length > 0) {
+            for (const { id: mid } of _savedMachines) {
+              for (let i = 1; i <= _vazaoBombas; i++) {
+                const vd = { machine_id: mid, name: `BOMBA ${i}`, unit: 'L/min', created_at: new Date().toISOString() };
+                const vid = await dbAdd('vazoes', vd);
+                vd.id = vid;
+                await postToSheetDB(SHEETS.VAZOES, vd);
+              }
             }
+            const plural = _savedMachines.length > 1 ? ` para ${_savedMachines.length} máquinas` : '';
+            toast(`${_vazaoBombas} bombas cadastradas${plural}!`, 'success');
           }
-          return;
         }
 
         await refreshMachinesForProcessSelect();
