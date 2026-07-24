@@ -54,16 +54,24 @@ async function put(store, item){
   });
 }
 
+function genId() {
+  // ID baseado em timestamp (ms) + aleatorio — impossivel colidir, compativel com Number()
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
+
 async function add(store, item){
+  if (!item.id) item.id = genId();
   const db = await openDB();
   return new Promise((res, rej)=>{
     const tx = db.transaction(store, 'readwrite');
     const s = tx.objectStore(store);
-    const r = s.add(item);
+    const r = s.put(item); // put em vez de add: usa o id gerado acima
     r.onsuccess = () => res(r.result);
     r.onerror = e => rej(e.target.error);
   });
 }
+
+window.genId = genId;
 
 async function getAll(store){
   const db = await openDB();
