@@ -475,9 +475,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       return CLR_PALETTE[Math.abs(h) % CLR_PALETTE.length];
     };
 
-    // Agrupar linhas por máquina
+    // Separar linhas de manutenção dos dados reais
+    const _isMaintRow = r => Number(r.maintenance) === 1;
+    const _maintMachNames = new Set(g.rows.filter(_isMaintRow).map(r => r.machineName));
+    const _dataRows = g.rows.filter(r => !_isMaintRow(r));
+
+    // Agrupar linhas por máquina (data rows + stub para máquinas em manutenção)
     const byMachine = {};
-    for (const row of g.rows) {
+    for (const mn of _maintMachNames) { if (!byMachine[mn]) byMachine[mn] = []; }
+    for (const row of _dataRows) {
       if (!byMachine[row.machineName]) byMachine[row.machineName] = [];
       byMachine[row.machineName].push(row);
     }
@@ -528,9 +534,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? `<p class="maint-txt">EM MANUTENÇÃO</p>`
         : `<canvas id="${cid}" width="130" height="130"></canvas><div class="leg">${legend}</div>`;
 
+      const hasMaint = _maintMachNames.has(machineName);
+      const maintBanner = hasMaint ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;padding:4px 10px;font-size:9.5px;font-weight:700;color:#dc2626;margin-bottom:6px;display:inline-block">🔧 MÁQUINA EM MANUTENÇÃO NO PERÍODO</div>` : '';
       sectionsHtml += `
 <div class="sec">
   <div class="sec-hd blue">${esc(machineName.toUpperCase())}</div>
+  ${maintBanner}
   <div class="sec-body">
     <div class="tbl-area">
       <table>
@@ -544,9 +553,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 </div>`;
     });
 
-    // --- Total Geral ---
+    // --- Total Geral (exclui linhas de manutenção) ---
     const totByProc = {};
-    for (const row of g.rows) {
+    for (const row of _dataRows) {
       const k = row.procName;
       if (!totByProc[k]) totByProc[k] = { ex:0, ca:0, kg:0 };
       totByProc[k].ex += parseFloat(row.executed||0);
@@ -554,8 +563,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       totByProc[k].kg += parseFloat(row.total   ||0);
     }
     const totProcs  = Object.entries(totByProc);
-    const totExec   = g.rows.reduce((s,r) => s + parseFloat(r.executed||0), 0);
-    const totCanc   = g.rows.reduce((s,r) => s + parseFloat(r.canceled||0), 0);
+    const totExec   = _dataRows.reduce((s,r) => s + parseFloat(r.executed||0), 0);
+    const totCanc   = _dataRows.reduce((s,r) => s + parseFloat(r.canceled||0), 0);
     const totLav    = totExec; // total de lavagens = soma de execuções
 
     const geralRows = totProcs.map(([proc, d], i) => {
@@ -3124,7 +3133,10 @@ ${printScript}
           <div class="machine-block-header">
             <span>⚙️</span>
             <h4>${m.name} — ${m.capacity} kg</h4>
-            <span class="mach-total-badge" id="${machTotalId}" style="margin-left:auto;font-size:0.8rem;font-weight:700;color:var(--success-dark);background:#d1fae5;border:1px solid #6ee7b7;border-radius:20px;padding:2px 10px;display:none">0,00 kg</span>
+            <label style="margin-left:auto;display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#64748b;cursor:pointer;padding:0.15rem 0.55rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;white-space:nowrap;flex-shrink:0" title="Marcar que esta máquina esteve em manutenção no período">
+              <input type="checkbox" class="mach-maintenance" style="accent-color:#dc2626;cursor:pointer" />🔧 Manutenção
+            </label>
+            <span class="mach-total-badge" id="${machTotalId}" style="margin-left:0.5rem;font-size:0.8rem;font-weight:700;color:var(--success-dark);background:#d1fae5;border:1px solid #6ee7b7;border-radius:20px;padding:2px 10px;display:none">0,00 kg</span>
           </div>
           <div class="machine-block-body">
             <table class="proc-table">
@@ -3285,8 +3297,10 @@ ${printScript}
       const _priceKgSnap = parseFloat(_clientSnap?.price_kg || 0) || 0;
 
       const rows = [];
+      const _maintCheckedIds = new Set();
       document.querySelectorAll('.machine-block').forEach(block => {
         const machineId = Number(block.dataset.machineId);
+        if (block.querySelector('.mach-maintenance')?.checked) _maintCheckedIds.add(machineId);
         block.querySelectorAll('.process-row').forEach(row => {
           const procId   = Number(row.dataset.processId);
           const executed = parseFloat(row.querySelector('[name="executed"]').value || 0);
@@ -3298,6 +3312,12 @@ ${printScript}
           }
         });
       });
+      // Máquinas em manutenção sem dados: salvar um registro marcador
+      for (const mid of _maintCheckedIds) {
+        if (!rows.some(r => Number(r.machine_id) === mid)) {
+          rows.push({ client_id: clientId, machine_id: mid, process_id: 0, executed: 0, canceled: 0, capacity: 0, total: 0, maintenance: 1, date_start: dateStart, date_end: dateEnd, price_kg: _priceKgSnap || undefined, created_at: new Date().toISOString(), synced_at: new Date().toISOString() });
+        }
+      }
 
       if (!rows.length) return toast('Nenhum dado preenchido para salvar', 'warning');
       if (_saving) return;
@@ -7556,7 +7576,7 @@ ${recipeSections}
 
         const key = `${clientName}|||${period}`;
         if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
-        grouped[key].rows.push({ machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0 });
+        grouped[key].rows.push({ machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0, maintenance: Number(r.maintenance) || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
 
@@ -7616,7 +7636,12 @@ ${recipeSections}
           const safeKey = btoa(unescape(encodeURIComponent(key))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
           _recordGroups[safeKey] = g;
 
-        const rowsHtml = g.rows.map(row => `
+        const rowsHtml = g.rows.map(row => row.maintenance ? `
+          <tr style="background:#fef2f2;color:#dc2626;font-style:italic">
+            <td>${row.machineName}</td>
+            <td colspan="5">🔧 Em manutenção no período</td>
+          </tr>
+        ` : `
           <tr>
             <td>${row.machineName}</td>
             <td>${row.procName}</td>
