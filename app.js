@@ -487,7 +487,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!byMachine[row.machineName]) byMachine[row.machineName] = [];
       byMachine[row.machineName].push(row);
     }
-    const machineEntries = Object.entries(byMachine);
+    const machineEntries = Object.entries(byMachine)
+      .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { numeric: true, sensitivity: 'base' }));
 
     // Dias do período
     const [startStr, endStr] = (g.period || '').split(' → ');
@@ -3271,6 +3272,7 @@ ${printScript}
       if (!canDo('send_record')) return toast('Sem permissão para registrar produção.', 'error');
       const clientId  = Number(prodClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
+      if (_saving) return; // guard must come before any await to prevent double-click race
       const isEditMode = !!_editingRecord;
       const editGroup  = _editingRecord;
       const periodoOn  = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
@@ -3327,7 +3329,6 @@ ${printScript}
       }
 
       if (!rows.length) return toast('Nenhum dado preenchido para salvar', 'warning');
-      if (_saving) return;
 
       const btn        = document.getElementById('save-production');
       const progressEl = document.getElementById('save-progress');
@@ -3352,10 +3353,12 @@ ${printScript}
       try {
         // ── MODO EDIÇÃO: apaga registros antigos antes de reinserir ──
         if (isEditMode && editGroup) {
+          const _storedIds = new Set((editGroup._ids || []).map(Number));
           const oldRecs = (await dbGetAll_raw('records')).filter(r =>
-            Number(r.client_id) === editGroup.clientId &&
-            (r.date_start || '').slice(0, 10) === editGroup.dateStartRaw &&
-            (r.date_end   || '').slice(0, 10) === editGroup.dateEndRaw
+            _storedIds.has(Number(r.id)) ||
+            (Number(r.client_id) === editGroup.clientId &&
+             (r.date_start || '').slice(0, 10) === editGroup.dateStartRaw &&
+             (r.date_end   || '').slice(0, 10) === editGroup.dateEndRaw)
           );
           logLine('🗑️', `Removendo ${oldRecs.length} linha(s) antigas...`);
           for (const r of oldRecs) {
@@ -7582,7 +7585,8 @@ ${recipeSections}
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], _ids: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
+        grouped[key]._ids.push(r.id);
         grouped[key].rows.push({ machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0, maintenance: Number(r.maintenance) || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
