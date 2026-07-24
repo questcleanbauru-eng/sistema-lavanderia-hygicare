@@ -2410,6 +2410,7 @@ ${printScript}
           await updateSyncStatus();
           closePanel(formMachineCard, formMachine);
           document.getElementById('machine-rows').innerHTML = '';
+          setSaving(false, submitBtn);
 
           if (_savedMachines.length > 0) {
             const n = await _vazaoPrompt(_savedMachines.length);
