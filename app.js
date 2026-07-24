@@ -2615,11 +2615,12 @@ ${printScript}
 
     async function deleteMachine(id, el) {
       const records = await dbGetAll_raw('records');
-      const hasRecords = records.some(r => Number(r.machine_id) === Number(id));
-      const msg = hasRecords
-        ? '⚠️ Esta máquina possui registros de produção vinculados.\n\nExcluir mesmo assim? Os processos e registros vinculados serão removidos.'
-        : 'Excluir esta máquina? Os processos vinculados também serão removidos.';
-      if (!await confirmAction(msg, 'Excluir')) return;
+      const recCount = records.filter(r => Number(r.machine_id) === Number(id)).length;
+      if (recCount > 0) {
+        confirmAction(`🔒 Exclusão bloqueada\n\nEsta máquina possui ${recCount} registro(s) de produção e não pode ser excluída para preservar o histórico.\n\nVocê pode desativar os processos vinculados para ocultá-los.`, 'Entendido', false);
+        return;
+      }
+      if (!await confirmAction('Excluir esta máquina? Os processos vinculados também serão removidos.', 'Excluir')) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
       showOverlay('Excluindo máquina...');
       try {
@@ -2660,6 +2661,12 @@ ${printScript}
     }
 
     async function deleteProcess(id, el) {
+      const allRecords = await dbGetAll_raw('records');
+      const recCount = allRecords.filter(r => Number(r.process_id) === Number(id)).length;
+      if (recCount > 0) {
+        confirmAction(`🔒 Exclusão bloqueada\n\nEste processo possui ${recCount} registro(s) de produção e não pode ser excluído para preservar o histórico.\n\nUse a opção ⏸ Desativar para ocultá-lo sem perder os dados.`, 'Entendido', false);
+        return;
+      }
       if (!await confirmAction('Excluir este processo?', 'Excluir')) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
       showOverlay('Excluindo processo...');
