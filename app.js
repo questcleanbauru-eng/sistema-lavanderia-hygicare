@@ -7580,6 +7580,23 @@ ${recipeSections}
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
 
+      // Enriquecer cada grupo com linhas zero para processos sem dados no período
+      for (const g of Object.values(grouped)) {
+        const machIds = [...new Set(g.rows.map(r => r.machId).filter(Boolean))];
+        for (const machId of machIds) {
+          const machine = machines.find(m => Number(m.id) === machId);
+          if (!machine) continue;
+          const existingProcIds = new Set(g.rows.filter(r => r.machId === machId && !r.maintenance).map(r => r.procId));
+          const machProcs = processes.filter(p => Number(p.machine_id) === machId && p.active !== false);
+          for (const proc of machProcs) {
+            if (!existingProcIds.has(Number(proc.id))) {
+              const cap = (proc.capacity && proc.capacity > 0) ? proc.capacity : machine.capacity;
+              g.rows.push({ machineName: machine.name, procName: proc.name, procId: Number(proc.id), machId, executed: 0, canceled: 0, capacity: cap || 0, total: 0, maintenance: 0 });
+            }
+          }
+        }
+      }
+
       // Atualizar badge com número de grupos (não registros brutos)
       const countEl = document.getElementById('records-count');
       if (countEl) countEl.textContent = Object.keys(grouped).length;
@@ -7636,7 +7653,7 @@ ${recipeSections}
           const safeKey = btoa(unescape(encodeURIComponent(key))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
           _recordGroups[safeKey] = g;
 
-        const rowsHtml = g.rows.map(row => row.maintenance ? `
+        const rowsHtml = g.rows.filter(r => r.maintenance || (r.executed > 0 || r.canceled > 0)).map(row => row.maintenance ? `
           <tr style="background:#fef2f2;color:#dc2626;font-style:italic">
             <td>${row.machineName}</td>
             <td colspan="5">🔧 Em manutenção no período</td>
