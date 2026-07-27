@@ -3331,12 +3331,16 @@ ${printScript}
         const _allRecs = await dbGetAll_raw('records');
         _dupRecs = _allRecs.filter(r =>
           Number(r.client_id) === clientId &&
-          (r.date_start || '').slice(0, 10) === dateStart
+          (r.date_start || '').slice(0, 10) === dateStart &&
+          (r.date_end   || '').slice(0, 10) === dateEnd
         );
         if (_dupRecs.length > 0) {
           const _clientName = _clientSnap?.name || `#${clientId}`;
+          const _periodLabel = dateEnd && dateEnd !== dateStart
+            ? `${fmtDate(dateStart)} → ${fmtDate(dateEnd)}`
+            : fmtDate(dateStart);
           const _ok = await confirmAction(
-            `Já existe um relatório para ${_clientName} em ${fmtDate(dateStart)}.\n\nDeseja substituir os dados existentes?`,
+            `Já existe um relatório para ${_clientName} em ${_periodLabel}.\n\nDeseja substituir os dados existentes?`,
             '🔄 Substituir',
             true
           );
