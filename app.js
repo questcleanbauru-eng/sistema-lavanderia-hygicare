@@ -1756,20 +1756,18 @@ ${printScript}
       toast('Configurações de e-mail salvas!', 'success');
     });
 
-    // ---- Configurar disparo mensal no GAS ----
-    document.getElementById('btn-setup-trigger')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-setup-trigger');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Configurando...'; }
-      const res = await callGAS('setupMonthlyTriggers', null, {});
+    // ---- Configurar disparo mensal — instrução manual (ScriptApp não funciona via web) ----
+    document.getElementById('btn-setup-trigger')?.addEventListener('click', () => {
       const msg = document.getElementById('email-config-msg');
-      if (res !== false) {
-        if (msg) { msg.textContent = '✅ Disparo mensal ativado! (Dia 1 de cada mês às 8h)'; setTimeout(() => msg.textContent = '', 4000); }
-        toast('Disparo mensal configurado!', 'success');
-      } else {
-        if (msg) { msg.textContent = '⚠️ Erro ao configurar. Execute setupMonthlyTriggers() no editor do Apps Script.'; setTimeout(() => msg.textContent = '', 6000); }
-        toast('Falha — execute manualmente no GAS', 'warning');
+      if (msg) {
+        msg.innerHTML =
+          '⏰ <strong>Passo a passo para ativar o disparo mensal:</strong><br>'
+        + '1. Abra o Apps Script → menu <strong>Acionadores</strong> (ícone de relógio ⏰ na barra lateral)<br>'
+        + '2. Clique em <strong>+ Adicionar acionador</strong><br>'
+        + '3. Função: <code>runMonthlyTrigger</code> · Tipo: <strong>Baseado em tempo → Temporizador mensal → Dia 1 → 8h–9h</strong><br>'
+        + '4. Salvar → pronto, disparará todo dia 1 às 8h automaticamente.';
+        msg.style.color = '#1d4ed8';
       }
-      if (btn) { btn.disabled = false; btn.textContent = '⏰ Configurar Disparo'; }
     });
 
     // Aplicar permissões de acesso nos itens de navegação
