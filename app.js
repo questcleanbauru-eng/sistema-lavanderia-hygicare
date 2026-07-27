@@ -1056,6 +1056,12 @@ ${printScript}
       if (emailMisEl) emailMisEl.checked = localStorage.getItem('email_monthly_missing')     === 'true';
       if (emailVzEl)  emailVzEl.checked  = localStorage.getItem('email_monthly_vazao')       === 'true';
       set('cfg-email-tecnico', localStorage.getItem('email_tecnico') || '');
+      const opSelEl  = document.getElementById('cfg-email-op-sellers');
+      const misSelEl = document.getElementById('cfg-email-missing-sellers');
+      const vzClEl   = document.getElementById('cfg-email-vazao-clients');
+      if (opSelEl)  opSelEl.checked  = localStorage.getItem('email_op_sellers')      === 'true';
+      if (misSelEl) misSelEl.checked = localStorage.getItem('email_missing_sellers') === 'true';
+      if (vzClEl)   vzClEl.checked   = localStorage.getItem('email_vazao_clients')   === 'true';
 
       // ID do script no card de sistema
       const gasIdEl = document.getElementById('admin-gas-id');
@@ -1736,25 +1742,57 @@ ${printScript}
 
     // ---- Salvar configurações de e-mails automáticos ----
     document.getElementById('btn-save-email-config')?.addEventListener('click', () => {
-      const op  = document.getElementById('cfg-email-operational')?.checked ?? false;
-      const mis = document.getElementById('cfg-email-missing')?.checked     ?? false;
-      const vz  = document.getElementById('cfg-email-vazao')?.checked       ?? false;
-      const tec = document.getElementById('cfg-email-tecnico')?.value.trim() || '';
+      const op     = document.getElementById('cfg-email-operational')?.checked     ?? false;
+      const mis    = document.getElementById('cfg-email-missing')?.checked         ?? false;
+      const vz     = document.getElementById('cfg-email-vazao')?.checked           ?? false;
+      const tec    = document.getElementById('cfg-email-tecnico')?.value.trim()    || '';
+      const opSel  = document.getElementById('cfg-email-op-sellers')?.checked      ?? false;
+      const misSel = document.getElementById('cfg-email-missing-sellers')?.checked ?? false;
+      const vzCl   = document.getElementById('cfg-email-vazao-clients')?.checked   ?? false;
 
       localStorage.setItem('email_monthly_operational', String(op));
       localStorage.setItem('email_monthly_missing',     String(mis));
       localStorage.setItem('email_monthly_vazao',       String(vz));
+      localStorage.setItem('email_op_sellers',          String(opSel));
+      localStorage.setItem('email_missing_sellers',     String(misSel));
+      localStorage.setItem('email_vazao_clients',       String(vzCl));
       if (tec) localStorage.setItem('email_tecnico', tec);
 
-      callGAS('upsert', 'Config', { chave: 'email_monthly_operational', valor: String(op)  });
-      callGAS('upsert', 'Config', { chave: 'email_monthly_missing',     valor: String(mis) });
-      callGAS('upsert', 'Config', { chave: 'email_monthly_vazao',       valor: String(vz)  });
+      callGAS('upsert', 'Config', { chave: 'email_monthly_operational', valor: String(op)     });
+      callGAS('upsert', 'Config', { chave: 'email_monthly_missing',     valor: String(mis)    });
+      callGAS('upsert', 'Config', { chave: 'email_monthly_vazao',       valor: String(vz)     });
+      callGAS('upsert', 'Config', { chave: 'email_op_sellers',          valor: String(opSel)  });
+      callGAS('upsert', 'Config', { chave: 'email_missing_sellers',     valor: String(misSel) });
+      callGAS('upsert', 'Config', { chave: 'email_vazao_clients',       valor: String(vzCl)   });
       if (tec) callGAS('upsert', 'Config', { chave: 'email_tecnico', valor: tec });
 
       const msg = document.getElementById('email-config-msg');
       if (msg) { msg.textContent = '✅ Configurações de e-mail salvas!'; setTimeout(() => msg.textContent = '', 3000); }
       toast('Configurações de e-mail salvas!', 'success');
     });
+
+    // ---- Disparar e-mails agora ----
+    async function dispararEmailAgora(action, btnId, label) {
+      const btn = document.getElementById(btnId);
+      const msg = document.getElementById('email-config-msg');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+      if (msg) msg.textContent = '';
+      try {
+        await callGAS(action, null, {});
+        toast(`${label} enviado com sucesso!`, 'success');
+        if (msg) { msg.textContent = `✅ ${label} enviado!`; setTimeout(() => msg.textContent = '', 4000); }
+      } catch(e) {
+        toast(`Erro ao enviar ${label}`, 'error');
+        if (msg) { msg.textContent = `❌ Erro: ${e.message}`; setTimeout(() => msg.textContent = '', 6000); }
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '🚀 Disparar Agora'; }
+    }
+    document.getElementById('btn-send-operational-now')?.addEventListener('click', () =>
+      dispararEmailAgora('sendOperationalNow', 'btn-send-operational-now', 'Relatório Operacional'));
+    document.getElementById('btn-send-missing-now')?.addEventListener('click', () =>
+      dispararEmailAgora('sendMissingNow', 'btn-send-missing-now', 'Clientes sem Relatório'));
+    document.getElementById('btn-send-vazao-now')?.addEventListener('click', () =>
+      dispararEmailAgora('sendVazaoNow', 'btn-send-vazao-now', 'Relatório de Vazão'));
 
     // ---- Configurar disparo mensal — instrução manual (ScriptApp não funciona via web) ----
     document.getElementById('btn-setup-trigger')?.addEventListener('click', () => {
@@ -2380,7 +2418,8 @@ ${printScript}
         const managed = ['hygicare_proc_groups', 'hygicare_note_types', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
           'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text',
           'hygicare_machine_order', 'hygicare_process_order',
-          'email_monthly_operational', 'email_monthly_missing', 'email_monthly_vazao', 'email_tecnico'];
+          'email_monthly_operational', 'email_monthly_missing', 'email_monthly_vazao', 'email_tecnico',
+          'email_op_sellers', 'email_missing_sellers', 'email_vazao_clients'];
         rows.forEach(row => {
           const key = String(row.chave);
           if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {

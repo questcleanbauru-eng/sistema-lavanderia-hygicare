@@ -504,6 +504,20 @@ function doPost(e) {
       catch(e) { return respondError('Erro ao configurar gatilho: ' + e.message); }
     }
 
+    // ── DISPARAR E-MAILS IMEDIATAMENTE (mês atual) ───────
+    if (action === 'sendOperationalNow') {
+      try { sendMonthlyOperationalEmail(true); return respond({ ok: true }); }
+      catch(e) { return respondError(e.message); }
+    }
+    if (action === 'sendMissingNow') {
+      try { sendMissingClientsEmail(true); return respond({ ok: true }); }
+      catch(e) { return respondError(e.message); }
+    }
+    if (action === 'sendVazaoNow') {
+      try { sendMonthlyVazaoEmail(true); return respond({ ok: true }); }
+      catch(e) { return respondError(e.message); }
+    }
+
     if (!sheetName) return respondError('Campo "sheet" obrigatório');
 
     const sheet = getOrCreateSheet(sheetName);
@@ -1190,13 +1204,16 @@ function respondSendProductionReportBody(body) {
 // ============================================================
 // RELATÓRIO OPERACIONAL MENSAL — envia no 1° do mês
 // ============================================================
-function sendMonthlyOperationalEmail() {
+function sendMonthlyOperationalEmail(useCurrentMonth) {
   try {
-    var now       = new Date();
-    var prev      = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    var year      = prev.getFullYear();
-    var month     = prev.getMonth() + 1;
-    var monthLabel = Utilities.formatDate(prev, Session.getScriptTimeZone(), 'MM/yyyy');
+    var now        = new Date();
+    var ref        = useCurrentMonth
+                       ? new Date(now.getFullYear(), now.getMonth(), 1)
+                       : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var year       = ref.getFullYear();
+    var month      = ref.getMonth() + 1;
+    var monthLabel = Utilities.formatDate(ref, Session.getScriptTimeZone(), 'MM/yyyy');
+    var sendToSellers = getConfig('email_op_sellers') === 'true';
 
     var clients = readSheet('Clientes');
     var records = readSheet('Registros');
@@ -1229,23 +1246,25 @@ function sendMonthlyOperationalEmail() {
         htmlBody: _buildOperationalEmailHtml(monthLabel, totalKg, ranking, inactive) });
     }
 
-    var sellerMap = {};
-    clients.forEach(function(c) {
-      if (!c.email_seller) return;
-      if (!sellerMap[c.email_seller]) sellerMap[c.email_seller] = [];
-      sellerMap[c.email_seller].push(c);
-    });
-    Object.keys(sellerMap).forEach(function(email) {
-      if (email === adminEmail) return;
-      var sc  = sellerMap[email];
-      var ids = sc.map(function(c) { return String(c.id); });
-      var sr  = ranking.filter(function(r) { return ids.indexOf(r.id) >= 0; });
-      var si  = inactive.filter(function(c) { return ids.indexOf(String(c.id)) >= 0; });
-      var sk  = sr.reduce(function(s, r) { return s + r.kg; }, 0);
-      _sendEmail({ to: email, name: 'Hygicare Sistema',
-        subject: '[Hygicare] Seu Relatório Operacional — ' + monthLabel,
-        htmlBody: _buildOperationalEmailHtml(monthLabel, sk, sr, si) });
-    });
+    if (sendToSellers) {
+      var sellerMap = {};
+      clients.forEach(function(c) {
+        if (!c.email_seller) return;
+        if (!sellerMap[c.email_seller]) sellerMap[c.email_seller] = [];
+        sellerMap[c.email_seller].push(c);
+      });
+      Object.keys(sellerMap).forEach(function(email) {
+        if (email === adminEmail) return;
+        var sc  = sellerMap[email];
+        var ids = sc.map(function(c) { return String(c.id); });
+        var sr  = ranking.filter(function(r) { return ids.indexOf(r.id) >= 0; });
+        var si  = inactive.filter(function(c) { return ids.indexOf(String(c.id)) >= 0; });
+        var sk  = sr.reduce(function(s, r) { return s + r.kg; }, 0);
+        _sendEmail({ to: email, name: 'Hygicare Sistema',
+          subject: '[Hygicare] Seu Relatório Operacional — ' + monthLabel,
+          htmlBody: _buildOperationalEmailHtml(monthLabel, sk, sr, si) });
+      });
+    }
     Logger.log('sendMonthlyOperationalEmail: ok');
   } catch(e) { Logger.log('sendMonthlyOperationalEmail error: ' + e.message); }
 }
@@ -1253,13 +1272,16 @@ function sendMonthlyOperationalEmail() {
 // ============================================================
 // CLIENTES SEM RELATÓRIO — envia no 1° do mês
 // ============================================================
-function sendMissingClientsEmail() {
+function sendMissingClientsEmail(useCurrentMonth) {
   try {
-    var now       = new Date();
-    var prev      = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    var year      = prev.getFullYear();
-    var month     = prev.getMonth() + 1;
-    var monthLabel = Utilities.formatDate(prev, Session.getScriptTimeZone(), 'MM/yyyy');
+    var now        = new Date();
+    var ref        = useCurrentMonth
+                       ? new Date(now.getFullYear(), now.getMonth(), 1)
+                       : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var year       = ref.getFullYear();
+    var month      = ref.getMonth() + 1;
+    var monthLabel = Utilities.formatDate(ref, Session.getScriptTimeZone(), 'MM/yyyy');
+    var sendToSellers = getConfig('email_missing_sellers') === 'true';
 
     var clients = readSheet('Clientes');
     var records = readSheet('Registros');
@@ -1299,12 +1321,14 @@ function sendMissingClientsEmail() {
         subject: '[Hygicare] Clientes sem relatório — ' + monthLabel,
         htmlBody: _buildMissingClientsEmailHtml(monthLabel, allGroups) });
     }
-    allGroups.forEach(function(sg) {
-      if (!sg.email || sg.email === adminEmail) return;
-      _sendEmail({ to: sg.email, name: 'Hygicare Sistema',
-        subject: '[Hygicare] Seus clientes sem relatório — ' + monthLabel,
-        htmlBody: _buildMissingClientsEmailHtml(monthLabel, [sg]) });
-    });
+    if (sendToSellers) {
+      allGroups.forEach(function(sg) {
+        if (!sg.email || sg.email === adminEmail) return;
+        _sendEmail({ to: sg.email, name: 'Hygicare Sistema',
+          subject: '[Hygicare] Seus clientes sem relatório — ' + monthLabel,
+          htmlBody: _buildMissingClientsEmailHtml(monthLabel, [sg]) });
+      });
+    }
     Logger.log('sendMissingClientsEmail: ok, ' + inactive.length + ' inativo(s)');
   } catch(e) { Logger.log('sendMissingClientsEmail error: ' + e.message); }
 }
@@ -1312,13 +1336,16 @@ function sendMissingClientsEmail() {
 // ============================================================
 // RELATÓRIO DE VAZÃO MENSAL — envia no 1° do mês
 // ============================================================
-function sendMonthlyVazaoEmail() {
+function sendMonthlyVazaoEmail(useCurrentMonth) {
   try {
-    var now       = new Date();
-    var prev      = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    var year      = prev.getFullYear();
-    var month     = prev.getMonth() + 1;
-    var monthLabel = Utilities.formatDate(prev, Session.getScriptTimeZone(), 'MM/yyyy');
+    var now        = new Date();
+    var ref        = useCurrentMonth
+                       ? new Date(now.getFullYear(), now.getMonth(), 1)
+                       : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var year       = ref.getFullYear();
+    var month      = ref.getMonth() + 1;
+    var monthLabel = Utilities.formatDate(ref, Session.getScriptTimeZone(), 'MM/yyyy');
+    var sendToClients = getConfig('email_vazao_clients') === 'true';
 
     var clients       = readSheet('Clientes');
     var vazaoRegs     = readSheet('VazaoRegistros');
@@ -1368,14 +1395,10 @@ function sendMonthlyVazaoEmail() {
     var clientMap = {};
     clients.forEach(function(c) { clientMap[String(c.id)] = c; });
 
+    var adminEmail = getConfig('notification_email');
     Object.keys(byClient).forEach(function(cid) {
       var client = clientMap[cid];
       if (!client) return;
-      var clientEmail = String(client.send_client) === 'true' ? (client.email_client || '') : '';
-      var toArr = [];
-      if (clientEmail) toArr.push(clientEmail);
-      if (technicoEmail && toArr.indexOf(technicoEmail) < 0) toArr.push(technicoEmail);
-      if (toArr.length === 0) return;
 
       var machineGroups = Object.keys(byClient[cid]).map(function(mid) {
         return {
@@ -1384,9 +1407,20 @@ function sendMonthlyVazaoEmail() {
         };
       }).sort(function(a, b) { return a.machineName.localeCompare(b.machineName, 'pt-BR', { numeric: true, sensitivity: 'base' }); });
 
-      _sendEmail({ to: toArr.join(','), name: 'Hygicare Sistema',
-        subject: '[Hygicare] Relatório de Vazão — ' + client.name + ' · ' + monthLabel,
-        htmlBody: _buildVazaoEmailHtml(monthLabel, client.name, machineGroups) });
+      var subject  = '[Hygicare] Relatório de Vazão — ' + client.name + ' · ' + monthLabel;
+      var htmlBody = _buildVazaoEmailHtml(monthLabel, client.name, machineGroups);
+
+      if (sendToClients) {
+        var clientEmail = String(client.send_client) === 'true' ? (client.email_client || '') : '';
+        var toArr = [];
+        if (clientEmail) toArr.push(clientEmail);
+        if (technicoEmail && toArr.indexOf(technicoEmail) < 0) toArr.push(technicoEmail);
+        if (toArr.length === 0) return;
+        _sendEmail({ to: toArr.join(','), name: 'Hygicare Sistema', subject: subject, htmlBody: htmlBody });
+      } else {
+        if (!adminEmail) return;
+        MailApp.sendEmail({ to: adminEmail, name: 'Hygicare Sistema', subject: subject, htmlBody: htmlBody });
+      }
     });
     Logger.log('sendMonthlyVazaoEmail: ok, clientes=' + Object.keys(byClient).length);
   } catch(e) { Logger.log('sendMonthlyVazaoEmail error: ' + e.message); }

@@ -821,39 +821,69 @@
           <!-- Card E-mails Automáticos -->
           <div class="card" style="margin-top:1.2rem">
             <h3 style="margin:0 0 0.25rem;font-size:1.05rem;color:#1e40af">📧 E-mails Automáticos</h3>
-            <p style="font-size:0.82rem;color:var(--muted);margin:0 0 1rem">Disparos mensais no dia 1 de cada mês. Após salvar, clique em "Configurar Disparo" para ativar o gatilho no Apps Script.</p>
+            <p style="font-size:0.82rem;color:var(--muted);margin:0 0 1rem">Disparos mensais no dia 1. "Disparar Agora" envia imediatamente com dados do mês atual.</p>
 
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border)">
-              <div>
-                <div style="font-size:0.9rem;font-weight:600">📊 Relatório Operacional Mensal</div>
-                <div style="font-size:0.75rem;color:var(--muted)">Admin recebe todos os clientes · Cada vendedor recebe os seus</div>
+            <!-- Relatório Operacional -->
+            <div style="padding:0.65rem 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <div style="font-size:0.9rem;font-weight:600">📊 Relatório Operacional Mensal</div>
+                  <div style="font-size:0.75rem;color:var(--muted)">Resumo de produção por cliente com ranking e inativos</div>
+                </div>
+                <label class="maint-toggle">
+                  <input type="checkbox" id="cfg-email-operational">
+                  <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+                </label>
               </div>
-              <label class="maint-toggle">
-                <input type="checkbox" id="cfg-email-operational">
-                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
-              </label>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.45rem;padding-left:0.1rem">
+                <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="cfg-email-op-sellers" style="width:14px;height:14px;accent-color:#2563eb">
+                  Incluir vendedores
+                </label>
+                <button id="btn-send-operational-now" class="btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.6rem">🚀 Disparar Agora</button>
+              </div>
             </div>
 
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border)">
-              <div>
-                <div style="font-size:0.9rem;font-weight:600">⚠️ Clientes sem Relatório</div>
-                <div style="font-size:0.75rem;color:var(--muted)">Separado por vendedor · Quem está em dia e quem não está</div>
+            <!-- Clientes sem Relatório -->
+            <div style="padding:0.65rem 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <div style="font-size:0.9rem;font-weight:600">⚠️ Clientes sem Relatório</div>
+                  <div style="font-size:0.75rem;color:var(--muted)">Lista de clientes sem registro no mês, agrupados por vendedor</div>
+                </div>
+                <label class="maint-toggle">
+                  <input type="checkbox" id="cfg-email-missing">
+                  <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+                </label>
               </div>
-              <label class="maint-toggle">
-                <input type="checkbox" id="cfg-email-missing">
-                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
-              </label>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.45rem;padding-left:0.1rem">
+                <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="cfg-email-missing-sellers" style="width:14px;height:14px;accent-color:#2563eb">
+                  Incluir vendedores
+                </label>
+                <button id="btn-send-missing-now" class="btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.6rem">🚀 Disparar Agora</button>
+              </div>
             </div>
 
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border)">
-              <div>
-                <div style="font-size:0.9rem;font-weight:600">💧 Relatório de Vazão</div>
-                <div style="font-size:0.75rem;color:var(--muted)">Enviado ao e-mail do cliente + técnico cadastrado abaixo</div>
+            <!-- Relatório de Vazão -->
+            <div style="padding:0.65rem 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <div style="font-size:0.9rem;font-weight:600">💧 Relatório de Vazão</div>
+                  <div style="font-size:0.75rem;color:var(--muted)">Leituras de vazão com comparativo histórico por máquina</div>
+                </div>
+                <label class="maint-toggle">
+                  <input type="checkbox" id="cfg-email-vazao">
+                  <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+                </label>
               </div>
-              <label class="maint-toggle">
-                <input type="checkbox" id="cfg-email-vazao">
-                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
-              </label>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.45rem;padding-left:0.1rem">
+                <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="cfg-email-vazao-clients" style="width:14px;height:14px;accent-color:#2563eb">
+                  Incluir clientes e técnico
+                </label>
+                <button id="btn-send-vazao-now" class="btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.6rem">🚀 Disparar Agora</button>
+              </div>
             </div>
 
             <div class="form-row" style="margin-top:0.85rem">
