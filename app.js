@@ -2739,7 +2739,8 @@ ${printScript}
         </div>`;
     }
 
-    async function renderClientsList(filter = '') {
+    async function renderClientsList(filter) {
+      if (filter === undefined) filter = document.getElementById('search-clients')?.value || '';
       document.getElementById('btn-new-client')?.classList.toggle('hidden', !canDo('create_client'));
       let clients = await getAll('clients');
       const countEl = document.getElementById('clients-count');
@@ -2803,7 +2804,9 @@ ${printScript}
     // =====================================================
     // RENDER — MÁQUINAS
     // =====================================================
-    async function renderMachinesList(filter = '', clientFilter = 0) {
+    async function renderMachinesList(filter, clientFilter) {
+      if (filter === undefined)       filter       = document.getElementById('search-machines')?.value || '';
+      if (clientFilter === undefined) clientFilter = Number(document.getElementById('filter-machine-client')?.value || 0);
       document.getElementById('btn-new-machine')?.classList.toggle('hidden', !canDo('create_machine'));
       let machines = await getAll('machines');
       const clients  = await getAll('clients');
@@ -2921,7 +2924,9 @@ ${printScript}
     // =====================================================
     // RENDER — PROCESSOS
     // =====================================================
-    async function renderProcessesList(filter = '', machineFilter = 0) {
+    async function renderProcessesList(filter, machineFilter) {
+      if (filter === undefined)        filter        = document.getElementById('search-processes')?.value || '';
+      if (machineFilter === undefined) machineFilter = Number(document.getElementById('filter-process-machine')?.value || 0);
       document.getElementById('btn-new-process')?.classList.toggle('hidden', !canDo('create_process'));
       await refreshMachinesForProcessSelect();
       let processes = await getAll('processes');
@@ -7527,7 +7532,8 @@ ${recipeSections}
     // =====================================================
     // RENDER — HISTÓRICO DE REGISTROS
     // =====================================================
-    async function renderRecordsList(filters = {}) {
+    async function renderRecordsList(filters) {
+      if (filters === undefined) filters = getReportFilters();
       const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '' } =
         typeof filters === 'string' ? { text: filters } : filters;
 
@@ -9126,7 +9132,8 @@ ${inactiveSec}
     // =====================================================
     // GERENCIAR USUARIOS (admin)
     // =====================================================
-    async function renderUsersList(filter = '') {
+    async function renderUsersList(filter) {
+      if (filter === undefined) filter = document.getElementById('search-users')?.value || '';
       const users = await dbGetAll_raw('users');
       const countEl = document.getElementById('users-count');
       if (countEl) countEl.textContent = users.length;
@@ -9506,6 +9513,28 @@ ${inactiveSec}
         doRefresh('all', true);           // resto dos dados em background
       }, 400);
     }
+
+    // ── Persistência de filtros entre navegações ──────────────────────────────
+    // Salva o valor de cada campo de filtro no localStorage e restaura ao iniciar.
+    // As render functions já leem do DOM, então basta ter o valor restaurado.
+    const _FILTER_IDS = [
+      'search-clients',
+      'search-machines',        'filter-machine-client',
+      'search-processes',       'filter-process-machine',
+      'search-records',         'filter-month-year',     'filter-seller-records',
+      'search-users',
+      'recipe-filter-client',   'recipe-search',
+      'note-filter-client',     'note-filter-type',
+    ];
+    _FILTER_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const saved = localStorage.getItem(`hc_f_${id}`);
+      if (saved !== null) el.value = saved;
+      const _persist = () => localStorage.setItem(`hc_f_${id}`, el.value);
+      el.addEventListener('input',  _persist);
+      el.addEventListener('change', _persist);
+    });
 
   } // fim initApp()
 
