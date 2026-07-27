@@ -3248,17 +3248,12 @@ ${printScript}
         prodClientSelect.disabled = false;
         if (endField) endField.style.display = periodoOn ? '' : 'none';
 
-        const today = new Date().toISOString().slice(0, 10);
-        if (periodoOn) {
-          if (startEl && !startEl.value) startEl.value = today.slice(0, 7) + '-01';
-          if (endEl   && !endEl.value)   endEl.value   = today;
-        } else {
-          if (startEl && !startEl.value) startEl.value = today;
-          if (endEl) endEl.value = '';
-        }
-
-        const clientId = Number(prodClientSelect.value);
-        if (clientId) await renderMachinesAndProcesses(clientId);
+        // Sempre limpar — cliente e data são obrigatórios e não devem vir pré-preenchidos
+        prodClientSelect.value = '';
+        if (startEl) startEl.value = '';
+        if (endEl)   endEl.value   = '';
+        const machListEl = document.getElementById('machines-list');
+        if (machListEl) machListEl.innerHTML = '';
       }
     }
 
@@ -3330,6 +3325,25 @@ ${printScript}
 
       if (!rows.length) return toast('Nenhum dado preenchido para salvar', 'warning');
 
+      // Verificar relatório duplicado (apenas em modo novo)
+      let _dupRecs = [];
+      if (!isEditMode) {
+        const _allRecs = await dbGetAll_raw('records');
+        _dupRecs = _allRecs.filter(r =>
+          Number(r.client_id) === clientId &&
+          (r.date_start || '').slice(0, 10) === dateStart
+        );
+        if (_dupRecs.length > 0) {
+          const _clientName = _clientSnap?.name || `#${clientId}`;
+          const _ok = await confirmAction(
+            `Já existe um relatório para ${_clientName} em ${fmtDate(dateStart)}.\n\nDeseja substituir os dados existentes?`,
+            '🔄 Substituir',
+            true
+          );
+          if (!_ok) return;
+        }
+      }
+
       const btn        = document.getElementById('save-production');
       const progressEl = document.getElementById('save-progress');
       const logEl      = document.getElementById('save-progress-log');
@@ -3362,6 +3376,14 @@ ${printScript}
           );
           logLine('🗑️', `Removendo ${oldRecs.length} linha(s) antigas...`);
           for (const r of oldRecs) {
+            await dbDelete('records', r.id);
+            await deleteSheetDB(SHEETS.RECORDS, r.id);
+          }
+        }
+        // ── SUBSTITUIÇÃO: apaga duplicatas confirmadas pelo usuário ──
+        if (!isEditMode && _dupRecs.length > 0) {
+          logLine('🗑️', `Substituindo ${_dupRecs.length} registro(s) existentes...`);
+          for (const r of _dupRecs) {
             await dbDelete('records', r.id);
             await deleteSheetDB(SHEETS.RECORDS, r.id);
           }
@@ -3599,10 +3621,6 @@ ${printScript}
           sel.appendChild(o);
         });
         if (val) { sel.value = val; }
-        else if (sel === prodClientSelect && lastClientId) {
-          sel.value = lastClientId;
-          if (sel.value) sel.dispatchEvent(new Event('change'));
-        }
       });
       _makeSearchable(machineClientSelect);
       _makeSearchable(prodClientSelect);
