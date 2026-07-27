@@ -1048,6 +1048,15 @@ ${printScript}
       const periodoCb = document.getElementById('cfg-periodo-habilitado');
       if (periodoCb) periodoCb.checked = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
 
+      // E-mails automáticos
+      const emailOpEl  = document.getElementById('cfg-email-operational');
+      const emailMisEl = document.getElementById('cfg-email-missing');
+      const emailVzEl  = document.getElementById('cfg-email-vazao');
+      if (emailOpEl)  emailOpEl.checked  = localStorage.getItem('email_monthly_operational') === 'true';
+      if (emailMisEl) emailMisEl.checked = localStorage.getItem('email_monthly_missing')     === 'true';
+      if (emailVzEl)  emailVzEl.checked  = localStorage.getItem('email_monthly_vazao')       === 'true';
+      set('cfg-email-tecnico', localStorage.getItem('email_tecnico') || '');
+
       // ID do script no card de sistema
       const gasIdEl = document.getElementById('admin-gas-id');
       if (gasIdEl) {
@@ -1692,6 +1701,77 @@ ${printScript}
       if (_shareCtx) window._printGroup(_shareCtx.safeKey);
     });
 
+    // ---- Enviar relatório no corpo do e-mail (via GAS, sem PDF) ----
+    document.getElementById('share-btn-email-body')?.addEventListener('click', async () => {
+      const ctx = _shareCtx;
+      if (!ctx) return;
+      const { g } = ctx;
+      const btn      = document.getElementById('share-btn-email-body');
+      const statusEl = document.getElementById('share-status');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+      try {
+        const senderEmail = currentUser?.email || '';
+        const res = await callGAS('sendProductionReportBody', null, {
+          clientName:  g.clientName,
+          period:      g.period,
+          totalKg:     g.totalKg,
+          rows:        g.rows || [],
+          senderName:  currentUser?.name || 'Usuário',
+          senderEmail: senderEmail,
+        });
+        if (res !== false) {
+          const to = res?.to || 'destinatário';
+          if (statusEl) statusEl.textContent = `✅ E-mail enviado para ${to}`;
+          toast('E-mail enviado com sucesso!', 'success');
+        } else {
+          if (statusEl) statusEl.textContent = '❌ Erro ao enviar — verifique a URL do GAS e o e-mail admin';
+          toast('Erro ao enviar e-mail', 'error');
+        }
+      } catch(e) {
+        if (statusEl) statusEl.textContent = '❌ Erro ao enviar';
+        toast('Erro ao enviar e-mail', 'error');
+      }
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span style="font-size:1.3rem">📧</span> Enviar no E-mail'; }
+    });
+
+    // ---- Salvar configurações de e-mails automáticos ----
+    document.getElementById('btn-save-email-config')?.addEventListener('click', () => {
+      const op  = document.getElementById('cfg-email-operational')?.checked ?? false;
+      const mis = document.getElementById('cfg-email-missing')?.checked     ?? false;
+      const vz  = document.getElementById('cfg-email-vazao')?.checked       ?? false;
+      const tec = document.getElementById('cfg-email-tecnico')?.value.trim() || '';
+
+      localStorage.setItem('email_monthly_operational', String(op));
+      localStorage.setItem('email_monthly_missing',     String(mis));
+      localStorage.setItem('email_monthly_vazao',       String(vz));
+      if (tec) localStorage.setItem('email_tecnico', tec);
+
+      callGAS('upsert', 'Config', { chave: 'email_monthly_operational', valor: String(op)  });
+      callGAS('upsert', 'Config', { chave: 'email_monthly_missing',     valor: String(mis) });
+      callGAS('upsert', 'Config', { chave: 'email_monthly_vazao',       valor: String(vz)  });
+      if (tec) callGAS('upsert', 'Config', { chave: 'email_tecnico', valor: tec });
+
+      const msg = document.getElementById('email-config-msg');
+      if (msg) { msg.textContent = '✅ Configurações de e-mail salvas!'; setTimeout(() => msg.textContent = '', 3000); }
+      toast('Configurações de e-mail salvas!', 'success');
+    });
+
+    // ---- Configurar disparo mensal no GAS ----
+    document.getElementById('btn-setup-trigger')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-setup-trigger');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Configurando...'; }
+      const res = await callGAS('setupMonthlyTriggers', null, {});
+      const msg = document.getElementById('email-config-msg');
+      if (res !== false) {
+        if (msg) { msg.textContent = '✅ Disparo mensal ativado! (Dia 1 de cada mês às 8h)'; setTimeout(() => msg.textContent = '', 4000); }
+        toast('Disparo mensal configurado!', 'success');
+      } else {
+        if (msg) { msg.textContent = '⚠️ Erro ao configurar. Execute setupMonthlyTriggers() no editor do Apps Script.'; setTimeout(() => msg.textContent = '', 6000); }
+        toast('Falha — execute manualmente no GAS', 'warning');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '⏰ Configurar Disparo'; }
+    });
+
     // Aplicar permissões de acesso nos itens de navegação
     // Pode ser chamada múltiplas vezes (ex: após sync atualizar permissões)
     function applyNavPermissions() {
@@ -2301,7 +2381,8 @@ ${printScript}
         const rows = res.data || [];
         const managed = ['hygicare_proc_groups', 'hygicare_note_types', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
           'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text',
-          'hygicare_machine_order', 'hygicare_process_order'];
+          'hygicare_machine_order', 'hygicare_process_order',
+          'email_monthly_operational', 'email_monthly_missing', 'email_monthly_vazao', 'email_tecnico'];
         rows.forEach(row => {
           const key = String(row.chave);
           if (managed.includes(key) && row.valor !== undefined && row.valor !== null) {

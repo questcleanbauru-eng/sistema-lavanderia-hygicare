@@ -818,6 +818,59 @@
             <p id="config-saved-msg" class="sync-time-info" style="margin-top:8px"></p>
           </div>
 
+          <!-- Card E-mails Automáticos -->
+          <div class="card" style="margin-top:1.2rem">
+            <h3 style="margin:0 0 0.25rem;font-size:1.05rem;color:#1e40af">📧 E-mails Automáticos</h3>
+            <p style="font-size:0.82rem;color:var(--muted);margin:0 0 1rem">Disparos mensais no dia 1 de cada mês. Após salvar, clique em "Configurar Disparo" para ativar o gatilho no Apps Script.</p>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:0.9rem;font-weight:600">📊 Relatório Operacional Mensal</div>
+                <div style="font-size:0.75rem;color:var(--muted)">Admin recebe todos os clientes · Cada vendedor recebe os seus</div>
+              </div>
+              <label class="maint-toggle">
+                <input type="checkbox" id="cfg-email-operational">
+                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+              </label>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:0.9rem;font-weight:600">⚠️ Clientes sem Relatório</div>
+                <div style="font-size:0.75rem;color:var(--muted)">Separado por vendedor · Quem está em dia e quem não está</div>
+              </div>
+              <label class="maint-toggle">
+                <input type="checkbox" id="cfg-email-missing">
+                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+              </label>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:0.9rem;font-weight:600">💧 Relatório de Vazão</div>
+                <div style="font-size:0.75rem;color:var(--muted)">Enviado ao e-mail do cliente + técnico cadastrado abaixo</div>
+              </div>
+              <label class="maint-toggle">
+                <input type="checkbox" id="cfg-email-vazao">
+                <span class="maint-toggle-track"><span class="maint-toggle-thumb"></span></span>
+              </label>
+            </div>
+
+            <div class="form-row" style="margin-top:0.85rem">
+              <div class="form-field">
+                <label>🔧 E-mail do Técnico (relatório de Vazão)</label>
+                <input type="email" id="cfg-email-tecnico" placeholder="tecnico@hygicare.com.br" />
+                <small>Recebe o relatório de vazão de todos os clientes</small>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:0.5rem;margin-top:0.85rem;flex-wrap:wrap">
+              <button id="btn-save-email-config" class="btn-primary" style="flex:1;font-size:0.88rem">💾 Salvar</button>
+              <button id="btn-setup-trigger" class="btn-secondary" style="flex:1;font-size:0.88rem">⏰ Configurar Disparo</button>
+            </div>
+            <p id="email-config-msg" class="sync-time-info" style="margin-top:8px"></p>
+          </div>
+
           <!-- Card Layout dos PDFs -->
           <div class="card" style="margin-top:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
             <div>
@@ -1369,7 +1422,15 @@
           </button>
         </div>
 
-        <div style="border-top:1px solid #e2e8f0;margin-bottom:1rem"></div>
+        <div style="border-top:1px solid #e2e8f0;margin:0 0 1rem"></div>
+
+        <!-- Enviar no E-mail (corpo, via GAS) -->
+        <button id="share-btn-email-body" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:0.9rem 1rem;background:#1d4ed8;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:1rem;font-weight:700;min-height:52px;margin-bottom:0.45rem">
+          <span style="font-size:1.3rem">📧</span> Enviar no E-mail
+        </button>
+        <p style="font-size:0.78rem;color:#64748b;text-align:center;margin:0 0 0.9rem">Envia o relatório completo no corpo do e-mail para o admin e para você</p>
+
+        <div style="border-top:1px solid #e2e8f0;margin:0 0 1rem"></div>
 
         <!-- Botão Imprimir -->
         <button id="share-btn-print" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:0.9rem 1rem;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:1rem;font-weight:700;min-height:52px">

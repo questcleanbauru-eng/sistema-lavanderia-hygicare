@@ -421,6 +421,17 @@ function doPost(e) {
       return respondListFolderPdfs();
     }
 
+    // ── ENVIAR RELATÓRIO NO CORPO DO E-MAIL (sem PDF) ─────
+    if (action === 'sendProductionReportBody') {
+      return respondSendProductionReportBody(body);
+    }
+
+    // ── CONFIGURAR DISPARO MENSAL ─────────────────────────
+    if (action === 'setupMonthlyTriggers') {
+      try { setupMonthlyTriggers(); return respond({ ok: true, message: 'Gatilho mensal configurado para dia 1 às 8h' }); }
+      catch(e) { return respondError('Erro ao configurar gatilho: ' + e.message); }
+    }
+
     if (!sheetName) return respondError('Campo "sheet" obrigatório');
 
     const sheet = getOrCreateSheet(sheetName);
@@ -821,4 +832,499 @@ function respondListFolderPdfs() {
   } catch(e) {
     return respondError('Erro ao listar pasta: ' + e.message);
   }
+}
+
+// ============================================================
+// E-MAILS AUTOMÁTICOS MENSAIS — helpers e funções de envio
+// ============================================================
+
+function _fmtKg(n) {
+  var s = parseFloat(n || 0).toFixed(2);
+  var parts = s.split('.');
+  return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + parts[1];
+}
+
+function _emailShell(badge, headerBg, bodyHtml) {
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:620px;margin:0 auto">'
+    + '<div style="background:' + (headerBg || 'linear-gradient(135deg,#1e3a8a,#1d4ed8)') + ';padding:28px 24px 20px;text-align:center">'
+    + '<div style="font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px">&#128167; Hygicare</div>'
+    + '<div style="font-size:12px;color:rgba(255,255,255,0.75);margin:3px 0 10px">Lavanderia Hospitalar</div>'
+    + '<div style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);border-radius:20px;padding:5px 16px;font-size:12px;font-weight:700;color:#fff;letter-spacing:1px">' + badge + '</div>'
+    + '</div>'
+    + '<div style="background:#f4f6fb;padding:16px">' + bodyHtml + '</div>'
+    + '<div style="background:#f8fafc;padding:12px 20px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8">'
+    + 'Hygicare Lavanderia &bull; Gerado automaticamente em ' + now + '<br>'
+    + 'Este e-mail &eacute; enviado pelo sistema de gest&atilde;o Hygicare.'
+    + '</div>'
+    + '</div>';
+}
+
+function _emailKpis(kpis) {
+  var borders = { blue: '#1d4ed8', green: '#16a34a', amber: '#d97706', red: '#dc2626' };
+  var w = Math.floor(100 / kpis.length);
+  var cells = kpis.map(function(k) {
+    var bc = borders[k.color || 'blue'] || '#1d4ed8';
+    return '<td style="padding:0 4px;width:' + w + '%">'
+      + '<div style="background:#fff;border-top:3px solid ' + bc + ';border-radius:8px;padding:12px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07)">'
+      + '<div style="font-size:20px;font-weight:800;color:#1e293b;line-height:1.1">' + k.val + '</div>'
+      + '<div style="font-size:10px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.05em">' + k.label + '</div>'
+      + '</div></td>';
+  }).join('');
+  return '<table style="width:100%;border-collapse:collapse;margin:14px 0"><tr>' + cells + '</tr></table>';
+}
+
+function _emailSecHd(title, color) {
+  var bg = { blue: '#1e3a8a', amber: '#92400e', green: '#14532d', red: '#991b1b' };
+  return '<div style="background:' + (bg[color || 'blue'] || '#1e3a8a') + ';color:#fff;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">' + title + '</div>';
+}
+
+function _emailCard(hdTitle, hdColor, innerHtml) {
+  return '<div style="background:#fff;border-radius:8px;overflow:hidden;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">'
+    + _emailSecHd(hdTitle, hdColor) + innerHtml + '</div>';
+}
+
+// ── HTML: Relatório Operacional ──────────────────────────────
+function _buildOperationalEmailHtml(monthLabel, totalKg, ranking, inactiveClients) {
+  var maxKg = ranking.length > 0 ? ranking[0].kg : 1;
+  var content = _emailKpis([
+    { val: _fmtKg(totalKg) + ' kg', label: 'Total processado',      color: 'blue'  },
+    { val: ranking.length,           label: 'Clientes ativos',       color: 'green' },
+    { val: inactiveClients.length,   label: 'Sem relat&oacute;rio',  color: inactiveClients.length > 0 ? 'red' : 'green' },
+  ]);
+
+  if (ranking.length > 0) {
+    var rankRows = ranking.map(function(r, i) {
+      var pct  = totalKg > 0 ? (r.kg / totalKg * 100).toFixed(1) : '0.0';
+      var barW = maxKg  > 0 ? Math.round(r.kg / maxKg * 100) : 0;
+      var medalBg = ['#fef3c7', '#f1f5f9', '#ffedd5'][i] || '#e0f2fe';
+      var rowBg   = i % 2 === 0 ? '#fafafa' : '#fff';
+      return '<tr style="background:' + rowBg + '">'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;text-align:center">'
+        + '<div style="width:22px;height:22px;border-radius:50%;background:' + medalBg + ';display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#1e293b">' + (i+1) + '</div></td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9"><strong style="font-size:12px">' + r.name + '</strong>'
+        + '<div style="background:#e2e8f0;border-radius:3px;height:4px;margin-top:4px"><div style="background:#1d4ed8;border-radius:3px;height:4px;width:' + barW + '%"></div></div></td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b">' + (r.seller || '&mdash;') + '</td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;text-align:center"><strong>' + _fmtKg(r.kg) + '</strong></td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:11px">' + pct + '%</td></tr>';
+    }).join('');
+    var thStyle = 'background:#f1f5f9;padding:6px 8px;font-size:10px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0';
+    content += _emailCard(
+      '&#127942; Ranking de Clientes &mdash; ' + monthLabel, 'blue',
+      '<table style="width:100%;border-collapse:collapse">'
+      + '<thead><tr>'
+      + '<th style="' + thStyle + ';text-align:center">#</th>'
+      + '<th style="' + thStyle + '">Cliente</th>'
+      + '<th style="' + thStyle + '">Vendedor</th>'
+      + '<th style="' + thStyle + ';text-align:center">Total kg</th>'
+      + '<th style="' + thStyle + ';text-align:center">%</th>'
+      + '</tr></thead><tbody>' + rankRows + '</tbody>'
+      + '<tfoot><tr style="background:#f0fdf4">'
+      + '<td colspan="3" style="padding:8px 10px;font-weight:700;color:#15803d;border-top:1px solid #bbf7d0;text-align:right">Total Geral</td>'
+      + '<td style="padding:8px 10px;font-weight:700;color:#15803d;border-top:1px solid #bbf7d0;text-align:center">' + _fmtKg(totalKg) + ' kg</td>'
+      + '<td style="padding:8px 10px;font-weight:700;color:#15803d;border-top:1px solid #bbf7d0;text-align:center">100%</td>'
+      + '</tr></tfoot></table>'
+    );
+  }
+
+  if (inactiveClients.length > 0) {
+    var inactRows = inactiveClients.map(function(c) {
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9">'
+        + '<div style="width:8px;height:8px;border-radius:50%;background:#dc2626;flex-shrink:0"></div>'
+        + '<div><div style="font-size:12px;font-weight:600;color:#1e293b">' + c.name + '</div>'
+        + '<div style="font-size:11px;color:#64748b">Vendedor: ' + (c.seller || '&mdash;') + '</div></div></div>';
+    }).join('');
+    content += _emailCard('&#9888;&#65039; Clientes sem relat&oacute;rio em ' + monthLabel, 'red', inactRows);
+  }
+
+  return _emailShell('&#128202; Relat&oacute;rio Operacional &mdash; ' + monthLabel, 'linear-gradient(135deg,#1e3a8a,#1d4ed8)', content);
+}
+
+// ── HTML: Clientes sem Relatório ─────────────────────────────
+function _buildMissingClientsEmailHtml(monthLabel, groups) {
+  var content = groups.map(function(sg) {
+    if (!sg.clients || sg.clients.length === 0) return '';
+    var rows = sg.clients.map(function(c) {
+      var isRed    = c.daysSince === undefined || c.daysSince > 45;
+      var badge    = c.daysSince !== undefined ? c.daysSince + ' dias' : 'Nunca';
+      var badgeBg  = isRed ? '#fee2e2' : '#fef3c7';
+      var badgeClr = isRed ? '#991b1b' : '#92400e';
+      var dotClr   = isRed ? '#dc2626' : '#d97706';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9">'
+        + '<div style="width:8px;height:8px;border-radius:50%;background:' + dotClr + ';flex-shrink:0"></div>'
+        + '<div style="flex:1"><div style="font-size:12px;font-weight:600;color:#1e293b">' + c.name + '</div>'
+        + '<div style="font-size:11px;color:#64748b">' + (c.lastRecord ? 'Último: ' + c.lastRecord : 'Nenhum registro encontrado') + '</div></div>'
+        + '<div style="background:' + badgeBg + ';color:' + badgeClr + ';border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;white-space:nowrap">' + badge + '</div>'
+        + '</div>';
+    }).join('');
+    return _emailCard('&#128203; ' + (sg.seller || 'Vendedor'), 'amber', rows);
+  }).join('');
+  return _emailShell('&#9888;&#65039; Clientes Pendentes &mdash; ' + monthLabel, 'linear-gradient(135deg,#92400e,#d97706)', content);
+}
+
+// ── HTML: Relatório de Vazão ─────────────────────────────────
+function _buildVazaoEmailHtml(monthLabel, clientName, machineGroups) {
+  var totalReadings = machineGroups.reduce(function(s, m) { return s + m.readings.length; }, 0);
+  var lowCount      = machineGroups.reduce(function(s, m) {
+    return s + m.readings.filter(function(r) { return r.status === 'low'; }).length;
+  }, 0);
+  var pct = totalReadings > 0 ? Math.round((totalReadings - lowCount) / totalReadings * 100) : 100;
+
+  var content = _emailKpis([
+    { val: machineGroups.length, label: 'M&aacute;quinas monitoradas', color: 'blue'  },
+    { val: totalReadings,        label: 'Medi&ccedil;&otilde;es no m&ecirc;s', color: 'green' },
+    { val: pct + '%',            label: 'Dentro do padr&atilde;o',    color: pct >= 80 ? 'green' : 'amber' },
+  ]);
+
+  content += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#64748b">'
+    + '<strong style="color:#1e293b">&#128712; Legenda:</strong> '
+    + '&#9989; <strong>Normal</strong> = leitura &ge; 80% da m&eacute;dia hist&oacute;rica&nbsp;&nbsp;'
+    + '&#9888;&#65039; <strong>Baixa</strong> = leitura &lt; 80% da m&eacute;dia hist&oacute;rica desta bomba (poss&iacute;vel desgaste ou obstru&ccedil;&atilde;o)'
+    + '</div>';
+
+  var thStyle = 'background:#f1f5f9;padding:6px 8px;font-size:10px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0';
+  machineGroups.forEach(function(m) {
+    var inner;
+    if (m.readings.length === 0) {
+      inner = '<div style="padding:12px 14px;color:#64748b;font-size:12px">Nenhuma leitura no m&ecirc;s.</div>';
+    } else {
+      var trs = m.readings.map(function(r) {
+        var isLow = r.status === 'low';
+        return '<tr>'
+          + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px">' + r.date + '</td>'
+          + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px">' + r.vazaoName + '</td>'
+          + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center"><strong style="color:' + (isLow ? '#dc2626' : '#1e293b') + '">' + parseFloat(r.value || 0).toFixed(2) + ' ' + (r.unit || '') + '</strong></td>'
+          + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;color:#64748b">' + (r.avg !== undefined && r.avg > 0 ? parseFloat(r.avg).toFixed(2) + ' ' + (r.unit || '') : '&mdash;') + '</td>'
+          + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center">' + (isLow ? '<span style="color:#dc2626;font-weight:700">&#9888;&#65039; Baixa</span>' : '<span style="color:#16a34a;font-weight:700">&#9989; Normal</span>') + '</td>'
+          + '</tr>';
+      }).join('');
+      inner = '<table style="width:100%;border-collapse:collapse">'
+        + '<thead><tr>'
+        + '<th style="' + thStyle + '">Data</th>'
+        + '<th style="' + thStyle + '">Bomba</th>'
+        + '<th style="' + thStyle + ';text-align:center">Leitura</th>'
+        + '<th style="' + thStyle + ';text-align:center">M&eacute;dia hist.</th>'
+        + '<th style="' + thStyle + ';text-align:center">Status</th>'
+        + '</tr></thead><tbody>' + trs + '</tbody></table>';
+    }
+    content += _emailCard('&#9881;&#65039; ' + m.machineName, 'blue', inner);
+  });
+
+  return _emailShell('&#128167; Vaz&atilde;o &mdash; ' + clientName + ' &middot; ' + monthLabel, 'linear-gradient(135deg,#0c4a6e,#0284c7)', content);
+}
+
+// ── HTML: Relatório de Produção (corpo do e-mail) ────────────
+function _buildProductionReportBodyHtml(clientName, period, totalKg, rows, senderName) {
+  var byMachine = {};
+  var machineOrder = [];
+  rows.forEach(function(r) {
+    var mn = r.machineName || 'Máquina';
+    if (!byMachine[mn]) { byMachine[mn] = []; machineOrder.push(mn); }
+    byMachine[mn].push(r);
+  });
+  machineOrder.sort(function(a, b) { return a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' }); });
+
+  var thStyle = 'background:#f1f5f9;padding:6px 8px;font-size:10px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0';
+  var content = _emailKpis([
+    { val: _fmtKg(totalKg) + ' kg', label: 'Total processado',     color: 'blue'  },
+    { val: machineOrder.length,      label: 'M&aacute;quinas',      color: 'green' },
+    { val: rows.length,              label: 'Linhas de processo',    color: 'amber' },
+  ]);
+
+  machineOrder.forEach(function(mname) {
+    var mRows = byMachine[mname];
+    var mKg   = mRows.reduce(function(s, r) { return s + parseFloat(r.total || 0); }, 0);
+    var trs   = mRows.map(function(r) {
+      var total = parseFloat(r.total || 0);
+      var isZero = total === 0;
+      return '<tr style="' + (isZero ? 'opacity:0.55' : '') + '">'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px">' + (r.procName || '&mdash;') + '</td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center">' + (parseInt(r.executed) || 0) + '</td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;color:' + (parseInt(r.canceled) > 0 ? '#dc2626' : 'inherit') + '">' + (parseInt(r.canceled) || 0) + '</td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center">' + ((parseInt(r.executed) || 0) + (parseInt(r.canceled) || 0)) + '</td>'
+        + '<td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right">' + (isZero ? '&mdash;' : '<strong>' + _fmtKg(total) + ' kg</strong>') + '</td>'
+        + '</tr>';
+    }).join('');
+    content += '<div style="background:#fff;border-radius:8px;overflow:hidden;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">'
+      + '<div style="background:#1d4ed8;color:#fff;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase">&#9881;&#65039; ' + mname + '</div>'
+      + '<table style="width:100%;border-collapse:collapse">'
+      + '<thead><tr>'
+      + '<th style="' + thStyle + '">Processo</th>'
+      + '<th style="' + thStyle + ';text-align:center">Exec.</th>'
+      + '<th style="' + thStyle + ';text-align:center">Cancel.</th>'
+      + '<th style="' + thStyle + ';text-align:center">Total proc.</th>'
+      + '<th style="' + thStyle + ';text-align:right">Total kg</th>'
+      + '</tr></thead><tbody>' + trs + '</tbody></table>'
+      + '<div style="background:#eff6ff;padding:8px 14px;font-size:12px;font-weight:700;color:#1d4ed8;border-top:1px solid #bfdbfe;text-align:right">Total ' + mname + ': ' + _fmtKg(mKg) + ' kg</div>'
+      + '</div>';
+  });
+
+  content += '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin-bottom:12px">'
+    + '<table style="width:100%;border-collapse:collapse"><tbody>'
+    + '<tr><td style="font-size:14px;font-weight:700;color:#1e293b;padding:4px 0">Total processado</td>'
+    + '<td style="font-size:22px;font-weight:800;color:#15803d;text-align:right;padding:4px 0">' + _fmtKg(totalKg) + ' kg</td></tr>'
+    + '<tr><td style="font-size:11px;color:#64748b;padding:4px 0">Gerado por</td>'
+    + '<td style="font-size:11px;color:#64748b;text-align:right;padding:4px 0">' + (senderName || 'Sistema') + '</td></tr>'
+    + '<tr><td style="font-size:11px;color:#64748b;padding:4px 0">Emitido em</td>'
+    + '<td style="font-size:11px;color:#64748b;text-align:right;padding:4px 0">' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') + '</td></tr>'
+    + '</tbody></table></div>';
+
+  return _emailShell('&#128203; ' + clientName + ' &middot; ' + period, 'linear-gradient(135deg,#1e3a8a,#1d4ed8)', content);
+}
+
+// ============================================================
+// ENVIAR RELATÓRIO DE PRODUÇÃO NO CORPO DO E-MAIL (sem PDF)
+// Payload: callGAS('sendProductionReportBody', null, { clientName, period, totalKg, rows, senderName, senderEmail })
+// ============================================================
+function respondSendProductionReportBody(body) {
+  try {
+    var d           = body.data || {};
+    var clientName  = d.clientName  || 'Cliente';
+    var period      = d.period      || '';
+    var totalKg     = parseFloat(d.totalKg || 0);
+    var rows        = d.rows        || [];
+    var senderName  = d.senderName  || 'Equipe Hygicare';
+    var senderEmail = (d.senderEmail || '').trim();
+
+    var adminEmail = getConfig('notification_email') || '';
+    var recipients = [];
+    if (adminEmail) recipients.push(adminEmail);
+    if (senderEmail && recipients.indexOf(senderEmail) < 0) recipients.push(senderEmail);
+    if (recipients.length === 0) return respondError('Nenhum destinatário configurado. Adicione o e-mail admin em Config.');
+
+    var html    = _buildProductionReportBodyHtml(clientName, period, totalKg, rows, senderName);
+    var subject = '[Hygicare] Relatório de Produção — ' + clientName + ' (' + period + ')';
+    recipients.forEach(function(to) {
+      MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: 'Hygicare Sistema' });
+    });
+    return respond({ ok: true, to: recipients.join(', '), count: recipients.length });
+  } catch(e) {
+    return respondError('Erro ao enviar: ' + e.message);
+  }
+}
+
+// ============================================================
+// RELATÓRIO OPERACIONAL MENSAL — envia no 1° do mês
+// ============================================================
+function sendMonthlyOperationalEmail() {
+  try {
+    var now       = new Date();
+    var prev      = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var year      = prev.getFullYear();
+    var month     = prev.getMonth() + 1;
+    var monthLabel = Utilities.formatDate(prev, Session.getScriptTimeZone(), 'MM/yyyy');
+
+    var clients = readSheet('Clientes');
+    var records = readSheet('Registros');
+
+    var monthRecs = records.filter(function(r) {
+      var d = String(r.date_start || '');
+      if (d.length < 7) return false;
+      var p = d.split('-');
+      return parseInt(p[0]) === year && parseInt(p[1]) === month;
+    });
+
+    var byClient = {};
+    monthRecs.forEach(function(r) {
+      var cid = String(r.client_id);
+      byClient[cid] = (byClient[cid] || 0) + parseFloat(r.total || 0);
+    });
+    var totalKg  = Object.keys(byClient).reduce(function(s, k) { return s + byClient[k]; }, 0);
+    var activeIds = Object.keys(byClient);
+
+    var inactive = clients.filter(function(c) { return activeIds.indexOf(String(c.id)) < 0; });
+    var ranking  = clients
+      .filter(function(c) { return activeIds.indexOf(String(c.id)) >= 0; })
+      .map(function(c) { return { name: c.name, seller: c.seller || '', kg: byClient[String(c.id)] || 0, email_seller: c.email_seller || '', id: String(c.id) }; })
+      .sort(function(a, b) { return b.kg - a.kg; });
+
+    var adminEmail = getConfig('notification_email');
+    if (adminEmail) {
+      MailApp.sendEmail({ to: adminEmail, name: 'Hygicare Sistema',
+        subject: '[Hygicare] Relatório Operacional — ' + monthLabel,
+        htmlBody: _buildOperationalEmailHtml(monthLabel, totalKg, ranking, inactive) });
+    }
+
+    var sellerMap = {};
+    clients.forEach(function(c) {
+      if (!c.email_seller) return;
+      if (!sellerMap[c.email_seller]) sellerMap[c.email_seller] = [];
+      sellerMap[c.email_seller].push(c);
+    });
+    Object.keys(sellerMap).forEach(function(email) {
+      if (email === adminEmail) return;
+      var sc  = sellerMap[email];
+      var ids = sc.map(function(c) { return String(c.id); });
+      var sr  = ranking.filter(function(r) { return ids.indexOf(r.id) >= 0; });
+      var si  = inactive.filter(function(c) { return ids.indexOf(String(c.id)) >= 0; });
+      var sk  = sr.reduce(function(s, r) { return s + r.kg; }, 0);
+      MailApp.sendEmail({ to: email, name: 'Hygicare Sistema',
+        subject: '[Hygicare] Seu Relatório Operacional — ' + monthLabel,
+        htmlBody: _buildOperationalEmailHtml(monthLabel, sk, sr, si) });
+    });
+    Logger.log('sendMonthlyOperationalEmail: ok');
+  } catch(e) { Logger.log('sendMonthlyOperationalEmail error: ' + e.message); }
+}
+
+// ============================================================
+// CLIENTES SEM RELATÓRIO — envia no 1° do mês
+// ============================================================
+function sendMissingClientsEmail() {
+  try {
+    var now       = new Date();
+    var prev      = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var year      = prev.getFullYear();
+    var month     = prev.getMonth() + 1;
+    var monthLabel = Utilities.formatDate(prev, Session.getScriptTimeZone(), 'MM/yyyy');
+
+    var clients = readSheet('Clientes');
+    var records = readSheet('Registros');
+
+    var hasRec = {};
+    var lastDate = {};
+    records.forEach(function(r) {
+      var cid = String(r.client_id);
+      var d   = String(r.date_start || '');
+      if (!d || d.length < 7) return;
+      var p = d.split('-');
+      if (parseInt(p[0]) === year && parseInt(p[1]) === month) hasRec[cid] = true;
+      if (!lastDate[cid] || d > lastDate[cid]) lastDate[cid] = d;
+    });
+
+    var inactive = clients.filter(function(c) { return !hasRec[String(c.id)]; });
+    if (inactive.length === 0) { Logger.log('sendMissingClientsEmail: todos com registro'); return; }
+
+    var sellerMap = {};
+    inactive.forEach(function(c) {
+      var seller = c.seller || 'Sem vendedor';
+      var email  = c.email_seller || '';
+      if (!sellerMap[seller]) sellerMap[seller] = { seller: seller, email: email, clients: [] };
+      var last = lastDate[String(c.id)];
+      var days = last ? Math.floor((now - new Date(last)) / 86400000) : undefined;
+      sellerMap[seller].clients.push({
+        name: c.name,
+        lastRecord: last ? Utilities.formatDate(new Date(last), Session.getScriptTimeZone(), 'dd/MM/yyyy') : null,
+        daysSince: days,
+      });
+    });
+
+    var allGroups  = Object.keys(sellerMap).map(function(k) { return sellerMap[k]; });
+    var adminEmail = getConfig('notification_email');
+    if (adminEmail) {
+      MailApp.sendEmail({ to: adminEmail, name: 'Hygicare Sistema',
+        subject: '[Hygicare] Clientes sem relatório — ' + monthLabel,
+        htmlBody: _buildMissingClientsEmailHtml(monthLabel, allGroups) });
+    }
+    allGroups.forEach(function(sg) {
+      if (!sg.email || sg.email === adminEmail) return;
+      MailApp.sendEmail({ to: sg.email, name: 'Hygicare Sistema',
+        subject: '[Hygicare] Seus clientes sem relatório — ' + monthLabel,
+        htmlBody: _buildMissingClientsEmailHtml(monthLabel, [sg]) });
+    });
+    Logger.log('sendMissingClientsEmail: ok, ' + inactive.length + ' inativo(s)');
+  } catch(e) { Logger.log('sendMissingClientsEmail error: ' + e.message); }
+}
+
+// ============================================================
+// RELATÓRIO DE VAZÃO MENSAL — envia no 1° do mês
+// ============================================================
+function sendMonthlyVazaoEmail() {
+  try {
+    var now       = new Date();
+    var prev      = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var year      = prev.getFullYear();
+    var month     = prev.getMonth() + 1;
+    var monthLabel = Utilities.formatDate(prev, Session.getScriptTimeZone(), 'MM/yyyy');
+
+    var clients       = readSheet('Clientes');
+    var vazaoRegs     = readSheet('VazaoRegistros');
+    var machines      = readSheet('Maquinas');
+    var technicoEmail = getConfig('email_tecnico');
+
+    var machineNames = {};
+    machines.forEach(function(m) { machineNames[String(m.id)] = m.name; });
+
+    // Média histórica por (machine_id + '_' + vazao_id)
+    var histData = {};
+    vazaoRegs.forEach(function(r) {
+      var key = String(r.machine_id) + '_' + String(r.vazao_id);
+      if (!histData[key]) histData[key] = { sum: 0, count: 0 };
+      histData[key].sum   += parseFloat(r.value || 0);
+      histData[key].count += 1;
+    });
+
+    var monthRegs = vazaoRegs.filter(function(r) {
+      var d = String(r.date || '');
+      if (d.length < 7) return false;
+      var p = d.split('-');
+      return parseInt(p[0]) === year && parseInt(p[1]) === month;
+    });
+    if (monthRegs.length === 0) { Logger.log('sendMonthlyVazaoEmail: sem leituras'); return; }
+
+    var byClient = {};
+    monthRegs.forEach(function(r) {
+      var cid = String(r.client_id);
+      var mid = String(r.machine_id);
+      if (!byClient[cid]) byClient[cid] = {};
+      if (!byClient[cid][mid]) byClient[cid][mid] = [];
+      var key = mid + '_' + String(r.vazao_id);
+      var h   = histData[key];
+      var avg = h && h.count > 0 ? h.sum / h.count : 0;
+      var val = parseFloat(r.value || 0);
+      byClient[cid][mid].push({
+        date: r.date ? Utilities.formatDate(new Date(r.date), Session.getScriptTimeZone(), 'dd/MM/yyyy') : '',
+        vazaoName: r.vazao_name || ('Bomba ' + r.vazao_id),
+        value: val,
+        unit:  r.vazao_unit || '',
+        avg:   avg > 0 ? avg : undefined,
+        status: avg > 0 && val < avg * 0.8 ? 'low' : 'normal',
+      });
+    });
+
+    var clientMap = {};
+    clients.forEach(function(c) { clientMap[String(c.id)] = c; });
+
+    Object.keys(byClient).forEach(function(cid) {
+      var client = clientMap[cid];
+      if (!client) return;
+      var clientEmail = String(client.send_client) === 'true' ? (client.email_client || '') : '';
+      var toArr = [];
+      if (clientEmail) toArr.push(clientEmail);
+      if (technicoEmail && toArr.indexOf(technicoEmail) < 0) toArr.push(technicoEmail);
+      if (toArr.length === 0) return;
+
+      var machineGroups = Object.keys(byClient[cid]).map(function(mid) {
+        return {
+          machineName: machineNames[mid] || mid,
+          readings: byClient[cid][mid].sort(function(a, b) { return a.date.localeCompare(b.date); }),
+        };
+      }).sort(function(a, b) { return a.machineName.localeCompare(b.machineName, 'pt-BR', { numeric: true, sensitivity: 'base' }); });
+
+      MailApp.sendEmail({ to: toArr.join(','), name: 'Hygicare Sistema',
+        subject: '[Hygicare] Relatório de Vazão — ' + client.name + ' · ' + monthLabel,
+        htmlBody: _buildVazaoEmailHtml(monthLabel, client.name, machineGroups) });
+    });
+    Logger.log('sendMonthlyVazaoEmail: ok, clientes=' + Object.keys(byClient).length);
+  } catch(e) { Logger.log('sendMonthlyVazaoEmail error: ' + e.message); }
+}
+
+// ============================================================
+// DISPARO MENSAL — chamado pelo gatilho de tempo no dia 1 às 8h
+// ============================================================
+function runMonthlyTrigger() {
+  Logger.log('runMonthlyTrigger: ' + new Date().toISOString());
+  if (getConfig('email_monthly_operational') === 'true') sendMonthlyOperationalEmail();
+  if (getConfig('email_monthly_missing')     === 'true') sendMissingClientsEmail();
+  if (getConfig('email_monthly_vazao')       === 'true') sendMonthlyVazaoEmail();
+  Logger.log('runMonthlyTrigger: concluído');
+}
+
+// Configura o gatilho de tempo: dia 1 de cada mês às 8h.
+// Pode ser chamado via painel admin ou manualmente no editor do Apps Script.
+function setupMonthlyTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'runMonthlyTrigger') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('runMonthlyTrigger').timeBased().onMonthDay(1).atHour(8).create();
+  Logger.log('setupMonthlyTriggers: gatilho criado — dia 1 às 8h');
 }
