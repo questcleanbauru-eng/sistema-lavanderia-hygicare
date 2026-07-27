@@ -237,64 +237,136 @@ const SHEET_LABELS = {
 // Se não estiver configurado, não faz nada (sem erro).
 function sendNotification(action, sheetName, payload, actor) {
   try {
-    const toEmail = getConfig('notification_email');
-    if (!toEmail) return; // notificações não configuradas
+    var toEmail = getConfig('notification_email');
+    if (!toEmail) return;
 
-    // Aba Config e Usuarios (senhas) não disparam notificação
     if (sheetName === 'Config' || sheetName === 'Usuarios') return;
 
-    // Verificar se notificações para esta aba estão habilitadas
-    const disabledKey = 'notif_disable_' + sheetName.toLowerCase();
+    var disabledKey = 'notif_disable_' + sheetName.toLowerCase();
     if (getConfig(disabledKey) === 'true') return;
 
-    const actionLabels = {
-      insert: '✅ Novo registro criado',
-      update: '✏️ Registro atualizado',
-      delete: '🗑️ Registro excluído',
-      upsert: '🔄 Sincronização (upsert)',
+    // ── Rótulos e cores por ação ──────────────────────────
+    var actionMeta = {
+      insert: { label: 'Novo registro criado',  icon: '✅', hdrBg: 'linear-gradient(135deg,#14532d,#16a34a)', badgeBg: '#dcfce7', badgeClr: '#15803d' },
+      update: { label: 'Registro atualizado',   icon: '✏️', hdrBg: 'linear-gradient(135deg,#78350f,#d97706)', badgeBg: '#fef3c7', badgeClr: '#92400e' },
+      delete: { label: 'Registro excluído', icon: '🗑️', hdrBg: 'linear-gradient(135deg,#7f1d1d,#dc2626)', badgeBg: '#fee2e2', badgeClr: '#991b1b' },
+      upsert: { label: 'Sincronização', icon: '🔄', hdrBg: 'linear-gradient(135deg,#1e3a8a,#1d4ed8)', badgeBg: '#dbeafe', badgeClr: '#1e40af' },
     };
-    const actionLabel  = actionLabels[action] || action;
-    const sheetLabel   = SHEET_LABELS[sheetName] || sheetName;
-    const now          = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
-    const actorLabel   = actor ? (' por <strong>' + actor + '</strong>') : '';
+    var meta       = actionMeta[action] || actionMeta.upsert;
+    var sheetLabel = SHEET_LABELS[sheetName] || sheetName;
+    var now        = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
 
-    // ── Montar tabela de dados ────────────────────────────
-    let dataHtml = '';
-    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-      const skip = ['password']; // campos sensíveis — nunca enviar por e-mail
-      dataHtml = '<table style="border-collapse:collapse;font-size:13px;margin-top:8px;">';
-      Object.entries(payload).forEach(([k, v]) => {
-        if (skip.includes(k)) return;
-        const val = (v === null || v === undefined || v === '') ? '<em style="color:#999">—</em>' : String(v);
-        dataHtml += '<tr>'
-          + '<td style="padding:4px 10px 4px 0;color:#555;white-space:nowrap;font-weight:600;">' + k + '</td>'
-          + '<td style="padding:4px 0;color:#222;">' + val + '</td>'
+    // ── Campos a omitir / tratar de forma especial ────────
+    var skip        = ['password', 'synced_at'];
+    var jsonFields  = ['steps', 'machine_info', 'products', 'permissions', 'sellers_access'];
+    var labelMap    = {
+      id: 'ID', client_id: 'Cliente (ID)', machine_id: 'Máquina (ID)', process_id: 'Processo (ID)',
+      name: 'Nome', date: 'Data', date_start: 'Data início', date_end: 'Data fim',
+      executed: 'Executadas', canceled: 'Canceladas', capacity: 'Capacidade (kg)',
+      total: 'Total (kg)', price_kg: 'Preço/kg', maintenance: 'Manutenção',
+      version: 'Versão', status: 'Status', created_by: 'Criado por',
+      approved_by: 'Aprovado por', approved_at: 'Aprovado em',
+      all_machines: 'Todas as máquinas', created_at: 'Criado em',
+      email: 'E-mail', role: 'Perfil', active: 'Ativo', username: 'Usuário',
+      city: 'Cidade', seller: 'Vendedor', email_client: 'E-mail cliente',
+      email_seller: 'E-mail vendedor', send_client: 'Enviar ao cliente',
+      send_seller: 'Enviar ao vendedor',
+    };
+
+    // ── Formatar etapas (steps) ───────────────────────────
+    function formatSteps(raw) {
+      var arr;
+      try { arr = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return null; }
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      var rows = arr.map(function(s, i) {
+        var prods = '';
+        if (s.products && s.products.length > 0) {
+          prods = s.products
+            .filter(function(p) { return p && p.name; })
+            .map(function(p) { return p.name + (p.dosage ? ' (' + p.dosage + ')' : ''); })
+            .join(', ');
+        }
+        var bg = i % 2 === 0 ? '#f8fafc' : '#fff';
+        return '<tr style="background:' + bg + '">'
+          + '<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:center;font-weight:700;color:#1e40af">' + (s.n || (i+1)) + '</td>'
+          + '<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;font-weight:600">' + (s.operation || '—') + '</td>'
+          + '<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:center">' + (s.time || '—') + ' min</td>'
+          + '<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:center">' + (s.temp || '—') + '</td>'
+          + '<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b">' + (prods || '—') + '</td>'
           + '</tr>';
-      });
-      dataHtml += '</table>';
-    } else if (Array.isArray(payload)) {
-      dataHtml = '<p style="color:#555;font-size:13px;">' + payload.length + ' item(s) afetado(s).</p>';
+      }).join('');
+      return '<div style="margin-top:8px;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0">'
+        + '<table style="width:100%;border-collapse:collapse">'
+        + '<thead><tr style="background:#1e3a8a">'
+        + '<th style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center">#</th>'
+        + '<th style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700">Operação</th>'
+        + '<th style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center">Tempo</th>'
+        + '<th style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;text-align:center">Temp.</th>'
+        + '<th style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700">Produtos</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
-    const subject = '[Hygicare] ' + actionLabel + ' — ' + sheetLabel;
-    const body = '<div style="font-family:Arial,sans-serif;max-width:600px;">'
-      + '<div style="background:#1e3a8a;padding:16px 20px;border-radius:8px 8px 0 0;">'
-      + '<h2 style="color:#fff;margin:0;font-size:18px;">Hygicare Lavanderia</h2>'
-      + '<p style="color:#93c5fd;margin:4px 0 0;font-size:13px;">Sistema de Notificações</p>'
-      + '</div>'
-      + '<div style="background:#f8fafc;padding:20px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;">'
-      + '<h3 style="margin:0 0 4px;color:#1e3a8a;">' + actionLabel + '</h3>'
-      + '<p style="margin:0 0 12px;color:#555;font-size:14px;">'
-      + 'Módulo: <strong>' + sheetLabel + '</strong>' + actorLabel
-      + '</p>'
-      + dataHtml
-      + '<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">'
-      + '<p style="margin:0;font-size:12px;color:#94a3b8;">🕐 ' + now + ' &nbsp;|&nbsp; Hygicare Sistema de Lavanderia</p>'
-      + '</div></div>';
+    // ── Montar linhas da tabela principal ─────────────────
+    var mainRows = '';
+    var stepsHtml = '';
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      Object.keys(payload).forEach(function(k) {
+        if (skip.indexOf(k) >= 0) return;
+        var v = payload[k];
+        if (k === 'steps') { stepsHtml = formatSteps(v) || ''; return; }
+        if (jsonFields.indexOf(k) >= 0) return; // oculta outros campos JSON complexos
+        var display = (v === null || v === undefined || v === '') ? '<em style="color:#94a3b8">&mdash;</em>' : String(v);
+        // Booleanos
+        if (display === 'true')  display = '<span style="color:#16a34a;font-weight:700">✔ Sim</span>';
+        if (display === 'false') display = '<span style="color:#64748b">✘ Não</span>';
+        var label = labelMap[k] || k;
+        mainRows += '<tr>'
+          + '<td style="padding:7px 12px;font-size:11px;font-weight:700;color:#475569;white-space:nowrap;border-bottom:1px solid #f1f5f9;background:#f8fafc;width:35%">' + label + '</td>'
+          + '<td style="padding:7px 12px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9">' + display + '</td>'
+          + '</tr>';
+      });
+    } else if (Array.isArray(payload)) {
+      mainRows = '<tr><td colspan="2" style="padding:10px 12px;color:#64748b;font-size:12px">' + payload.length + ' item(s) afetado(s).</td></tr>';
+    }
 
-    MailApp.sendEmail({ to: toEmail, subject: subject, htmlBody: body });
+    // ── Montar badge de ação ──────────────────────────────
+    var badgeHtml = '<span style="display:inline-block;background:' + meta.badgeBg + ';color:' + meta.badgeClr + ';border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700">'
+      + meta.icon + ' ' + meta.label + '</span>';
+
+    var actorHtml = actor
+      ? '<div style="font-size:12px;color:#64748b;margin-top:6px">Por: <strong style="color:#1e293b">' + actor + '</strong></div>'
+      : '';
+
+    var tableHtml = mainRows
+      ? '<table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;margin-top:14px">'
+        + '<tbody>' + mainRows + '</tbody></table>'
+      : '';
+
+    var stepsSection = stepsHtml
+      ? '<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Etapas da Receita</div>' + stepsHtml + '</div>'
+      : '';
+
+    // ── HTML final ────────────────────────────────────────
+    var subject = '[Hygicare] ' + meta.label + ' — ' + sheetLabel;
+    var body = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:620px;margin:0 auto">'
+      + '<div style="background:' + meta.hdrBg + ';padding:22px 24px 18px;text-align:center">'
+      + '<div style="font-size:20px;font-weight:900;color:#fff;letter-spacing:-0.5px">&#128167; Hygicare</div>'
+      + '<div style="font-size:11px;color:rgba(255,255,255,0.75);margin:2px 0 10px">Sistema de Notificações</div>'
+      + '<div style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);border-radius:20px;padding:4px 16px;font-size:12px;font-weight:700;color:#fff">' + sheetLabel.toUpperCase() + '</div>'
+      + '</div>'
+      + '<div style="background:#f4f6fb;padding:16px">'
+      + '<div style="background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">'
+      + badgeHtml + actorHtml
+      + tableHtml + stepsSection
+      + '</div>'
+      + '</div>'
+      + '<div style="background:#f8fafc;padding:10px 20px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8">'
+      + '&#128336; ' + now + ' &nbsp;|&nbsp; Hygicare Sistema de Lavanderia'
+      + '</div>'
+      + '</div>';
+
+    MailApp.sendEmail({ to: toEmail, subject: subject, htmlBody: body, name: 'Hygicare Sistema' });
   } catch(err) {
-    // Nunca deixar falha de e-mail interromper a operação principal
     Logger.log('sendNotification error: ' + err.message);
   }
 }
@@ -838,6 +910,18 @@ function respondListFolderPdfs() {
 // E-MAILS AUTOMÁTICOS MENSAIS — helpers e funções de envio
 // ============================================================
 
+// Wrapper: sempre adiciona CC para notification_email, exceto quando já é o destinatário principal
+function _sendEmail(opts) {
+  var admin = getConfig('notification_email');
+  if (admin) {
+    var toList = (opts.to || '').split(',').map(function(e) { return e.trim(); });
+    if (toList.indexOf(admin) < 0) {
+      opts.cc = opts.cc ? opts.cc + ',' + admin : admin;
+    }
+  }
+  MailApp.sendEmail(opts);
+}
+
 function _fmtKg(n) {
   var s = parseFloat(n || 0).toFixed(2);
   var parts = s.split('.');
@@ -1095,7 +1179,7 @@ function respondSendProductionReportBody(body) {
     var html    = _buildProductionReportBodyHtml(clientName, period, totalKg, rows, senderName);
     var subject = '[Hygicare] Relatório de Produção — ' + clientName + ' (' + period + ')';
     recipients.forEach(function(to) {
-      MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: 'Hygicare Sistema' });
+      _sendEmail({ to: to, subject: subject, htmlBody: html, name: 'Hygicare Sistema' });
     });
     return respond({ ok: true, to: recipients.join(', '), count: recipients.length });
   } catch(e) {
@@ -1140,7 +1224,7 @@ function sendMonthlyOperationalEmail() {
 
     var adminEmail = getConfig('notification_email');
     if (adminEmail) {
-      MailApp.sendEmail({ to: adminEmail, name: 'Hygicare Sistema',
+      _sendEmail({ to: adminEmail, name: 'Hygicare Sistema',
         subject: '[Hygicare] Relatório Operacional — ' + monthLabel,
         htmlBody: _buildOperationalEmailHtml(monthLabel, totalKg, ranking, inactive) });
     }
@@ -1158,7 +1242,7 @@ function sendMonthlyOperationalEmail() {
       var sr  = ranking.filter(function(r) { return ids.indexOf(r.id) >= 0; });
       var si  = inactive.filter(function(c) { return ids.indexOf(String(c.id)) >= 0; });
       var sk  = sr.reduce(function(s, r) { return s + r.kg; }, 0);
-      MailApp.sendEmail({ to: email, name: 'Hygicare Sistema',
+      _sendEmail({ to: email, name: 'Hygicare Sistema',
         subject: '[Hygicare] Seu Relatório Operacional — ' + monthLabel,
         htmlBody: _buildOperationalEmailHtml(monthLabel, sk, sr, si) });
     });
@@ -1211,13 +1295,13 @@ function sendMissingClientsEmail() {
     var allGroups  = Object.keys(sellerMap).map(function(k) { return sellerMap[k]; });
     var adminEmail = getConfig('notification_email');
     if (adminEmail) {
-      MailApp.sendEmail({ to: adminEmail, name: 'Hygicare Sistema',
+      _sendEmail({ to: adminEmail, name: 'Hygicare Sistema',
         subject: '[Hygicare] Clientes sem relatório — ' + monthLabel,
         htmlBody: _buildMissingClientsEmailHtml(monthLabel, allGroups) });
     }
     allGroups.forEach(function(sg) {
       if (!sg.email || sg.email === adminEmail) return;
-      MailApp.sendEmail({ to: sg.email, name: 'Hygicare Sistema',
+      _sendEmail({ to: sg.email, name: 'Hygicare Sistema',
         subject: '[Hygicare] Seus clientes sem relatório — ' + monthLabel,
         htmlBody: _buildMissingClientsEmailHtml(monthLabel, [sg]) });
     });
@@ -1300,7 +1384,7 @@ function sendMonthlyVazaoEmail() {
         };
       }).sort(function(a, b) { return a.machineName.localeCompare(b.machineName, 'pt-BR', { numeric: true, sensitivity: 'base' }); });
 
-      MailApp.sendEmail({ to: toArr.join(','), name: 'Hygicare Sistema',
+      _sendEmail({ to: toArr.join(','), name: 'Hygicare Sistema',
         subject: '[Hygicare] Relatório de Vazão — ' + client.name + ' · ' + monthLabel,
         htmlBody: _buildVazaoEmailHtml(monthLabel, client.name, machineGroups) });
     });
