@@ -1871,6 +1871,13 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .hdr-mobile-menu { display: inline-flex; }
 }
 
+/* Esconde a barra de navegação quando o teclado virtual está aberto no mobile */
+@media (max-width: 640px) {
+  body:has(input:focus) .bottom-nav,
+  body:has(textarea:focus) .bottom-nav,
+  .bottom-nav.kb-hidden { display: none !important; }
+}
+
 /* --- Tablet (641px a 767px) --- */
 @media (min-width: 641px) and (max-width: 767px) {
   .form-row { grid-template-columns: repeat(2, 1fr); }

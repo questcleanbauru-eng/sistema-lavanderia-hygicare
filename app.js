@@ -9509,4 +9509,22 @@ ${inactiveSec}
 
   } // fim initApp()
 
+  // ── Esconder barra de navegação quando teclado virtual estiver aberto ──
+  // Fallback JS para browsers que não suportam CSS :has() (iOS Safari < 15.4)
+  if (!CSS.supports('selector(body:has(input:focus))')) {
+    const bnav = document.getElementById('bottom-nav');
+    if (bnav) {
+      document.addEventListener('focusin', e => {
+        if (e.target.matches('input, textarea')) bnav.classList.add('kb-hidden');
+      });
+      document.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (!document.activeElement?.matches('input, textarea')) {
+            bnav.classList.remove('kb-hidden');
+          }
+        }, 150);
+      });
+    }
+  }
+
 }); // fim DOMContentLoaded
