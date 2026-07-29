@@ -377,6 +377,9 @@
           <!-- Atalhos de navegação (gerado dinamicamente por permissão) -->
           <div id="home-shortcuts" class="home-actions"></div>
 
+          <!-- Card de agendamentos próximos -->
+          <div id="home-agendamentos-card" style="display:none;margin-bottom:1rem"></div>
+
           <!-- Widget: clientes sem relatório -->
           <div id="home-alerts-widget" style="display:none;margin-bottom:1rem">
             <div class="card" style="border-left:4px solid #f59e0b;background:#fffbeb;cursor:pointer;padding:0.75rem 1rem" onclick="show('screen-alerts');renderAlertsScreen()">
@@ -1379,9 +1382,6 @@
         </section>
 
       </main>
-
-      <!-- FAB — Registrar -->
-      <button class="fab-btn" id="fab-btn" title="Novo Registro">➕</button>
 
       <footer><small>Hygicare Lavanderia — Offline-first PWA · Google Apps Script</small></footer>
 

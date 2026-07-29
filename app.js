@@ -5343,14 +5343,8 @@ ${opSections}
           { perm: 'pdf_reports',  screen: 'screen-pdf-reports',  fn: initPdfReportsScreen,   icon: '📄', label: 'Rel. PDF' },
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
         ];
-        const permsStr = (currentUser?.permissions || '').trim();
-        const allowed  = permsStr ? new Set(permsStr.split(',').map(s => s.trim())) : null;
-        const isAdmin  = !currentUser || currentUser.role === 'admin';
-        const visible  = ALL_NAV.filter(item => {
-          if (item.adminOnly && !isAdmin) return false;
-          if (!allowed) return true;
-          return allowed.has(item.perm);
-        });
+        const isAdmin = !currentUser || currentUser.role === 'admin';
+        const visible = ALL_NAV.filter(item => item.adminOnly ? isAdmin : true);
         shortcutsEl.innerHTML = visible.map(item =>
           `<button class="home-action-btn" data-screen="${item.screen}">
             <span style="font-size:1.6rem;line-height:1">${item.icon}</span>
@@ -5379,6 +5373,39 @@ ${opSections}
           const dot = document.getElementById('novidades-dot');
           if (dot) dot.style.display = count > 0 ? '' : 'none';
         });
+      }
+
+      // Card de agendamentos próximos
+      const agCard = document.getElementById('home-agendamentos-card');
+      if (agCard) {
+        try {
+          const { alerts } = await _computeScheduledAlerts();
+          const upcoming = alerts.filter(a => a.daysUntil >= 0 && a.daysUntil <= 30);
+          if (upcoming.length > 0) {
+            const rows = upcoming.slice(0, 5).map(a => {
+              const label = a.daysUntil === 0 ? '<span style="color:#dc2626;font-weight:700">Hoje</span>'
+                          : a.daysUntil === 1 ? '<span style="color:#d97706;font-weight:700">Amanhã</span>'
+                          : `em <strong>${a.daysUntil} dias</strong>`;
+              const dt = a.note.scheduled_date ? new Date(a.note.scheduled_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+              return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid var(--border);font-size:0.82rem">
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                  <strong>${a.client.name}</strong>${a.note.note ? ' · ' + a.note.note.slice(0, 40) : ''}
+                </span>
+                <span style="flex-shrink:0;color:var(--muted);font-size:0.75rem">${dt} · ${label}</span>
+              </div>`;
+            }).join('');
+            agCard.style.display = '';
+            agCard.innerHTML = `<div class="card" style="border-left:4px solid #2563eb;background:var(--card-bg);cursor:pointer;padding:0.75rem 1rem" onclick="show('screen-alerts');renderAlertsScreen()">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
+                <div style="font-weight:700;color:#1e40af;font-size:0.92rem">📅 ${upcoming.length} agendamento${upcoming.length > 1 ? 's' : ''} próximo${upcoming.length > 1 ? 's' : ''}</div>
+                <span style="font-size:1.1rem;color:#2563eb">›</span>
+              </div>
+              ${rows}
+            </div>`;
+          } else {
+            agCard.style.display = 'none';
+          }
+        } catch(e) { agCard.style.display = 'none'; }
       }
 
       // KPIs — usar window.getAll para respeitar filtro de vendedor/consultor
@@ -8558,12 +8585,15 @@ ${recipeSections}
           datasets: [{ label: 'kg', data: sortedCli.map(e => +e[1].toFixed(2)), backgroundColor: CHART_COLORS }]
         },
         options: {
-          indexAxis: 'y', responsive: true,
+          responsive: true,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { label: ctx => `${Number(ctx.parsed.x).toLocaleString('pt-BR')} kg` } }
+            tooltip: { callbacks: { label: ctx => `${Number(ctx.parsed.y).toLocaleString('pt-BR')} kg` } }
           },
-          scales: { x: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString('pt-BR') + ' kg' } } }
+          scales: {
+            x: { ticks: { maxRotation: 40, minRotation: 40, font: { size: 11 } } },
+            y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString('pt-BR') + ' kg' } }
+          }
         }
       });
 
