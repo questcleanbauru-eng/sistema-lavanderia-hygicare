@@ -5342,9 +5342,16 @@ ${opSections}
           { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen,  icon: '📋', label: 'Histórico' },
           { perm: 'pdf_reports',  screen: 'screen-pdf-reports',  fn: initPdfReportsScreen,   icon: '📄', label: 'Rel. PDF' },
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
+          { perm: 'admin',        screen: 'screen-admin',        fn: refreshAdminPanel,        icon: '⚙️', label: 'Admin', adminOnly: true },
         ];
-        const isAdmin = !currentUser || currentUser.role === 'admin';
-        const visible = ALL_NAV.filter(item => item.adminOnly ? isAdmin : true);
+        const permsStr = (currentUser?.permissions || '').trim();
+        const allowed  = permsStr ? new Set(permsStr.split(',').map(s => s.trim())) : null;
+        const isAdmin  = !currentUser || currentUser.role === 'admin';
+        const visible  = ALL_NAV.filter(item => {
+          if (item.adminOnly && !isAdmin) return false;
+          if (!allowed) return true;
+          return allowed.has(item.perm);
+        });
         shortcutsEl.innerHTML = visible.map(item =>
           `<button class="home-action-btn" data-screen="${item.screen}">
             <span style="font-size:1.6rem;line-height:1">${item.icon}</span>
