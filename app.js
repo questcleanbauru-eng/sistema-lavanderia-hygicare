@@ -3010,7 +3010,7 @@ ${printScript}
                   <div class="list-item-name">
                     ⚙️ ${m.name}
                     <span class="badge badge-yellow">${m.capacity} kg</span>
-                    ${!machWithVazao.has(Number(m.id)) ? (canDo('edit_bomba') ? `<button onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}');event.stopPropagation()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:0.75rem;padding:2px 7px;cursor:pointer;font-weight:600;line-height:1.4" title="Clique para cadastrar vazão">⚠️ Sem vazão — cadastrar</button>` : `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">⚠️ Sem vazão</span>`) : ''}
+                    ${!machWithVazao.has(Number(m.id)) ? (canDo('edit_bomba') ? `<button onclick="window._quickAddVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}');event.stopPropagation()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:0.75rem;padding:2px 7px;cursor:pointer;font-weight:600;line-height:1.4" title="Clique para cadastrar vazão">⚠️ Sem vazão — cadastrar</button>` : `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">⚠️ Sem vazão</span>`) : ''}
                   </div>
                 </div>
                 <div class="list-item-actions">
@@ -6543,6 +6543,30 @@ ${opSections}
           <button type="button" onclick="this.closest('.vazao-batch-row').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem;padding:2px 6px;flex-shrink:0" title="Remover">✕</button>
         </div>`;
     }
+
+    window._quickAddVazoes = async function(machineId, machineName) {
+      if (!canDo('edit_bomba')) return toast('Sem permissão para gerenciar vazões.', 'error');
+      const count = await _vazaoPrompt(1);
+      if (!count) return;
+      showOverlay(`Cadastrando ${count} bombas...`);
+      try {
+        const createdAt = new Date().toISOString();
+        const records = [];
+        for (let i = 1; i <= count; i++) {
+          const vd = { machine_id: Number(machineId), name: `BOMBA ${i}`, unit: 'L/min', created_at: createdAt };
+          const vid = await dbAdd('vazoes', vd);
+          vd.id = vid;
+          records.push(vd);
+        }
+        if (records.length) await callGAS('insert', SHEETS.VAZOES, records);
+        toast(`${count} bombas cadastradas para "${machineName}"!`, 'success');
+        await renderMachinesList();
+      } catch(err) {
+        toast('Erro ao cadastrar bombas: ' + err.message, 'error');
+      } finally {
+        hideOverlay();
+      }
+    };
 
     window._manageVazoes = async function(machineId, machineName) {
       if (!canDo('edit_bomba')) return toast('Sem permissão para gerenciar vazões.', 'error');
