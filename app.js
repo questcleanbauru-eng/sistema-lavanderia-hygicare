@@ -2937,6 +2937,8 @@ ${printScript}
       document.getElementById('btn-new-machine')?.classList.toggle('hidden', !canDo('create_machine'));
       let machines = await getAll('machines');
       const clients  = await getAll('clients');
+      const vazoes   = await dbGetAll_raw('vazoes');
+      const machWithVazao = new Set(vazoes.map(v => Number(v.machine_id)));
       // Para não-admin: restringir máquinas aos clientes acessíveis
       if (currentUser && currentUser.role !== 'admin') {
         const cIds = new Set(clients.map(c => Number(c.id)));
@@ -3008,6 +3010,7 @@ ${printScript}
                   <div class="list-item-name">
                     ⚙️ ${m.name}
                     <span class="badge badge-yellow">${m.capacity} kg</span>
+                    ${!machWithVazao.has(Number(m.id)) ? `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="Nenhuma vazão cadastrada para esta máquina">⚠️ Sem vazão</span>` : ''}
                   </div>
                 </div>
                 <div class="list-item-actions">
