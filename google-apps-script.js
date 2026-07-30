@@ -155,7 +155,13 @@ function ensureHeaders(sheet, sheetName) {
 // ── Converter linha para objeto ──────────────────────────────
 function rowToObj(headers, row) {
   const obj = {};
-  headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+  headers.forEach((h, i) => {
+    let v = row[i] !== undefined ? row[i] : '';
+    if (v instanceof Date) {
+      v = Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+    }
+    obj[h] = v;
+  });
   return obj;
 }
 

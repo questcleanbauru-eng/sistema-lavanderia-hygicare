@@ -2525,30 +2525,37 @@ ${printScript}
           const c = allClients.find(c => Number(c.id) === Number(clientId));
           let saved = 0;
           const _savedMachines = [];
+          const _createdAt = new Date().toISOString();
+          const allMachineRecords = [];
           for (const row of rows) {
             const name = row.querySelector('.mach-name').value.trim();
             if (!name) continue;
             const data = { client_id: clientId, name,
               capacity: parseFloat(row.querySelector('.mach-cap').value) || 0,
-              created_at: new Date().toISOString() };
+              created_at: _createdAt };
             const id = await dbAdd('machines', data);
             data.id = id;
-            await postToSheetDB(SHEETS.MACHINES, data);
-            notifyEmail('nova_maquina', { name, clientName: c?.name || '' });
+            allMachineRecords.push(data);
             _savedMachines.push({ id, name });
             saved++;
+          }
+          if (allMachineRecords.length > 0) {
+            await callGAS('insert', SHEETS.MACHINES, allMachineRecords);
+            notifyEmail('nova_maquina', { name: allMachineRecords.map(m => m.name).join(', '), clientName: c?.name || '' });
           }
           toast(saved > 1 ? `${saved} máquinas salvas!` : 'Máquina salva!', 'success');
 
           if (_vazaoBombas && _savedMachines.length > 0) {
+            const allBombaRecords = [];
             for (const { id: mid } of _savedMachines) {
               for (let i = 1; i <= _vazaoBombas; i++) {
-                const vd = { machine_id: mid, name: `BOMBA ${i}`, unit: 'L/min', created_at: new Date().toISOString() };
+                const vd = { machine_id: mid, name: `BOMBA ${i}`, unit: 'L/min', created_at: _createdAt };
                 const vid = await dbAdd('vazoes', vd);
                 vd.id = vid;
-                await postToSheetDB(SHEETS.VAZOES, vd);
+                allBombaRecords.push(vd);
               }
             }
+            if (allBombaRecords.length > 0) await callGAS('insert', SHEETS.VAZOES, allBombaRecords);
             const plural = _savedMachines.length > 1 ? ` para ${_savedMachines.length} máquinas` : '';
             toast(`${_vazaoBombas} bombas cadastradas${plural}!`, 'success');
           }
@@ -2628,14 +2635,16 @@ ${printScript}
                 let copyCount = 0;
                 for (const om of otherMachines) {
                   const omExisting = new Set(allProcs.filter(p => Number(p.machine_id) === Number(om.id)).map(p => (p.name || '').toLowerCase().trim()));
+                  const batchProcs = [];
                   for (const { name, capacity } of _newProcesses) {
                     if (omExisting.has(name.toLowerCase())) continue;
                     const cd = { machine_id: Number(om.id), name, capacity, created_at: new Date().toISOString() };
                     const cid = await dbAdd('processes', cd);
                     cd.id = cid;
-                    await postToSheetDB(SHEETS.PROCESSES, cd);
+                    batchProcs.push(cd);
                     copyCount++;
                   }
+                  if (batchProcs.length > 0) await callGAS('insert', SHEETS.PROCESSES, batchProcs);
                 }
                 if (copyCount > 0) toast(`${copyCount} processo(s) copiado(s) para ${otherMachines.length} outra(s) máquina(s)!`, 'success', 5000);
               } finally { hideOverlay(); }
@@ -5393,7 +5402,9 @@ ${opSections}
               const label = a.daysUntil === 0 ? '<span style="color:#dc2626;font-weight:700">Hoje</span>'
                           : a.daysUntil === 1 ? '<span style="color:#d97706;font-weight:700">Amanhã</span>'
                           : `em <strong>${a.daysUntil} dias</strong>`;
-              const dt = a.note.scheduled_date ? new Date(a.note.scheduled_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+              const _sd = String(a.note.scheduled_date || '').substring(0, 10).split('-').map(Number);
+              const _dtObj = _sd[0] && _sd[1] && _sd[2] ? new Date(_sd[0], _sd[1] - 1, _sd[2]) : null;
+              const dt = _dtObj ? _dtObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
               return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid var(--border);font-size:0.82rem">
                 <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                   <strong>${a.client.name}</strong>${a.note.note ? ' · ' + a.note.note.slice(0, 40) : ''}
