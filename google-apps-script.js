@@ -325,8 +325,29 @@ function sendNotification(action, sheetName, payload, actor) {
           + '<td style="padding:7px 12px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9">' + display + '</td>'
           + '</tr>';
       });
-    } else if (Array.isArray(payload)) {
-      mainRows = '<tr><td colspan="2" style="padding:10px 12px;color:#64748b;font-size:12px">' + payload.length + ' item(s) afetado(s).</td></tr>';
+    } else if (Array.isArray(payload) && payload.length > 0) {
+      // Monta tabela consolidada — usa as chaves do primeiro item como colunas
+      var cols = Object.keys(payload[0]).filter(function(k) { return skip.indexOf(k) < 0 && jsonFields.indexOf(k) < 0; });
+      var thCells = cols.map(function(k) {
+        return '<th style="padding:6px 10px;color:#fff;font-size:10px;font-weight:700;text-align:left">' + (labelMap[k] || k) + '</th>';
+      }).join('');
+      var tbRows = payload.map(function(item, i) {
+        var bg = i % 2 === 0 ? '#f8fafc' : '#fff';
+        var tds = cols.map(function(k) {
+          var v = item[k];
+          var display = (v === null || v === undefined || v === '') ? '—' : String(v);
+          if (display === 'true')  display = '✔ Sim';
+          if (display === 'false') display = '✘ Não';
+          return '<td style="padding:6px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;background:' + bg + '">' + display + '</td>';
+        }).join('');
+        return '<tr>' + tds + '</tr>';
+      }).join('');
+      mainRows = '<tr><td colspan="2" style="padding:0">'
+        + '<div style="font-size:11px;color:#64748b;padding:8px 0 6px"><strong>' + payload.length + '</strong> registro(s) inserido(s)</div>'
+        + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">'
+        + '<thead><tr style="background:#1e3a8a">' + thCells + '</tr></thead>'
+        + '<tbody>' + tbRows + '</tbody></table></div>'
+        + '</td></tr>';
     }
 
     // ── Montar badge de ação ──────────────────────────────

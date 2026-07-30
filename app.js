@@ -5910,35 +5910,40 @@ ${opSections}
       setSaving(true, btn || null, '⏳ Salvando...');
 
       try {
-        let saved = 0;
+        const userName = currentUser?.name || currentUser?.username || '';
+        const createdAt = new Date().toISOString();
+
+        // Salvar localmente e acumular para envio em lote ao GAS
+        const allRecords = [];
         for (const r of rows) {
           const record = {
             date, client_id: clientId, machine_id: r.machine_id,
             vazao_id: r.vazao_id, vazao_name: r.vazao_name,
             vazao_unit: r.vazao_unit, value: r.value,
-            user: currentUser?.name || currentUser?.username || '',
-            created_at: new Date().toISOString()
+            user: userName, created_at: createdAt
           };
           const id = await dbAdd('vazao_records', record);
           record.id = id;
-          await postToSheetDB(SHEETS.VAZAO_RECORDS, record);
-          saved++;
+          allRecords.push(record);
         }
-        // Salvar flags de manutenção
-        let maintSaved = 0;
-        for (const btn of maintBtns) {
+        const maintBtnsArr = [...maintBtns];
+        for (const btn of maintBtnsArr) {
           const mId = Number(btn.id.replace('toggle-maint-', ''));
           const mrec = {
             date, client_id: clientId, machine_id: mId,
             vazao_name: '__manutencao__', vazao_unit: '', value: null,
-            user: currentUser?.name || currentUser?.username || '',
-            created_at: new Date().toISOString()
+            user: userName, created_at: createdAt
           };
           const mid2 = await dbAdd('vazao_records', mrec);
           mrec.id = mid2;
-          await postToSheetDB(SHEETS.VAZAO_RECORDS, mrec);
-          maintSaved++;
+          allRecords.push(mrec);
         }
+
+        // Uma única chamada ao GAS com todos os registros — gera um só e-mail
+        if (allRecords.length > 0) await callGAS('insert', SHEETS.VAZAO_RECORDS, allRecords);
+
+        const saved = rows.length;
+        const maintSaved = maintBtnsArr.length;
         const maintMsg = maintSaved ? ` + ${maintSaved} manutenção(ões)` : '';
         toast(`✅ ${saved} leitura(s)${maintMsg} salva(s)!`, 'success');
         const _allClientsVz = await dbGetAll_raw('clients');
