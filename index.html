@@ -1117,7 +1117,7 @@
 
           <!-- Relatório de Produção -->
           <div class="card" style="margin-bottom:1rem">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':''">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';">
               <div>
                 <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">📊 Relatório de Produção</h3>
                 <p style="font-size:0.8rem;color:#64748b;margin:0">KPIs, ranking de clientes, evolução mensal e clientes inativos.</p>
@@ -1154,7 +1154,7 @@
 
           <!-- Ficha do Cliente -->
           <div class="card" style="margin-bottom:1rem">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':''">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';">
               <div>
                 <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">👤 Ficha do Cliente</h3>
                 <p style="font-size:0.8rem;color:#64748b;margin:0">Histórico completo de produção e manutenção do cliente.</p>
@@ -1191,7 +1191,7 @@
 
           <!-- Relatório de Vazão por Cliente -->
           <div class="card" style="margin-bottom:1rem">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':''">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';">
               <div>
                 <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">💧 Relatório de Vazão por Cliente</h3>
                 <p style="font-size:0.8rem;color:#64748b;margin:0">Histórico de medições de vazão registradas no período.</p>
@@ -1228,110 +1228,128 @@
 
           <!-- Relatório Agrupado -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">📊 Relatório Agrupado</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Produção agrupada por cidade ou vendedor no período selecionado.</p>
-            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">Agrupar por</label>
-                <select id="pdf-group-by" class="form-input" style="padding:6px 10px;width:auto">
-                  <option value="city">Cidade</option>
-                  <option value="seller">Vendedor</option>
-                </select>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';"><div>
+                <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">📊 Relatório Agrupado</h3>
+                <p style="font-size:0.8rem;color:#64748b;margin:0">Produção agrupada por cidade ou vendedor no período.</p>
               </div>
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">De</label>
-                <input type="date" id="pdf-group-start" class="form-input" style="padding:6px 10px;width:auto">
-              </div>
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">Até</label>
-                <input type="date" id="pdf-group-end" class="form-input" style="padding:6px 10px;width:auto">
-              </div>
+              <span class="pdf-chev" style="font-size:1.2rem;color:#94a3b8;padding-left:0.5rem;transition:transform 0.2s;flex-shrink:0">▾</span>
             </div>
-            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
-              <button id="btn-pdf-grouped" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
-              <button id="btn-csv-grouped" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
-            </div>
-            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
-              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+            <div>
+              <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-top:0.75rem">
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">Agrupar por</label>
+                  <select id="pdf-group-by" class="form-input" style="padding:6px 10px;width:auto">
+                    <option value="city">Cidade</option>
+                    <option value="seller">Vendedor</option>
+                  </select>
+                </div>
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">De</label>
+                  <input type="date" id="pdf-group-start" class="form-input" style="padding:6px 10px;width:auto">
+                </div>
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">Até</label>
+                  <input type="date" id="pdf-group-end" class="form-input" style="padding:6px 10px;width:auto">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-top:0.6rem">
+                <button id="btn-pdf-grouped" class="btn-primary" style="font-size:0.88rem">📄 Gerar PDF</button>
+                <button id="btn-csv-grouped" class="btn-secondary" style="font-size:0.88rem">📊 Excel</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="month" style="font-size:0.78rem;padding:0.3rem 0">Mês atual</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="30d" style="font-size:0.78rem;padding:0.3rem 0">30 dias</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="3m" style="font-size:0.78rem;padding:0.3rem 0">Trimestre</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="group" data-p="year" style="font-size:0.78rem;padding:0.3rem 0">Ano atual</button>
+              </div>
             </div>
           </div>
 
           <!-- Processos e Máquinas por Cliente -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">⚙️ Processos e Máquinas por Cliente</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Lista de todas as máquinas e processos cadastrados para o cliente selecionado.</p>
-            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
-              <div class="form-field" style="flex:2;min-width:180px;margin-bottom:0">
-                <label style="font-size:0.78rem">Cliente</label>
-                <select id="pdf-mach-client" class="form-input" style="padding:6px 10px">
-                  <option value="">Selecionar cliente...</option>
-                </select>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';"><div>
+                <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">⚙️ Processos e Máquinas por Cliente</h3>
+                <p style="font-size:0.8rem;color:#64748b;margin:0">Lista de máquinas e processos cadastrados para o cliente.</p>
               </div>
+              <span class="pdf-chev" style="font-size:1.2rem;color:#94a3b8;padding-left:0.5rem;transition:transform 0.2s;flex-shrink:0">▾</span>
             </div>
-            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
-              <button id="btn-pdf-machines" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
-              <button id="btn-csv-machines" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
+            <div>
+              <div style="margin-top:0.75rem">
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">Cliente</label>
+                  <select id="pdf-mach-client" class="form-input" style="padding:6px 10px">
+                    <option value="">Selecionar cliente...</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-top:0.6rem">
+                <button id="btn-pdf-machines" class="btn-primary" style="font-size:0.88rem">📄 Gerar PDF</button>
+                <button id="btn-csv-machines" class="btn-secondary" style="font-size:0.88rem">📊 Excel</button>
+              </div>
             </div>
           </div>
 
           <!-- Relatório de Cancelamentos -->
           <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">❌ Relatório de Cancelamentos</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Proporção de executados x cancelados por processo e máquina no período.</p>
-            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
-              <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
-                <label style="font-size:0.78rem">Cliente (opcional)</label>
-                <select id="pdf-cancel-client" class="form-input" style="padding:6px 10px;font-size:0.88rem">
-                  <option value="">👥 Todos os clientes</option>
-                </select>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';"><div>
+                <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">❌ Relatório de Cancelamentos</h3>
+                <p style="font-size:0.8rem;color:#64748b;margin:0">Proporção de executados x cancelados por processo e máquina.</p>
               </div>
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">De</label>
-                <input type="date" id="pdf-cancel-start" class="form-input" style="padding:6px 10px;width:auto">
-              </div>
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">Até</label>
-                <input type="date" id="pdf-cancel-end" class="form-input" style="padding:6px 10px;width:auto">
-              </div>
+              <span class="pdf-chev" style="font-size:1.2rem;color:#94a3b8;padding-left:0.5rem;transition:transform 0.2s;flex-shrink:0">▾</span>
             </div>
-            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
-              <button id="btn-pdf-cancel" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
-              <button id="btn-csv-cancel" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
-            </div>
-            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
-              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+            <div>
+              <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-top:0.75rem">
+                <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
+                  <label style="font-size:0.78rem">Cliente (opcional)</label>
+                  <select id="pdf-cancel-client" class="form-input" style="padding:6px 10px;font-size:0.88rem">
+                    <option value="">👥 Todos os clientes</option>
+                  </select>
+                </div>
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">De</label>
+                  <input type="date" id="pdf-cancel-start" class="form-input" style="padding:6px 10px;width:auto">
+                </div>
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">Até</label>
+                  <input type="date" id="pdf-cancel-end" class="form-input" style="padding:6px 10px;width:auto">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-top:0.6rem">
+                <button id="btn-pdf-cancel" class="btn-primary" style="font-size:0.88rem">📄 Gerar PDF</button>
+                <button id="btn-csv-cancel" class="btn-secondary" style="font-size:0.88rem">📊 Excel</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="month" style="font-size:0.78rem;padding:0.3rem 0">Mês atual</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="30d" style="font-size:0.78rem;padding:0.3rem 0">30 dias</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="3m" style="font-size:0.78rem;padding:0.3rem 0">Trimestre</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="cancel" data-p="year" style="font-size:0.78rem;padding:0.3rem 0">Ano atual</button>
+              </div>
             </div>
           </div>
 
           <!-- Relatório por Operador -->
           <div class="card" style="margin-bottom:1rem" id="pdf-operator-card">
-            <h3 style="margin:0 0 0.25rem;font-size:0.95rem;font-weight:700;color:#374151">👷 Relatório por Operador</h3>
-            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.85rem">Registros agrupados por operador: quantidade, kg total e clientes atendidos.</p>
-            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">De</label>
-                <input type="date" id="pdf-operator-start" class="form-input" style="padding:6px 10px;width:auto">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';"><div>
+                <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">👷 Relatório por Operador</h3>
+                <p style="font-size:0.8rem;color:#64748b;margin:0">Registros agrupados por operador: quantidade, kg e clientes.</p>
               </div>
-              <div class="form-field" style="margin-bottom:0">
-                <label style="font-size:0.78rem">Até</label>
-                <input type="date" id="pdf-operator-end" class="form-input" style="padding:6px 10px;width:auto">
+              <span class="pdf-chev" style="font-size:1.2rem;color:#94a3b8;padding-left:0.5rem;transition:transform 0.2s;flex-shrink:0">▾</span>
+            </div>
+            <div>
+              <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-top:0.75rem">
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">De</label>
+                  <input type="date" id="pdf-operator-start" class="form-input" style="padding:6px 10px;width:auto">
+                </div>
+                <div class="form-field" style="margin-bottom:0">
+                  <label style="font-size:0.78rem">Até</label>
+                  <input type="date" id="pdf-operator-end" class="form-input" style="padding:6px 10px;width:auto">
+                </div>
               </div>
-            </div>
-            <div style="display:flex;gap:0.5rem;margin-top:0.6rem">
-              <button id="btn-pdf-operator" class="btn-primary" style="flex:1;font-size:0.88rem">📄 Gerar PDF</button>
-              <button id="btn-csv-operator" class="btn-secondary" style="flex:1;font-size:0.88rem">📊 Excel</button>
-            </div>
-            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">
-              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="month" style="font-size:0.73rem;padding:0.18rem 0.5rem">Mês atual</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="30d" style="font-size:0.73rem;padding:0.18rem 0.5rem">30 dias</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="3m" style="font-size:0.73rem;padding:0.18rem 0.5rem">Trimestre</button>
-              <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="year" style="font-size:0.73rem;padding:0.18rem 0.5rem">Ano atual</button>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-top:0.6rem">
+                <button id="btn-pdf-operator" class="btn-primary" style="font-size:0.88rem">📄 Gerar PDF</button>
+                <button id="btn-csv-operator" class="btn-secondary" style="font-size:0.88rem">📊 Excel</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="month" style="font-size:0.78rem;padding:0.3rem 0">Mês atual</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="30d" style="font-size:0.78rem;padding:0.3rem 0">30 dias</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="3m" style="font-size:0.78rem;padding:0.3rem 0">Trimestre</button>
+                <button type="button" class="qf-btn pdf-preset" data-group="operator" data-p="year" style="font-size:0.78rem;padding:0.3rem 0">Ano atual</button>
+              </div>
             </div>
           </div>
         </section>
