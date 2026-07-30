@@ -7783,7 +7783,7 @@ ${recipeSections}
         const key = `${clientName}|||${period}`;
         if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], _ids: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
         grouped[key]._ids.push(r.id);
-        grouped[key].rows.push({ machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0, maintenance: Number(r.maintenance) || 0 });
+        grouped[key].rows.push({ recordId: r.id, machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0, maintenance: Number(r.maintenance) || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
       }
 
@@ -7860,21 +7860,32 @@ ${recipeSections}
           const safeKey = btoa(unescape(encodeURIComponent(key))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
           _recordGroups[safeKey] = g;
 
-        const rowsHtml = g.rows.filter(r => r.maintenance || (r.executed > 0 || r.canceled > 0)).map(row => row.maintenance ? `
+        // Detectar duplicatas: mesma machId+procId com recordId real aparece mais de uma vez
+        const _keyCount = {};
+        g.rows.forEach(r => { if (r.recordId) { const k = `${r.machId}_${r.procId}`; _keyCount[k] = (_keyCount[k] || 0) + 1; } });
+
+        const canDelRow = canDo('delete_record');
+        const rowsHtml = g.rows.filter(r => r.maintenance || (r.executed > 0 || r.canceled > 0)).map(row => {
+          const isDup = row.recordId && _keyCount[`${row.machId}_${row.procId}`] > 1;
+          const dupBadge = isDup ? `<span title="Possível duplicata" style="color:#dc2626;font-size:0.7rem;margin-left:4px">⚠️ dup</span>` : '';
+          const delBtn = (canDelRow && row.recordId) ? `<td style="text-align:center;padding:2px"><button onclick="window._deleteRowRecord(${row.recordId},this)" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:2px 4px;color:#dc2626" title="Excluir linha">🗑️</button></td>` : (canDelRow ? '<td></td>' : '');
+          if (row.maintenance) return `
           <tr style="background:#fef2f2;color:#dc2626;font-style:italic">
             <td>${row.machineName}</td>
             <td colspan="5">🔧 Em manutenção no período</td>
-          </tr>
-        ` : `
-          <tr>
+            ${delBtn}
+          </tr>`;
+          return `
+          <tr style="${isDup ? 'background:#fff7ed' : ''}">
             <td>${row.machineName}</td>
-            <td>${row.procName}</td>
+            <td>${row.procName}${dupBadge}</td>
             <td style="text-align:center">${row.executed}</td>
             <td style="text-align:center">${row.canceled}</td>
             <td style="text-align:center">${row.capacity} kg</td>
-            <td class="total-cell" style="text-align:right">${parseFloat(row.total).toFixed(2)} kg</td>
-          </tr>
-        `).join('');
+            <td style="text-align:right">${parseFloat(row.total).toFixed(2)} kg</td>
+            ${delBtn}
+          </tr>`;
+        }).join('');
 
         return `
           <div class="records-group">
@@ -7910,6 +7921,7 @@ ${recipeSections}
                     <th style="text-align:center">Cancel.</th>
                     <th style="text-align:center">Cap.</th>
                     <th style="text-align:right">Total</th>
+                    ${canDo('delete_record') ? '<th style="width:32px"></th>' : ''}
                   </tr>
                 </thead>
                 <tbody>${rowsHtml}</tbody>
@@ -9579,6 +9591,19 @@ ${inactiveSec}
       }
       const syncMsg = sheetOk === toDelete.length ? '✅ excluídos localmente e na planilha' : `⚠️ ${sheetOk}/${toDelete.length} removidos da planilha (restantes só local)`;
       toast(`${toDelete.length} registro(s) ${syncMsg}`, sheetOk === toDelete.length ? 'success' : 'warning', 5000);
+      await renderRecordsList();
+    };
+
+    // Excluir uma linha individual de registro
+    window._deleteRowRecord = async function(recordId, el) {
+      const _hasDeletePerm = currentUser?.role === 'admin' ||
+        (currentUser?.permissions || '').split(',').map(s => s.trim()).includes('delete_record');
+      if (!_hasDeletePerm) return toast('Sem permissão para excluir registros.', 'warning');
+      if (!await confirmAction('Excluir esta linha de registro?\n\nEsta ação não pode ser desfeita.', '🗑️ Excluir', true)) return;
+      if (el) { el.disabled = true; el.textContent = '⏳'; }
+      await dbDelete('records', recordId);
+      const ok = await deleteSheetDB(SHEETS.RECORDS, recordId);
+      toast(ok ? 'Linha excluída localmente e na planilha.' : 'Linha excluída localmente (falha na planilha).', ok ? 'success' : 'warning', 4000);
       await renderRecordsList();
     };
 
