@@ -7624,11 +7624,12 @@ ${recipeSections}
         }
       }
       return {
-        text:      (document.getElementById('search-records')?.value      || '').toLowerCase(),
-        clientId:  Number(document.getElementById('filter-client-records')?.value || 0),
-        seller:    document.getElementById('filter-seller-records')?.value || '',
+        text:           (document.getElementById('search-records')?.value || '').toLowerCase(),
+        clientId:       Number(document.getElementById('filter-client-records')?.value || 0),
+        seller:         document.getElementById('filter-seller-records')?.value || '',
         dateStart,
         dateEnd,
+        onlyDuplicates: activeQf === 'duplicates',
       };
     }
 
@@ -7702,7 +7703,7 @@ ${recipeSections}
     // =====================================================
     async function renderRecordsList(filters) {
       if (filters === undefined) filters = getReportFilters();
-      const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '' } =
+      const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '', onlyDuplicates = false } =
         typeof filters === 'string' ? { text: filters } : filters;
 
       const [recordsRaw, clients, machines, processes] = await Promise.all([
@@ -7830,6 +7831,13 @@ ${recipeSections}
           if (dateStart && de && de < dateStart) return false;
           if (dateEnd   && ds > dateEnd)         return false;
           return true;
+        });
+      }
+      if (onlyDuplicates) {
+        entries = entries.filter(([key, g]) => {
+          const kc = {};
+          g.rows.forEach(r => { if (r.recordId) { const k = `${r.machId}_${r.procId}`; kc[k] = (kc[k] || 0) + 1; } });
+          return Object.values(kc).some(c => c > 1);
         });
       }
 
