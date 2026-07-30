@@ -3010,7 +3010,7 @@ ${printScript}
                   <div class="list-item-name">
                     ⚙️ ${m.name}
                     <span class="badge badge-yellow">${m.capacity} kg</span>
-                    ${!machWithVazao.has(Number(m.id)) ? `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="Nenhuma vazão cadastrada para esta máquina">⚠️ Sem vazão</span>` : ''}
+                    ${!machWithVazao.has(Number(m.id)) ? (canDo('edit_bomba') ? `<button onclick="window._manageVazoes(${m.id},'${m.name.replace(/'/g,"\\'")}');event.stopPropagation()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:0.75rem;padding:2px 7px;cursor:pointer;font-weight:600;line-height:1.4" title="Clique para cadastrar vazão">⚠️ Sem vazão — cadastrar</button>` : `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">⚠️ Sem vazão</span>`) : ''}
                   </div>
                 </div>
                 <div class="list-item-actions">
@@ -6610,6 +6610,7 @@ ${opSections}
 
           rowsEl.innerHTML = _vazaoBatchRowHtml(1);
           toast(`${rows.length} vazão(ões) adicionada(s)!`, 'success');
+          await renderMachinesList();
         } catch(err) {
           toast('Erro ao salvar', 'error');
         } finally {
