@@ -7863,8 +7863,9 @@ ${recipeSections}
         // Detectar duplicatas: mesma machId+procId com recordId real aparece mais de uma vez
         const _keyCount = {};
         g.rows.forEach(r => { if (r.recordId) { const k = `${r.machId}_${r.procId}`; _keyCount[k] = (_keyCount[k] || 0) + 1; } });
+        const _hasDups = Object.values(_keyCount).some(c => c > 1);
 
-        const canDelRow = canDo('delete_record');
+        const canDelRow = currentUser?.role === 'admin';
         const rowsHtml = g.rows.filter(r => r.maintenance || (r.executed > 0 || r.canceled > 0)).map(row => {
           const isDup = row.recordId && _keyCount[`${row.machId}_${row.procId}`] > 1;
           const dupBadge = isDup ? `<span title="Possível duplicata" style="color:#dc2626;font-size:0.7rem;margin-left:4px">⚠️ dup</span>` : '';
@@ -7901,6 +7902,7 @@ ${recipeSections}
                 <div class="rgh-badges">
                   <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
                   <span class="badge badge-gray">${g.rows.length} linha(s)</span>
+                  ${_hasDups ? `<span class="badge" style="background:#dc2626;color:#fff">⚠️ Duplicatas</span>` : ''}
                 </div>
                 <div class="rgh-actions">
                   <button class="btn-record-action" style="background:#16a34a" onclick="window._shareGroup('${safeKey}')">📤 Enviar</button>
@@ -9596,9 +9598,7 @@ ${inactiveSec}
 
     // Excluir uma linha individual de registro
     window._deleteRowRecord = async function(recordId, el) {
-      const _hasDeletePerm = currentUser?.role === 'admin' ||
-        (currentUser?.permissions || '').split(',').map(s => s.trim()).includes('delete_record');
-      if (!_hasDeletePerm) return toast('Sem permissão para excluir registros.', 'warning');
+      if (currentUser?.role !== 'admin') return toast('Apenas administradores podem excluir linhas.', 'warning');
       if (!await confirmAction('Excluir esta linha de registro?\n\nEsta ação não pode ser desfeita.', '🗑️ Excluir', true)) return;
       if (el) { el.disabled = true; el.textContent = '⏳'; }
       await dbDelete('records', recordId);
