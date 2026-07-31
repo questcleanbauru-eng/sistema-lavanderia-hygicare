@@ -2067,6 +2067,8 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 .ss-opt.ss-sel { font-weight: 700; color: var(--primary, #2563eb); background: #dbeafe; }
 .ss-opt[data-val=""] { color: var(--muted, #64748b); font-style: italic; }
 .ss-empty { padding: 10px 13px; color: var(--muted, #64748b); font-size: 0.85rem; text-align: center; }
+.ss-group { padding: 6px 10px 2px; font-size: 0.68rem; font-weight: 700; color: var(--muted,#64748b); text-transform: uppercase; letter-spacing: 0.05em; pointer-events: none; border-top: 1px solid var(--border,#e2e8f0); margin-top: 2px; }
+.ss-group:first-child { border-top: none; margin-top: 0; }
 @media (prefers-color-scheme: dark) {
   .ss-dropdown { background: #1e293b; border-color: #3b82f6; }
   .ss-opt { color: #e2e8f0; border-color: #334155; }

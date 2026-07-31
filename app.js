@@ -3112,10 +3112,11 @@ ${printScript}
         });
         machineSel.innerHTML = '<option value="">Todas as máquinas</option>' +
           Object.entries(byClientOpts).sort((a,b) => a[0].localeCompare(b[0])).map(([grp, ms]) =>
-            `<optgroup label="${grp}">${ms.map(m => `<option value="${m.id}">⚙️ ${m.name}</option>`).join('')}</optgroup>`
+            `<optgroup label="${grp}">${ms.map(m => `<option value="${m.id}" data-group="${grp}" data-search="${m.name} ${grp}">⚙️ ${m.name}</option>`).join('')}</optgroup>`
           ).join('');
         if (prev) machineSel.value = prev;
         if (machineFilter) machineSel.value = machineFilter;
+        _makeSearchable(machineSel);
       }
 
       const activeMachine = machineFilter || Number(machineSel?.value || 0);
@@ -3694,20 +3695,33 @@ ${printScript}
       wrap.appendChild(drop);
 
       function getOpts() {
-        return Array.from(selectEl.options).map(o => ({ val: o.value, text: o.text }));
+        return Array.from(selectEl.options).map(o => ({
+          val: o.value,
+          text: o.text,
+          search: (o.dataset.search || o.text).toLowerCase(),
+          group: o.dataset.group || o.parentElement?.label || null
+        }));
       }
 
       function renderDrop(query) {
         const q = (query || '').trim().toLowerCase();
         const opts = getOpts();
         drop.innerHTML = '';
-        const filtered = q ? opts.filter(o => o.text.toLowerCase().includes(q)) : opts;
+        const filtered = q ? opts.filter(o => o.search.includes(q)) : opts;
         if (!filtered.length) {
           drop.innerHTML = '<div class="ss-empty">Nenhum resultado</div>';
         } else {
-          filtered.forEach((o, i) => {
+          let lastGroup = null;
+          filtered.forEach(o => {
+            if (o.group && o.group !== lastGroup) {
+              lastGroup = o.group;
+              const gh = document.createElement('div');
+              gh.className = 'ss-group';
+              gh.textContent = o.group;
+              drop.appendChild(gh);
+            }
             const d = document.createElement('div');
-            d.className = 'ss-opt' + (o.val === selectEl.value ? ' ss-sel' : '') + (i === 0 ? ' ss-hover' : '');
+            d.className = 'ss-opt' + (o.val === selectEl.value ? ' ss-sel' : '');
             d.dataset.val = o.val;
             d.textContent = o.text;
             d.addEventListener('mousedown', e => {
@@ -3719,6 +3733,7 @@ ${printScript}
             });
             drop.appendChild(d);
           });
+          drop.querySelector('.ss-opt')?.classList.add('ss-hover');
         }
       }
 
