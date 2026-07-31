@@ -8426,7 +8426,8 @@ ${recipeSections}
       const selS = document.getElementById('chart-filter-seller');
       if (selS) {
         if (currentUser && currentUser.role === 'vendedor') {
-          selS.style.display = 'none';
+          const sWrap = selS.closest('.ss-wrap') || selS;
+          sWrap.style.display = 'none';
         } else if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
           const managed = getManagedSellerNames();
           const cur = selS.value;
@@ -8437,6 +8438,7 @@ ${recipeSections}
             selS.innerHTML += `<option value="${label}">${label}</option>`;
           });
           if (cur) selS.value = cur;
+          _makeSearchable(selS);
         } else {
           const allClients = await dbGetAll_raw('clients');
           const cur = selS.value;
@@ -8448,6 +8450,7 @@ ${recipeSections}
           selS.innerHTML = '<option value="">👤 Todos os vendedores</option>';
           sellers.forEach(s => selS.innerHTML += `<option value="${s}">${s}</option>`);
           if (cur) selS.value = cur;
+          _makeSearchable(selS);
         }
       }
 
@@ -8455,7 +8458,8 @@ ${recipeSections}
       const selG = document.getElementById('chart-filter-gerente');
       if (selG) {
         if (!currentUser || currentUser.role !== 'admin') {
-          selG.style.display = 'none';
+          const gWrap = selG.closest('.ss-wrap') || selG;
+          gWrap.style.display = 'none';
         } else {
           const users = await _originalGetAll('users');
           const gerentes = users.filter(u => u.role === 'gerente');
@@ -8465,7 +8469,9 @@ ${recipeSections}
               .map(g => `<option value="${g.id}">${g.name || g.sellerName || g.username}</option>`)
               .join('');
           if (cur) selG.value = cur;
-          selG.style.display = '';
+          const gWrap = selG.closest('.ss-wrap') || selG;
+          gWrap.style.display = '';
+          _makeSearchable(selG);
         }
       }
     }

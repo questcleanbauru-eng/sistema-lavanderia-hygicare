@@ -1519,8 +1519,9 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .chart-preset-btn { flex: 1; min-width: 0; justify-content: center; text-align: center; }
   .charts-grid { grid-template-columns: 1fr; }
   .charts-grid .card[style*="span 2"] { grid-column: span 1 !important; }
-  .charts-filters { flex-direction: column; }
-  .charts-filters .filter-select { width: 100%; }
+  .charts-filters { flex-direction: column; align-items: stretch; }
+  .charts-filters .filter-select,
+  .charts-filters .ss-wrap { width: 100%; }
 
   /* TOASTS ? full-width em mobile */
   #toast-container { bottom: 1rem; right: 0.7rem; left: 0.7rem; }
