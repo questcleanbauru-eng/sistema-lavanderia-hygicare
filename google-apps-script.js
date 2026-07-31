@@ -966,7 +966,13 @@ function _sendEmail(opts) {
 function _fmtKg(n) {
   var s = parseFloat(n || 0).toFixed(2);
   var parts = s.split('.');
-  return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + parts[1];
+  var intPart = parts[0];
+  var out = '';
+  for (var i = 0; i < intPart.length; i++) {
+    if (i > 0 && (intPart.length - i) % 3 === 0) out += '.';
+    out += intPart[i];
+  }
+  return out + ',' + parts[1];
 }
 
 function _emailShell(badge, headerBg, bodyHtml) {
