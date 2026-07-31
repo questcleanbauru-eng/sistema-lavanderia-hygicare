@@ -2841,6 +2841,26 @@ ${printScript}
       } finally { if (el) el.disabled = false; }
     };
 
+    window._toggleClientActive = async function(id, el) {
+      if (!canDo('edit_client')) return toast('Sem permissão para editar clientes.', 'error');
+      if (el) el.disabled = true;
+      try {
+        const all = await dbGetAll_raw('clients');
+        const c = all.find(x => Number(x.id) === Number(id));
+        if (!c) return;
+        const wasActive = c.active !== false && c.active !== 0 && c.active !== 'false';
+        const updated = { ...c, active: !wasActive };
+        await dbPut('clients', updated);
+        await patchSheetDB(SHEETS.CLIENTS, updated.id, updated);
+        toast(`Cliente ${!wasActive ? 'ativado' : 'inativado'}.`, 'success');
+        await renderClientsList(document.getElementById('search-clients')?.value || '');
+        await refreshClientsSelects();
+      } catch(err) {
+        toast('Erro: ' + err.message, 'error');
+        if (el) el.disabled = false;
+      }
+    };
+
     // =====================================================
     // RENDER — CLIENTES
     // =====================================================
@@ -2866,6 +2886,7 @@ ${printScript}
             </div>
           </div>
           <div class="list-item-actions">
+            ${canDo('edit_client') ? `<button class="btn-sm" onclick="window._toggleClientActive(${c.id},this)" style="background:${isActive?'#dcfce7':'#fee2e2'};color:${isActive?'#166534':'#991b1b'};border:1px solid ${isActive?'#86efac':'#fca5a5'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">${isActive?'🟢 Ativo':'🔴 Inativo'}</button>` : ''}
             ${canDo('edit_client') ? `<button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>` : ''}
             ${canDo('delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id}, this)">🗑️</button>` : ''}
           </div>
