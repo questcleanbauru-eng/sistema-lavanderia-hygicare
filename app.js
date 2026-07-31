@@ -2257,9 +2257,10 @@ ${printScript}
           if (!isNaN(num)) n[f] = num;
         }
       });
-      if (typeof n.active     === 'string') n.active      = n.active     === 'TRUE' || n.active     === 'true';
+      if (typeof n.active     === 'string') n.active      = n.active     === '' ? true  : (n.active     === 'TRUE' || n.active     === 'true');
       if (typeof n.send_client === 'string') n.send_client = n.send_client === 'TRUE' || n.send_client === 'true';
       if (typeof n.send_seller === 'string') n.send_seller = n.send_seller === 'TRUE' || n.send_seller === 'true';
+      if (typeof n.vazao_only  === 'string') n.vazao_only  = n.vazao_only  === 'TRUE' || n.vazao_only  === 'true';
       if (n.capacity !== undefined && n.capacity !== '') n.capacity = parseFloat(n.capacity) || 0;
       if (n.executed !== undefined && n.executed !== '')  n.executed = parseFloat(n.executed) || 0;
       if (n.canceled !== undefined && n.canceled !== '')  n.canceled = parseFloat(n.canceled) || 0;
