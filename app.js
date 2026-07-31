@@ -3857,15 +3857,21 @@ ${printScript}
       const machines = await getAll('machines');
       const clients  = await getAll('clients');
       const val = processMachineSelect.value;
-      processMachineSelect.innerHTML = '<option value="">-- Selecione uma máquina --</option>';
+      const byClient = {};
       machines.forEach(m => {
         const client = clients.find(c => Number(c.id) === Number(m.client_id));
-        const o = document.createElement('option');
-        o.value = m.id;
-        o.textContent = `${m.name} [${m.capacity} kg] — ${client?.name || 'Cliente'}`;
-        processMachineSelect.appendChild(o);
+        const grp = client?.name || 'Sem cliente';
+        if (!byClient[grp]) byClient[grp] = [];
+        byClient[grp].push(m);
       });
+      processMachineSelect.innerHTML = '<option value="">-- Selecione uma máquina --</option>' +
+        Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([grp, ms]) =>
+          `<optgroup label="${grp}">${ms.map(m =>
+            `<option value="${m.id}" data-group="${grp}" data-search="${m.name} ${grp}">${m.name}${m.capacity ? ' ['+m.capacity+' kg]' : ''}</option>`
+          ).join('')}</optgroup>`
+        ).join('');
       if (val) processMachineSelect.value = val;
+      _makeSearchable(processMachineSelect);
     }
 
     // =====================================================
