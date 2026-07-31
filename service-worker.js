@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v333';
+const CACHE = 'lavanderia-cache-v334';
 const ASSETS = [
   '/',
   '/index.html',

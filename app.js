@@ -2257,6 +2257,7 @@ ${printScript}
           if (!isNaN(num)) n[f] = num;
         }
       });
+      if (typeof n.active     === 'string') n.active      = n.active     === 'TRUE' || n.active     === 'true';
       if (typeof n.send_client === 'string') n.send_client = n.send_client === 'TRUE' || n.send_client === 'true';
       if (typeof n.send_seller === 'string') n.send_seller = n.send_seller === 'TRUE' || n.send_seller === 'true';
       if (n.capacity !== undefined && n.capacity !== '') n.capacity = parseFloat(n.capacity) || 0;
@@ -2447,6 +2448,7 @@ ${printScript}
       e.preventDefault();
       if (_saving) return;
       const data = Object.fromEntries(new FormData(formClient).entries());
+      data.active      = !!data.active;
       data.send_client = !!data.send_client;
       data.send_seller = !!data.send_seller;
       data.vazao_only  = !!data.vazao_only;
@@ -2683,6 +2685,7 @@ ${printScript}
       formClient.email_client.value = c.email_client || '';
       formClient.email_seller.value = c.email_seller || '';
       formClient.price_kg.value     = c.price_kg || '';
+      formClient.active.checked      = c.active !== false && c.active !== 0 && c.active !== 'false';
       formClient.send_client.checked = !!c.send_client;
       formClient.send_seller.checked = !!c.send_seller;
       formClient.vazao_only.checked  = !!c.vazao_only;
@@ -2843,13 +2846,15 @@ ${printScript}
     let _clientsGrouped = false;
     function _clientItemHtml(c) {
       const vazaoOnly = !!c.vazao_only;
+      const isActive  = c.active !== false && c.active !== 0 && c.active !== 'false';
       return `
-        <div class="list-item"${vazaoOnly ? ' style="border-left:3px solid #0ea5e9;opacity:0.92"' : ''}>
+        <div class="list-item"${!isActive ? ' style="border-left:3px solid #dc2626;opacity:0.75"' : vazaoOnly ? ' style="border-left:3px solid #0ea5e9;opacity:0.92"' : ''}>
           <div class="list-item-content">
             <div class="list-item-name">
-              ${vazaoOnly ? '💧' : '👤'} ${c.name}
+              ${!isActive ? '🔴' : vazaoOnly ? '💧' : '👤'} ${c.name}
               <span class="badge">${c.city || 'Sem cidade'}</span>
-              ${vazaoOnly ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.7em">Apenas Vazão</span>' : ''}
+              ${!isActive ? '<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.7em">Inativo</span>' : ''}
+              ${isActive && vazaoOnly ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.7em">Apenas Vazão</span>' : ''}
             </div>
             <div class="list-item-details">
               ${c.seller ? `<span class="detail-chip">👨‍💼 ${c.seller}</span>` : ''}
@@ -3402,6 +3407,10 @@ ${printScript}
       if (!canDo('send_record')) return toast('Sem permissão para registrar produção.', 'error');
       const clientId  = Number(prodClientSelect.value);
       if (!clientId) return toast('Selecione um cliente', 'warning');
+      const _allClients = await dbGetAll_raw('clients');
+      const _selClient  = _allClients.find(c => Number(c.id) === clientId);
+      const _clientActive = !_selClient || (_selClient.active !== false && _selClient.active !== 0 && _selClient.active !== 'false');
+      if (!_clientActive) return toast('Cliente inativo — não é possível registrar produção.', 'error');
       if (_saving) return; // guard must come before any await to prevent double-click race
       const isEditMode = !!_editingRecord;
       const editGroup  = _editingRecord;
@@ -3754,9 +3763,11 @@ ${printScript}
         const val = sel.value;
         sel.innerHTML = '<option value="">-- Selecione um cliente --</option>';
         clients.forEach(c => {
+          const isActive = c.active !== false && c.active !== 0 && c.active !== 'false';
           const o = document.createElement('option');
           o.value = c.id;
-          o.textContent = `${c.name} (${c.city || ''})`;
+          o.textContent = `${isActive ? '' : '🔴 '}${c.name} (${c.city || ''})`;
+          if (!isActive) o.style.color = '#dc2626';
           sel.appendChild(o);
         });
         if (val) { sel.value = val; }
@@ -5902,6 +5913,9 @@ ${opSections}
       const date     = document.getElementById('vazao-date')?.value;
       const clientId = Number(document.getElementById('vazao-client')?.value);
       if (!date || !clientId) return toast('Preencha a data e selecione um cliente', 'warning');
+      const _vzClient = (await dbGetAll_raw('clients')).find(c => Number(c.id) === clientId);
+      if (_vzClient && (_vzClient.active === false || _vzClient.active === 0 || _vzClient.active === 'false'))
+        return toast('Cliente inativo — não é possível registrar vazão.', 'error');
 
       const inputs = document.querySelectorAll('.vazao-result-input');
       const rows = [];
