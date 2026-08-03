@@ -23,7 +23,8 @@
 // a função ensureHeaders() adiciona automaticamente ao final.
 const HEADERS = {
   Clientes:       ['id','name','city','seller','email_client','send_client',
-                   'email_seller','send_seller','price_kg','created_at','vazao_only','active'],
+                   'email_seller','send_seller','price_kg','created_at','vazao_only','active','cod_financeiro'],
+  Financeiro:     ['id','client_id','cod_financeiro','sub_grupo','month','total_venda','created_at'],
   Maquinas:       ['id','name','client_id','capacity','created_at'],
   Processos:      ['id','name','machine_id','capacity','active','created_at'],
   Registros:      ['id','client_id','machine_id','process_id','executed',

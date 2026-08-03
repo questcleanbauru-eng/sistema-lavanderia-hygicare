@@ -994,6 +994,7 @@ ${printScript}
       'nav-reports':   'screen-reports',
       'nav-alerts':    'screen-alerts',
       'nav-users':     'screen-users',
+      'nav-financeiro': 'screen-financeiro',
       'nav-admin':     'screen-admin',
     };
     Object.entries(navMap).forEach(([btnId, screenId]) => {
@@ -1015,6 +1016,7 @@ ${printScript}
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
         if (screenId === 'screen-users')        await renderUsersList();
+        if (screenId === 'screen-financeiro')   await initFinanceiroScreen();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
       });
     });
@@ -1891,6 +1893,7 @@ ${printScript}
       editClientIdField.value = '';
       document.getElementById('form-client-title').textContent = 'Novo Cliente';
       formClient.reset();
+      document.getElementById('cod-financeiro-row').classList.toggle('hidden', currentUser?.role !== 'admin');
       formClientCard.classList.remove('hidden');
     };
     function _machineRowHtml(name = '', capacity = '') {
@@ -1976,6 +1979,7 @@ ${printScript}
       recipes:         { sheet: SHEETS.RECIPES,         store: 'recipes',         label: 'receitas'         },
       recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
       client_notes:    { sheet: SHEETS.CLIENT_NOTES,    store: 'client_notes',    label: 'histórico clientes' },
+      financeiro:      { sheet: SHEETS.FINANCEIRO,      store: 'financeiro',      label: 'financeiro'         },
     };
 
     // Sync silencioso na inicialização — preenche IndexedDB a partir do GAS
@@ -2690,6 +2694,8 @@ ${printScript}
       formClient.send_client.checked = !!c.send_client;
       formClient.send_seller.checked = !!c.send_seller;
       formClient.vazao_only.checked  = !!c.vazao_only;
+      formClient.cod_financeiro.value = c.cod_financeiro || '';
+      document.getElementById('cod-financeiro-row').classList.toggle('hidden', currentUser?.role !== 'admin');
       formClientCard.classList.remove('hidden');
       formClientCard.scrollIntoView({ behavior: 'smooth' });
     }
@@ -2880,6 +2886,7 @@ ${printScript}
             <div class="list-item-details">
               ${c.seller ? `<span class="detail-chip">👨‍💼 ${c.seller}</span>` : ''}
               ${c.price_kg ? `<span class="detail-chip">💰 R$ ${parseFloat(c.price_kg).toFixed(2)}/kg</span>` : ''}
+              ${currentUser?.role === 'admin' && c.cod_financeiro ? `<span class="detail-chip">🔢 Cód. ${c.cod_financeiro}</span>` : ''}
               ${c.email_client ? `<span class="detail-chip">📧 ${c.email_client}</span>` : ''}
               ${c.send_client ? `<span class="badge badge-green">✉️ Envia cliente</span>` : ''}
               ${c.send_seller ? `<span class="badge badge-green">✉️ Envia vendedor</span>` : ''}
@@ -9830,6 +9837,272 @@ ${inactiveSec}
       el.addEventListener('input',  _persist);
       el.addEventListener('change', _persist);
     });
+
+    // =====================================================
+    // MÓDULO FINANCEIRO (admin)
+    // =====================================================
+    let _finInitialized = false;
+
+    async function initFinanceiroScreen() {
+      if (!_finInitialized) {
+        _finInitialized = true;
+
+        document.querySelectorAll('[data-fin-tab]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-fin-tab]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tab = btn.dataset.finTab;
+            document.getElementById('fin-tab-upload').classList.toggle('hidden', tab !== 'upload');
+            document.getElementById('fin-tab-view').classList.toggle('hidden', tab !== 'view');
+            if (tab === 'view') renderFinanceiroView();
+          });
+        });
+
+        const dropZone = document.getElementById('fin-drop-zone');
+        const fileInput = document.getElementById('fin-file-input');
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.background = 'var(--hover,#f1f5f9)'; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.background = ''; });
+        dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.background = ''; if (e.dataTransfer.files[0]) processFinanceiroFile(e.dataTransfer.files[0]); });
+        fileInput.addEventListener('change', e => { if (e.target.files[0]) processFinanceiroFile(e.target.files[0]); fileInput.value = ''; });
+
+        document.getElementById('btn-fin-cancel').addEventListener('click', () => {
+          document.getElementById('fin-preview').classList.add('hidden');
+          window._finPendingRows = null;
+        });
+        document.getElementById('btn-fin-save').addEventListener('click', saveFinanceiroRows);
+      }
+      await refreshFinanceiroFilters();
+    }
+
+    async function processFinanceiroFile(file) {
+      if (typeof XLSX === 'undefined') { toast('Biblioteca Excel não carregada.', 'error'); return; }
+      showOverlay('Lendo arquivo...');
+      try {
+        const buf = await file.arrayBuffer();
+        const wb  = XLSX.read(buf, { type: 'array' });
+        const ws  = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (!rows.length) { toast('Planilha vazia ou inválida.', 'error'); return; }
+
+        const keys = Object.keys(rows[0]);
+        const colCod    = keys.find(k => /^cod[\.\s]*$/i.test(k.trim()) || (/^c[oó]d(igo)?[\s.]*$/i.test(k.trim()) && !/pr[oó]prio/i.test(k)));
+        const colValor  = keys.find(k => /r[s$][\s_]*total[\s_]*venda/i.test(k) || /total[\s_]*venda/i.test(k));
+        const colSub    = keys.find(k => /sub[\s_]*grupo/i.test(k));
+        const colDate   = keys.find(k => /^data|date|emis/i.test(k.trim()));
+
+        if (!colCod || !colValor || !colSub) {
+          toast('Colunas não encontradas. Encontradas: ' + keys.slice(0, 10).join(', '), 'error');
+          return;
+        }
+
+        // Detecta mês da planilha
+        let detectedMonth = null;
+        if (colDate) {
+          for (const r of rows) {
+            const v = r[colDate];
+            if (!v) continue;
+            if (typeof v === 'number') {
+              const d = XLSX.SSF.parse_date_code(v);
+              if (d) { detectedMonth = d.y + '-' + String(d.m).padStart(2, '0'); break; }
+            } else {
+              const mt = String(v).match(/(\d{4})[\/\-](\d{2})|(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+              if (mt) { detectedMonth = mt[1] ? mt[1] + '-' + mt[2] : mt[5] + '-' + mt[4]; break; }
+            }
+          }
+        }
+        if (!detectedMonth) {
+          const now = new Date();
+          detectedMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        }
+
+        // Agrupa cod + sub_grupo → soma total_venda
+        const grouped = {};
+        for (const r of rows) {
+          const cod = String(r[colCod] || '').trim();
+          const sub = String(r[colSub] || '').trim();
+          const val = parseFloat(String(r[colValor]).replace(',', '.')) || 0;
+          if (!cod || !sub || !val) continue;
+          const key = cod + '|' + sub;
+          if (!grouped[key]) grouped[key] = { cod_financeiro: cod, sub_grupo: sub, total_venda: 0 };
+          grouped[key].total_venda += val;
+        }
+
+        const aggregated = Object.values(grouped);
+        if (!aggregated.length) { toast('Nenhum dado válido encontrado.', 'error'); return; }
+
+        const clients = await dbGetAll_raw('clients');
+        const clientByCod = {};
+        clients.forEach(c => { if (c.cod_financeiro) clientByCod[String(c.cod_financeiro).trim()] = c; });
+
+        const matched = [], unmatched = [];
+        for (const g of aggregated) {
+          const client = clientByCod[g.cod_financeiro];
+          if (client) matched.push({ ...g, client_id: client.id, client_name: client.name, month: detectedMonth });
+          else unmatched.push(g.cod_financeiro);
+        }
+
+        window._finPendingRows = matched;
+
+        const fmt = v => 'R$ ' + v.toFixed(2).replace('.', ',');
+        const [y, mo] = detectedMonth.split('-');
+        const monthLabel = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+        document.getElementById('fin-preview-title').textContent = matched.length + ' registros — ' + monthLabel;
+
+        document.getElementById('fin-preview-table').innerHTML =
+          `<thead><tr style="background:var(--primary,#2563eb);color:#fff">
+            <th style="padding:6px 8px;text-align:left">Cliente</th>
+            <th style="padding:6px 8px;text-align:left">Cód.</th>
+            <th style="padding:6px 8px;text-align:left">Sub Grupo</th>
+            <th style="padding:6px 8px;text-align:right">Total Venda</th>
+          </tr></thead><tbody>` +
+          matched.map((r, i) => `<tr style="background:${i%2?'var(--surface,#f8fafc)':''}">
+            <td style="padding:5px 8px">${r.client_name}</td>
+            <td style="padding:5px 8px;color:var(--muted)">${r.cod_financeiro}</td>
+            <td style="padding:5px 8px">${r.sub_grupo}</td>
+            <td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(r.total_venda)}</td>
+          </tr>`).join('') +
+          `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
+            <td colspan="3" style="padding:6px 8px">Total</td>
+            <td style="padding:6px 8px;text-align:right">${fmt(matched.reduce((s,r)=>s+r.total_venda,0))}</td>
+          </tr></tfoot>`;
+
+        const unmEl = document.getElementById('fin-unmatched');
+        if (unmatched.length) {
+          unmEl.classList.remove('hidden');
+          unmEl.innerHTML = '<strong>⚠️ ' + unmatched.length + ' código(s) sem cliente correspondente (ignorados):</strong> ' + unmatched.join(', ') +
+            '<br><small>Configure o campo "Código Financeiro" nos clientes para incluí-los.</small>';
+        } else {
+          unmEl.classList.add('hidden');
+        }
+
+        document.getElementById('fin-preview').classList.remove('hidden');
+        document.getElementById('fin-preview').scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        console.error(err);
+        toast('Erro ao ler arquivo: ' + err.message, 'error');
+      } finally {
+        hideOverlay();
+      }
+    }
+
+    async function saveFinanceiroRows() {
+      const rows = window._finPendingRows;
+      if (!rows || !rows.length) return;
+      showOverlay('Salvando dados financeiros...');
+      try {
+        for (const row of rows) {
+          const item = {
+            id: genId(),
+            client_id: row.client_id,
+            cod_financeiro: row.cod_financeiro,
+            sub_grupo: row.sub_grupo,
+            month: row.month,
+            total_venda: row.total_venda,
+            created_at: new Date().toISOString()
+          };
+          await dbPut('financeiro', item);
+          if (navigator.onLine) await callGAS('insert', SHEETS.FINANCEIRO, item);
+        }
+        toast(rows.length + ' registros financeiros salvos!', 'success');
+        window._finPendingRows = null;
+        document.getElementById('fin-preview').classList.add('hidden');
+        await refreshFinanceiroFilters();
+      } catch (err) {
+        toast('Erro ao salvar: ' + err.message, 'error');
+      } finally {
+        hideOverlay();
+      }
+    }
+
+    async function refreshFinanceiroFilters() {
+      const rows = await dbGetAll_raw('financeiro');
+      const clients = await dbGetAll_raw('clients');
+      const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
+      const months    = [...new Set(rows.map(r => r.month).filter(Boolean))].sort().reverse();
+      const clientIds = [...new Set(rows.map(r => r.client_id).filter(Boolean))];
+      const subGrupos = [...new Set(rows.map(r => r.sub_grupo).filter(Boolean))].sort();
+
+      const monthSel  = document.getElementById('fin-filter-month');
+      const clientSel = document.getElementById('fin-filter-client');
+      const subSel    = document.getElementById('fin-filter-subgrupo');
+      const curMonth  = monthSel.value;
+      const curClient = clientSel.value;
+      const curSub    = subSel.value;
+
+      monthSel.innerHTML = '<option value="">Todos os meses</option>' + months.map(m => {
+        const [y, mo] = m.split('-');
+        const label = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        return `<option value="${m}"${m === curMonth ? ' selected' : ''}>${label}</option>`;
+      }).join('');
+
+      clientSel.innerHTML = '<option value="">Todos os clientes</option>' + clientIds.map(id => {
+        const name = clientMap[id] || ('ID ' + id);
+        return `<option value="${id}"${String(id) === curClient ? ' selected' : ''}>${name}</option>`;
+      }).join('');
+
+      subSel.innerHTML = '<option value="">Todos os subgrupos</option>' + subGrupos.map(s =>
+        `<option value="${s}"${s === curSub ? ' selected' : ''}>${s}</option>`
+      ).join('');
+
+      [monthSel, clientSel, subSel].forEach(sel => { sel.onchange = renderFinanceiroView; });
+    }
+
+    async function renderFinanceiroView() {
+      let rows = await dbGetAll_raw('financeiro');
+      const clients = await dbGetAll_raw('clients');
+      const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
+
+      const filterMonth  = document.getElementById('fin-filter-month')?.value  || '';
+      const filterClient = document.getElementById('fin-filter-client')?.value || '';
+      const filterSub    = document.getElementById('fin-filter-subgrupo')?.value || '';
+
+      if (filterMonth)  rows = rows.filter(r => r.month === filterMonth);
+      if (filterClient) rows = rows.filter(r => String(r.client_id) === filterClient);
+      if (filterSub)    rows = rows.filter(r => r.sub_grupo === filterSub);
+
+      const container = document.getElementById('fin-data-view');
+      if (!rows.length) { container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado financeiro encontrado.</p>'; return; }
+
+      const fmtBR = v => 'R$ ' + (parseFloat(v)||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const grandTotal = rows.reduce((s, r) => s + (r.total_venda || 0), 0);
+
+      // Agrupa por cliente
+      const byClient = {};
+      for (const r of rows) {
+        const name = clientMap[r.client_id] || ('Cód. ' + r.cod_financeiro);
+        if (!byClient[name]) byClient[name] = { total: 0, months: {} };
+        byClient[name].total += r.total_venda;
+        const mk = r.month || 'S/data';
+        if (!byClient[name].months[mk]) byClient[name].months[mk] = { total: 0, subs: [] };
+        byClient[name].months[mk].total += r.total_venda;
+        byClient[name].months[mk].subs.push({ sub: r.sub_grupo, val: r.total_venda });
+      }
+
+      let html = `<div style="margin-bottom:0.75rem;font-weight:700;font-size:1rem">Total geral: <span style="color:var(--primary,#2563eb)">${fmtBR(grandTotal)}</span></div>`;
+      for (const [clientName, data] of Object.entries(byClient).sort((a, b) => b[1].total - a[1].total)) {
+        html += `<div class="list-item" style="display:block;margin-bottom:0.75rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+            <strong>👤 ${clientName}</strong>
+            <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtBR(data.total)}</span>
+          </div>`;
+        for (const [month, md] of Object.entries(data.months).sort().reverse()) {
+          const [y, mo] = month.split('-');
+          const mLabel = mo ? new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'short', year: '2-digit' }) : month;
+          html += `<div style="padding:0.3rem 0;border-top:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--muted);margin-bottom:0.2rem">
+              <span>${mLabel}</span><span>${fmtBR(md.total)}</span>
+            </div>` +
+            md.subs.map(s => `<div style="display:flex;justify-content:space-between;font-size:0.8rem;padding-left:1rem">
+              <span>${s.sub}</span><span>${fmtBR(s.val)}</span>
+            </div>`).join('') +
+            '</div>';
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
+    }
 
   } // fim initApp()
 
