@@ -312,6 +312,26 @@ function sendNotification(action, sheetName, payload, actor) {
         + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
+    // ── Resolver nomes para IDs de FK (Registros, VazaoRegistros) ──
+    var resolvedNames = {};
+    if (payload && !Array.isArray(payload) &&
+        (sheetName === 'Registros' || sheetName === 'VazaoRegistros' || sheetName === 'ClienteNotas')) {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      function _lookupName(sheetRef, id) {
+        try {
+          if (!sheetRef || !id) return null;
+          var rowNum = findRowById(sheetRef, id);
+          if (rowNum < 0) return null;
+          var hdrs = sheetRef.getRange(1, 1, 1, sheetRef.getLastColumn()).getValues()[0];
+          var rowData = sheetRef.getRange(rowNum, 1, 1, sheetRef.getLastColumn()).getValues()[0];
+          return rowToObj(hdrs, rowData).name || null;
+        } catch(e) { return null; }
+      }
+      if (payload.client_id)  resolvedNames.client_id  = _lookupName(ss.getSheetByName('Clientes'),  payload.client_id);
+      if (payload.machine_id) resolvedNames.machine_id = _lookupName(ss.getSheetByName('Maquinas'),  payload.machine_id);
+      if (payload.process_id) resolvedNames.process_id = _lookupName(ss.getSheetByName('Processos'), payload.process_id);
+    }
+
     // ── Montar linhas da tabela principal ─────────────────
     var mainRows = '';
     var stepsHtml = '';
@@ -321,11 +341,21 @@ function sendNotification(action, sheetName, payload, actor) {
         var v = payload[k];
         if (k === 'steps') { stepsHtml = formatSteps(v) || ''; return; }
         if (jsonFields.indexOf(k) >= 0) return; // oculta outros campos JSON complexos
-        var display = (v === null || v === undefined || v === '') ? '<em style="color:#94a3b8">&mdash;</em>' : String(v);
-        // Booleanos
-        if (display === 'true')  display = '<span style="color:#16a34a;font-weight:700">✔ Sim</span>';
-        if (display === 'false') display = '<span style="color:#64748b">✘ Não</span>';
+        var display;
+        if (resolvedNames[k]) {
+          display = '<strong style="color:#1e293b">' + resolvedNames[k] + '</strong>'
+            + ' <span style="color:#94a3b8;font-size:10px">(ID: ' + v + ')</span>';
+        } else {
+          display = (v === null || v === undefined || v === '') ? '<em style="color:#94a3b8">&mdash;</em>' : String(v);
+          if (display === 'true')  display = '<span style="color:#16a34a;font-weight:700">✔ Sim</span>';
+          if (display === 'false') display = '<span style="color:#64748b">✘ Não</span>';
+        }
         var label = labelMap[k] || k;
+        if (resolvedNames[k]) {
+          if (k === 'client_id')  label = 'Cliente';
+          if (k === 'machine_id') label = 'Máquina';
+          if (k === 'process_id') label = 'Processo';
+        }
         mainRows += '<tr>'
           + '<td style="padding:7px 12px;font-size:11px;font-weight:700;color:#475569;white-space:nowrap;border-bottom:1px solid #f1f5f9;background:#f8fafc;width:35%">' + label + '</td>'
           + '<td style="padding:7px 12px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9">' + display + '</td>'
