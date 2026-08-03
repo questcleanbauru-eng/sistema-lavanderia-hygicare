@@ -5400,7 +5400,7 @@ ${opSections}
           { perm: 'clients',      screen: 'screen-clients',      fn: async () => { await renderClientsList(); await refreshSellerSelect(); }, icon: '👥', label: 'Clientes' },
           { perm: 'machines',     screen: 'screen-machines',     fn: renderMachinesList,    icon: '⚙️', label: 'Máquinas' },
           { perm: 'processes',    screen: 'screen-processes',    fn: renderProcessesList,   icon: '🔄', label: 'Processos' },
-          { perm: 'form',         screen: 'screen-form',         fn: _initFormScreen,       icon: '➕', label: 'Produção' },
+          { perm: 'form',         screen: 'screen-form',         fn: _initFormScreen,       icon: '➕', label: 'Enviar dados (Lavagens)' },
           { perm: 'reports',      screen: 'screen-reports',      fn: async () => { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }, icon: '📄', label: 'Relatórios' },
           { perm: 'charts',       screen: 'screen-charts',       fn: async () => { await refreshChartsFilters(); await renderCharts(); }, icon: '📊', label: 'Gráficos' },
           { perm: 'vazao',        screen: 'screen-vazao',        fn: initVazaoScreen,       icon: '💧', label: 'Vazão' },
