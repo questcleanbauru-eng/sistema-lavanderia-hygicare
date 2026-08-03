@@ -647,6 +647,17 @@ function nextId(sheet) {
   return max + 1;
 }
 
+// ── Validar token secreto ────────────────────────────────────
+// Se "api_secret" estiver configurado na aba Config, toda requisição
+// deve enviar _secret com o mesmo valor. Sem a chave configurada,
+// não há restrição (permite ativar a proteção progressivamente).
+function _checkSecret(e) {
+  var cfg = getConfig('api_secret');
+  if (!cfg) return true;
+  var sent = (e.parameter && e.parameter._secret) || '';
+  return sent === cfg;
+}
+
 // ============================================================
 // GET — Leitura + Ações especiais (?action=test-email)
 // ?sheet=Clientes          → retorna uma aba
@@ -655,6 +666,7 @@ function nextId(sheet) {
 // ============================================================
 function doGet(e) {
   try {
+    if (!_checkSecret(e)) return respondError('Unauthorized', 401);
     const params = e.parameter || {};
 
     // Teste de listagem de PDFs via GET: ?action=list-pdfs
@@ -719,6 +731,7 @@ function doGet(e) {
 // ============================================================
 function doPost(e) {
   try {
+    if (!_checkSecret(e)) return respondError('Unauthorized', 401);
     // ── Ler o payload ─────────────────────────────────────
     // O app envia via URLSearchParams (form-urlencoded) com a chave "payload"
     // para evitar o redirect 302 que o GAS faz com application/json.

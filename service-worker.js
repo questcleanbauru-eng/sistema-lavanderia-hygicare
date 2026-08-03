@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v342';
+const CACHE = 'lavanderia-cache-v343';
 const ASSETS = [
   '/',
   '/index.html',
@@ -42,6 +42,7 @@ self.addEventListener('fetch', e => {
   if (url.includes('script.google.com')) return;
   if (url.includes('googleusercontent.com')) return;
   if (url.includes('googleapis.com')) return;
+  if (url.includes('/api/')) return; // proxy Vercel — nunca cachear chamadas à API
   // cdn.jsdelivr.net é cacheado normalmente (stale-while-revalidate)
   // para que Chart.js funcione offline após o primeiro carregamento
 

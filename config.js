@@ -1,7 +1,7 @@
 // Configuracoes — Google Apps Script
 const CONFIG = {
-  // URL do Google Apps Script publicado
-  GAS_URL: "https://script.google.com/macros/s/AKfycbzvQTnHT3IIojMVEKHyoWgkx4dYr7AuhrVROEfGzZjFRajR0xYtkC7TFoqaA3evTYBuag/exec",
+  // Todas as requisições passam pelo proxy Vercel (GAS_URL fica escondido no servidor)
+  GAS_URL: "/api/proxy",
   SYNC_INTERVAL_HOURS: 6
 };
 

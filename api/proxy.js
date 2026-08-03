@@ -1,9 +1,11 @@
 // Vercel serverless proxy — encaminha requisições para o Google Apps Script
 // evitando restrições de CORS do browser.
-// A URL do GAS é lida de variável de ambiente (GAS_URL) configurada no Vercel Dashboard
-// — nunca hardcode aqui para não expor o endpoint publicamente.
+// Variáveis de ambiente no Vercel Dashboard:
+//   GAS_URL    — URL do Google Apps Script publicado (nunca expor no client)
+//   GAS_SECRET — token secreto validado pelo GAS (nunca expor no client)
 
-const GAS_URL = (process.env.GAS_URL || '').trim();
+const GAS_URL    = (process.env.GAS_URL    || '').trim();
+const GAS_SECRET = (process.env.GAS_SECRET || '').trim();
 
 module.exports = async function handler(req, res) {
   if (!GAS_URL) {
@@ -20,8 +22,11 @@ module.exports = async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const qs  = new URL(req.url, 'http://x').search; // preserva ?sheet=Clientes etc.
-      const r   = await fetch(GAS_URL + qs);
+      // Preserva parâmetros do cliente e injeta o secret
+      const clientParams = new URLSearchParams(new URL(req.url, 'http://x').search.slice(1));
+      if (GAS_SECRET) clientParams.set('_secret', GAS_SECRET);
+      const qs = clientParams.toString();
+      const r   = await fetch(qs ? GAS_URL + '?' + qs : GAS_URL);
       const txt = await r.text();
       return res.status(r.status).send(txt);
     }
@@ -29,7 +34,9 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      const body = Buffer.concat(chunks).toString();
+      // Injeta _secret como parâmetro adicional no body (form-urlencoded)
+      let body = Buffer.concat(chunks).toString();
+      if (GAS_SECRET) body += '&_secret=' + encodeURIComponent(GAS_SECRET);
 
       const r   = await fetch(GAS_URL, {
         method: 'POST',
