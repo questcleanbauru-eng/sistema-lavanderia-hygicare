@@ -238,6 +238,9 @@ const SHEET_LABELS = {
   AppConfig:       'Configuração do App',
 };
 
+// Abas que usam fila (batching) em vez de e-mail individual por registro
+var NOTIF_BATCH_SHEETS = ['Registros', 'VazaoRegistros'];
+
 // ── Enviar e-mail de notificação ─────────────────────────────
 // Lê o e-mail de destino da chave "notification_email" na aba Config.
 // Se não estiver configurado, não faz nada (sem erro).
@@ -247,6 +250,13 @@ function sendNotification(action, sheetName, payload, actor) {
     if (!toEmail) return;
 
     if (sheetName === 'Config' || sheetName === 'Usuarios') return;
+
+    // Registros e VazaoRegistros: enfileirar para enviar um único e-mail consolidado
+    if (NOTIF_BATCH_SHEETS.indexOf(sheetName) >= 0 &&
+        (action === 'insert' || action === 'upsert')) {
+      _enqueueNotification(sheetName, action, payload, actor);
+      return;
+    }
 
     var disabledKey = 'notif_disable_' + sheetName.toLowerCase();
     if (getConfig(disabledKey) === 'true') return;
@@ -272,12 +282,20 @@ function sendNotification(action, sheetName, payload, actor) {
       total: 'Total (kg)', price_kg: 'Preço/kg', maintenance: 'Manutenção',
       version: 'Versão', status: 'Status', created_by: 'Criado por',
       approved_by: 'Aprovado por', approved_at: 'Aprovado em',
-      all_machines: 'Todas as máquinas', created_at: 'Criado em',
+      all_machines: 'Todas as máquinas', created_at: 'Criado em', updated_at: 'Atualizado em',
       email: 'E-mail', role: 'Perfil', active: 'Ativo', username: 'Usuário',
       city: 'Cidade', seller: 'Vendedor', email_client: 'E-mail cliente',
       email_seller: 'E-mail vendedor', send_client: 'Enviar ao cliente',
       send_seller: 'Enviar ao vendedor',
+      // Notas de cliente
+      type: 'Tipo', title: 'Título', content: 'Conteúdo', scheduled_date: 'Data agendada',
+      // Vazão
+      value: 'Valor medido', unit: 'Unidade', vazao_id: 'Vazão',
+      vazao_name: 'Bomba / Vazão', vazao_unit: 'Unidade', user: 'Registrado por',
+      // Usuário
+      sellerName: 'Nome do vendedor', manager: 'Gerente',
     };
+    var longTextFields = ['content', 'edit_notes', 'rejection_notes'];
 
     // ── Formatar etapas (steps) ───────────────────────────
     function formatSteps(raw) {
@@ -341,6 +359,11 @@ function sendNotification(action, sheetName, payload, actor) {
         var v = payload[k];
         if (k === 'steps') { stepsHtml = formatSteps(v) || ''; return; }
         if (jsonFields.indexOf(k) >= 0) return; // oculta outros campos JSON complexos
+        // Auto-formatar datas ISO (ex: 2026-08-03T13:21:04.114Z → 03/08/2026 13:21)
+        if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.Z]/.test(v)) {
+          try { v = Utilities.formatDate(new Date(v), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'); }
+          catch(e) {}
+        }
         var display;
         if (resolvedNames[k]) {
           display = '<strong style="color:#1e293b">' + resolvedNames[k] + '</strong>'
@@ -356,10 +379,18 @@ function sendNotification(action, sheetName, payload, actor) {
           if (k === 'machine_id') label = 'Máquina';
           if (k === 'process_id') label = 'Processo';
         }
-        mainRows += '<tr>'
-          + '<td style="padding:7px 12px;font-size:11px;font-weight:700;color:#475569;white-space:nowrap;border-bottom:1px solid #f1f5f9;background:#f8fafc;width:35%">' + label + '</td>'
-          + '<td style="padding:7px 12px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9">' + display + '</td>'
-          + '</tr>';
+        if (longTextFields.indexOf(k) >= 0 && display !== '<em style="color:#94a3b8">&mdash;</em>') {
+          mainRows += '<tr>'
+            + '<td colspan="2" style="padding:10px 12px;border-bottom:1px solid #f1f5f9">'
+            + '<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">' + label + '</div>'
+            + '<div style="font-size:12px;color:#1e293b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + display + '</div>'
+            + '</td></tr>';
+        } else {
+          mainRows += '<tr>'
+            + '<td style="padding:7px 12px;font-size:11px;font-weight:700;color:#475569;white-space:nowrap;border-bottom:1px solid #f1f5f9;background:#f8fafc;width:35%">' + label + '</td>'
+            + '<td style="padding:7px 12px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9">' + display + '</td>'
+            + '</tr>';
+        }
       });
     } else if (Array.isArray(payload) && payload.length > 0) {
       // Monta tabela consolidada — usa as chaves do primeiro item como colunas
@@ -426,6 +457,180 @@ function sendNotification(action, sheetName, payload, actor) {
   } catch(err) {
     Logger.log('sendNotification error: ' + err.message);
   }
+}
+
+// ============================================================
+// FILA DE NOTIFICAÇÕES — consolida inserts em batch num único e-mail
+// ============================================================
+function _enqueueNotification(sheetName, action, payload, actor) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(6000);
+    var props = PropertiesService.getScriptProperties();
+    var qKey  = 'notif_q_' + sheetName;
+    var tKey  = 'notif_trigger_pending';
+
+    var queue = [];
+    try { queue = JSON.parse(props.getProperty(qKey) || '[]'); } catch(e) {}
+    var arr = Array.isArray(payload) ? payload : [payload];
+    arr.forEach(function(p) {
+      queue.push({ action: action, item: p, actor: actor || '' });
+    });
+    // Limitar tamanho máximo para não estourar PropertiesService (max 9KB por chave)
+    if (queue.length > 200) queue = queue.slice(-200);
+    props.setProperty(qKey, JSON.stringify(queue));
+
+    // Criar trigger de flush apenas se ainda não existe
+    if (!props.getProperty(tKey)) {
+      ScriptApp.newTrigger('_flushNotifBatch').timeBased().after(2 * 60 * 1000).create();
+      props.setProperty(tKey, '1');
+      Logger.log('_enqueueNotification: trigger criado para ' + sheetName);
+    }
+  } catch(e) {
+    Logger.log('_enqueueNotification error: ' + e.message);
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+// Chamado pelo trigger de tempo (~2 min após o primeiro insert)
+function _flushNotifBatch() {
+  // Remover todos os triggers de flush pendentes
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === '_flushNotifBatch') ScriptApp.deleteTrigger(t);
+  });
+  var props = PropertiesService.getScriptProperties();
+  props.deleteProperty('notif_trigger_pending');
+
+  var toEmail = getConfig('notification_email');
+  if (!toEmail) return;
+
+  NOTIF_BATCH_SHEETS.forEach(function(sheetName) {
+    var qKey = 'notif_q_' + sheetName;
+    var raw  = props.getProperty(qKey);
+    if (!raw) return;
+    props.deleteProperty(qKey);
+    var queue = [];
+    try { queue = JSON.parse(raw); } catch(e) { return; }
+    if (queue.length === 0) return;
+    _sendBatchEmail(toEmail, sheetName, queue);
+  });
+}
+
+function _sendBatchEmail(toEmail, sheetName, queue) {
+  try {
+    var sheetLabel = SHEET_LABELS[sheetName] || sheetName;
+    var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
+    var ss  = SpreadsheetApp.getActiveSpreadsheet();
+
+    // Cache de nomes para evitar lookups repetidos
+    var nameCache = {};
+    function _getName(refSheet, id) {
+      if (!id) return null;
+      var cacheKey = refSheet + '_' + id;
+      if (nameCache[cacheKey] !== undefined) return nameCache[cacheKey];
+      try {
+        var s = ss.getSheetByName(refSheet);
+        if (!s) { nameCache[cacheKey] = null; return null; }
+        var rn = findRowById(s, id);
+        if (rn < 0) { nameCache[cacheKey] = null; return null; }
+        var hdrs = s.getRange(1,1,1,s.getLastColumn()).getValues()[0];
+        var row  = s.getRange(rn,1,1,s.getLastColumn()).getValues()[0];
+        nameCache[cacheKey] = rowToObj(hdrs, row).name || null;
+      } catch(e) { nameCache[cacheKey] = null; }
+      return nameCache[cacheKey];
+    }
+
+    var rows = '';
+    var totalKg = 0;
+    var thStyle = 'padding:7px 10px;font-size:10px;font-weight:700;color:#fff;background:#1e3a8a;text-align:left';
+
+    if (sheetName === 'Registros') {
+      queue.forEach(function(entry, i) {
+        var p = entry.item || {};
+        var clientName  = _getName('Clientes',  p.client_id)  || ('ID ' + p.client_id);
+        var machineName = _getName('Maquinas',  p.machine_id) || ('ID ' + p.machine_id);
+        var processName = _getName('Processos', p.process_id) || ('ID ' + p.process_id);
+        var total = parseFloat(p.total || 0);
+        totalKg += total;
+        var bg = i % 2 === 0 ? '#f8fafc' : '#fff';
+        rows += '<tr style="background:' + bg + '">'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + clientName + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + machineName + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + processName + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:center">' + (p.executed || 0) + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:center;color:' + (parseInt(p.canceled) > 0 ? '#dc2626' : 'inherit') + '">' + (p.canceled || 0) + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:right;font-weight:700;color:#15803d">' + total.toFixed(2) + ' kg</td>'
+          + '</tr>';
+      });
+      var thead = '<tr>'
+        + '<th style="' + thStyle + '">Cliente</th>'
+        + '<th style="' + thStyle + '">Máquina</th>'
+        + '<th style="' + thStyle + '">Processo</th>'
+        + '<th style="' + thStyle + ';text-align:center">Exec.</th>'
+        + '<th style="' + thStyle + ';text-align:center">Cancel.</th>'
+        + '<th style="' + thStyle + ';text-align:right">Total (kg)</th>'
+        + '</tr>';
+      var tfoot = '<tr style="background:#f0fdf4">'
+        + '<td colspan="5" style="padding:8px 10px;font-weight:700;color:#15803d;border-top:2px solid #bbf7d0">Total Geral</td>'
+        + '<td style="padding:8px 10px;font-weight:700;color:#15803d;border-top:2px solid #bbf7d0;text-align:right">' + totalKg.toFixed(2) + ' kg</td>'
+        + '</tr>';
+      var table = '<table style="width:100%;border-collapse:collapse;margin-top:14px">'
+        + '<thead>' + thead + '</thead><tbody>' + rows + '</tbody>'
+        + '<tfoot>' + tfoot + '</tfoot></table>';
+      var body = _batchEmailShell(sheetLabel, queue.length, table, now);
+      var subject = '[Hygicare] ' + queue.length + ' lavagem(ns) enviada(s)';
+      MailApp.sendEmail({ to: toEmail, subject: subject, htmlBody: body, name: 'Hygicare Sistema' });
+
+    } else if (sheetName === 'VazaoRegistros') {
+      queue.forEach(function(entry, i) {
+        var p = entry.item || {};
+        var clientName  = _getName('Clientes', p.client_id)  || ('ID ' + p.client_id);
+        var machineName = _getName('Maquinas', p.machine_id) || ('ID ' + p.machine_id);
+        var bg = i % 2 === 0 ? '#f8fafc' : '#fff';
+        rows += '<tr style="background:' + bg + '">'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + clientName + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + machineName + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + (p.vazao_name || '—') + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:right;font-weight:700">' + parseFloat(p.value || 0).toFixed(2) + ' ' + (p.vazao_unit || '') + '</td>'
+          + '</tr>';
+      });
+      var thead = '<tr>'
+        + '<th style="' + thStyle + '">Cliente</th>'
+        + '<th style="' + thStyle + '">Máquina</th>'
+        + '<th style="' + thStyle + '">Bomba / Vazão</th>'
+        + '<th style="' + thStyle + ';text-align:right">Valor</th>'
+        + '</tr>';
+      var table = '<table style="width:100%;border-collapse:collapse;margin-top:14px">'
+        + '<thead>' + thead + '</thead><tbody>' + rows + '</tbody></table>';
+      var body = _batchEmailShell(sheetLabel, queue.length, table, now);
+      var subject = '[Hygicare] ' + queue.length + ' leitura(s) de vazão enviada(s)';
+      MailApp.sendEmail({ to: toEmail, subject: subject, htmlBody: body, name: 'Hygicare Sistema' });
+    }
+
+    Logger.log('_sendBatchEmail: ' + sheetName + ', ' + queue.length + ' registros → ' + toEmail);
+  } catch(e) {
+    Logger.log('_sendBatchEmail error: ' + e.message);
+  }
+}
+
+function _batchEmailShell(sheetLabel, count, tableHtml, now) {
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto">'
+    + '<div style="background:linear-gradient(135deg,#14532d,#16a34a);padding:22px 24px 18px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:900;color:#fff;letter-spacing:-0.5px">&#128167; Hygicare</div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,0.75);margin:2px 0 10px">Sistema de Notificações</div>'
+    + '<div style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);border-radius:20px;padding:4px 16px;font-size:12px;font-weight:700;color:#fff">'
+    + sheetLabel.toUpperCase() + '</div>'
+    + '</div>'
+    + '<div style="background:#f4f6fb;padding:16px">'
+    + '<div style="background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">'
+    + '<span style="display:inline-block;background:#dcfce7;color:#15803d;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700">&#9989; '
+    + count + ' registro(s) enviado(s)</span>'
+    + tableHtml
+    + '</div></div>'
+    + '<div style="background:#f8fafc;padding:10px 20px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8">'
+    + '&#128336; ' + now + ' &nbsp;|&nbsp; Hygicare Sistema de Lavanderia'
+    + '</div></div>';
 }
 
 // ── Gerar próximo ID (max atual + 1) ────────────────────────
