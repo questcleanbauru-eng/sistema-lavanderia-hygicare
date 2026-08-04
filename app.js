@@ -9923,6 +9923,7 @@ ${inactiveSec}
           const sub = String(r[colSub] || '').trim();
           const val = parseFloat(String(r[colValor]).replace(',', '.')) || 0;
           if (!cod || !sub || !val) continue;
+          if (!/lavanderia/i.test(sub)) continue;
           const key = cod + '|' + sub;
           if (!grouped[key]) grouped[key] = { cod_financeiro: cod, sub_grupo: sub, total_venda: 0 };
           grouped[key].total_venda += val;
