@@ -10309,7 +10309,7 @@ ${inactiveSec}
 
       // Preenche filtro de mês
       const finAll  = await dbGetAll_raw('financeiro');
-      const months  = [...new Set(finAll.map(r => r.month).filter(Boolean))].sort().reverse();
+      const months  = [...new Set(finAll.map(r => _normFinMonth(r.month)).filter(Boolean))].sort().reverse();
       const monthSel = document.getElementById('fin-cross-month');
       const cur = monthSel.value;
       monthSel.innerHTML = '<option value="">Todos os meses</option>' + months.map(m => {
@@ -10495,39 +10495,53 @@ ${inactiveSec}
       const fmtBR = v => 'R$ ' + (parseFloat(v)||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       const grandTotal = rows.reduce((s, r) => s + (r.total_venda || 0), 0);
 
-      // Agrupa por cliente
+      // Agrupa por cliente → mês (soma total, sem subdivisão por sub_grupo)
       const byClient = {};
       for (const r of rows) {
         const name = clientMap[r.client_id] || ('Cód. ' + r.cod_financeiro);
         if (!byClient[name]) byClient[name] = { total: 0, months: {} };
         byClient[name].total += r.total_venda;
         const mk = _normFinMonth(r.month) || 'S/data';
-        if (!byClient[name].months[mk]) byClient[name].months[mk] = { total: 0, subs: [] };
-        byClient[name].months[mk].total += r.total_venda;
-        byClient[name].months[mk].subs.push({ sub: r.sub_grupo, val: r.total_venda });
+        byClient[name].months[mk] = (byClient[name].months[mk] || 0) + r.total_venda;
       }
 
       let html = `<div style="margin-bottom:0.75rem;font-weight:700;font-size:1rem">Total geral: <span style="color:var(--primary,#2563eb)">${fmtBR(grandTotal)}</span></div>`;
-      for (const [clientName, data] of Object.entries(byClient).sort((a, b) => b[1].total - a[1].total)) {
-        html += `<div class="list-item" style="display:block;margin-bottom:0.75rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
-            <strong>👤 ${clientName}</strong>
-            <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtBR(data.total)}</span>
-          </div>`;
-        for (const [month, md] of Object.entries(data.months).sort().reverse()) {
+
+      Object.entries(byClient).sort((a, b) => b[1].total - a[1].total).forEach(([clientName, data], idx) => {
+        const sortedMonths = Object.keys(data.months).sort(); // cronológico asc
+        const cid = 'fv-c' + idx;
+        html += `<div class="list-item" id="${cid}" style="display:block;margin-bottom:0.6rem">
+          <div onclick="(function(el){el.classList.toggle('fin-collapsed');el.querySelector('.fv-arrow').textContent=el.classList.contains('fin-collapsed')?'▶':'▼'})(document.getElementById('${cid}'))"
+               style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:0.1rem 0;margin-bottom:0.25rem">
+            <strong style="font-size:0.88rem">👤 ${clientName}</strong>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtBR(data.total)}</span>
+              <span class="fv-arrow" style="color:var(--muted);font-size:0.75rem;min-width:10px">▼</span>
+            </div>
+          </div>
+          <div class="fv-detail">`;
+
+        // Meses em ordem decrescente (mais recente primeiro)
+        [...sortedMonths].reverse().forEach((month, i, arr) => {
+          const val  = data.months[month];
+          const prevM = arr[i + 1]; // mês anterior no tempo (próximo no array revertido)
+          const delta = prevM != null ? val - data.months[prevM] : null;
+          const dColor = delta === null ? '' : delta >= 0 ? '#16a34a' : '#dc2626';
+          const dSign  = delta === null ? '' : delta >= 0 ? '▲' : '▼';
           const [y, mo] = month.split('-');
-          const mLabel = mo ? new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'short', year: '2-digit' }) : month;
-          html += `<div style="padding:0.3rem 0;border-top:1px solid var(--border)">
-            <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--muted);margin-bottom:0.2rem">
-              <span>${mLabel}</span><span>${fmtBR(md.total)}</span>
-            </div>` +
-            md.subs.map(s => `<div style="display:flex;justify-content:space-between;font-size:0.8rem;padding-left:1rem">
-              <span>${s.sub}</span><span>${fmtBR(s.val)}</span>
-            </div>`).join('') +
-            '</div>';
-        }
-        html += '</div>';
-      }
+          const mLabel  = mo ? new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: '2-digit' }) : month;
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;border-top:1px solid var(--border);font-size:0.84rem">
+            <span style="color:var(--muted)">${mLabel}</span>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              ${delta !== null ? `<span style="font-size:0.76rem;color:${dColor}">${dSign} ${fmtBR(Math.abs(delta))}</span>` : ''}
+              <span style="font-weight:600">${fmtBR(val)}</span>
+            </div>
+          </div>`;
+        });
+
+        html += `</div></div>`;
+      });
+
       container.innerHTML = html;
     }
 

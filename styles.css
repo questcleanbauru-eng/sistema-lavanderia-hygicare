@@ -2083,3 +2083,6 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 :root[data-theme="dark"] .ss-opt:hover,
 :root[data-theme="dark"] .ss-opt.ss-hover { background: #1e3a8a; color: #93c5fd; }
 :root[data-theme="dark"] .ss-opt.ss-sel { background: #1e3a8a; color: #bfdbfe; }
+
+/* Financeiro — collapse por cliente */
+.fin-collapsed .fv-detail { display: none; }
