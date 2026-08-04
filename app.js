@@ -10176,7 +10176,7 @@ ${inactiveSec}
       const rows = await dbGetAll_raw('financeiro');
       const clients = await dbGetAll_raw('clients');
       const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
-      const months    = [...new Set(rows.map(r => r.month).filter(Boolean))].sort().reverse();
+      const months    = [...new Set(rows.map(r => _normFinMonth(r.month)).filter(Boolean))].sort().reverse();
       const clientIds = [...new Set(rows.map(r => r.client_id).filter(Boolean))];
       const subGrupos = [...new Set(rows.map(r => r.sub_grupo).filter(Boolean))].sort();
 
@@ -10228,6 +10228,11 @@ ${inactiveSec}
     }
 
     // ── helpers financeiros ──────────────────────────────────
+    // Normaliza qualquer formato de mês para "YYYY-MM" (GAS pode devolver "2026-06-01T00:00:00")
+    function _normFinMonth(m) {
+      return m ? String(m).slice(0, 7) : null;
+    }
+
     function _finMonthFromRecord(r) {
       // Prioriza date_end (fim do período de faturamento), depois date_start, depois created_at
       for (const d of [r.date_end, r.date_start, r.created_at]) {
@@ -10265,43 +10270,23 @@ ${inactiveSec}
         prodMap[key].kg += total;
       }
 
-      // DEBUG TEMPORÁRIO — painel visível na página
-      window._finDebug = {
-        totalRecords: records.length,
-        prodMapKeys: Object.keys(prodMap).length,
-        clientesComCod: Object.keys(clientByCodFin).length,
-        finRows: finRows.length,
-        sampleProdKeys: Object.keys(prodMap).slice(0, 3),
-        sampleFinRows: finRows.slice(0, 3).map(f => `cod=${f.cod_financeiro} month=${f.month} cid=${f.client_id}`),
-      };
-      const dbgEl = document.getElementById('fin-cross-debug');
-      if (dbgEl) {
-        const uni = finRows.find(f => (clientByCodFin[String(f.cod_financeiro)]?.name||'').includes('UNIMED'));
-        const uniC = uni ? (clientByCodFin[String(uni.cod_financeiro).trim()] || {}) : null;
-        const uniPK = uniC?.id ? String(uniC.id)+'|'+uni.month : null;
-        dbgEl.innerHTML = `<pre style="font-size:10px;overflow-x:auto;background:#1e293b;color:#7dd3fc;padding:0.75rem;border-radius:8px;margin-bottom:1rem">
-📦 Records IDB: ${records.length}  |  ProdMap entries: ${Object.keys(prodMap).length}
-👥 Clientes c/ cod_fin: ${Object.keys(clientByCodFin).length}  |  Fin rows: ${finRows.length}
-Sample prodMap keys: ${Object.keys(prodMap).slice(0,3).join(' | ')}
-Sample fin rows: ${finRows.slice(0,3).map(f=>`cod=${f.cod_financeiro} month=${f.month}`).join(' | ')}
-${uni ? `\nUNIMED fin: cod=${uni.cod_financeiro} month=${uni.month}\nUNIMED client.id=${uniC?.id}\nUNIMED prodKey=${uniPK}\nUNIMED prodMap hit: ${JSON.stringify(prodMap[uniPK])}` : 'UNIMED: não encontrado no financeiro'}</pre>`;
-      }
 
-      // Junta com financeiro — usa cod_financeiro para encontrar client.id exato (evita bugs de precisão em IDs grandes)
+      // Junta com financeiro — usa cod_financeiro para encontrar client.id exato
+      // e normaliza mês para "YYYY-MM" (GAS pode devolver "2026-06-01T00:00:00")
       const result = {};
       for (const f of finRows) {
-        if (filterMonth && f.month !== filterMonth) continue;
-        const key = String(f.cod_financeiro || f.client_id) + '|' + f.month;
+        const finMonth = _normFinMonth(f.month);
+        if (!finMonth) continue;
+        if (filterMonth && finMonth !== _normFinMonth(filterMonth)) continue;
+        const key = String(f.cod_financeiro || f.client_id) + '|' + finMonth;
         if (!result[key]) {
-          // Lookup pelo cod_financeiro (mais confiável) e fallback por client_id
           const c = clientByCodFin[String(f.cod_financeiro || '').trim()] || clientById[String(f.client_id)] || {};
-          // Usa o client.id real do IDB (não o f.client_id que pode ter vindo corrompido do GAS)
           const exactClientId = c.id ? String(c.id) : null;
-          const prodKey = exactClientId ? exactClientId + '|' + f.month : null;
+          const prodKey = exactClientId ? exactClientId + '|' + finMonth : null;
           const kg = prodKey ? (prodMap[prodKey]?.kg || 0) : 0;
           result[key] = {
             clientName: c.name || ('Cód. ' + f.cod_financeiro),
-            month: f.month,
+            month: finMonth,
             totalVenda: 0,
             kg,
             priceKgContract: parseFloat(c.price_kg || 0) || null
@@ -10389,8 +10374,9 @@ ${uni ? `\nUNIMED fin: cod=${uni.cod_financeiro} month=${uni.month}\nUNIMED clie
       const byMonth = {};
       for (const r of finAll) {
         if (filterClient && String(r.client_id) !== filterClient) continue;
-        if (!byMonth[r.month]) byMonth[r.month] = 0;
-        byMonth[r.month] += r.total_venda;
+        const em = _normFinMonth(r.month) || 'S/data';
+        if (!byMonth[em]) byMonth[em] = 0;
+        byMonth[em] += r.total_venda;
       }
 
       const months = Object.keys(byMonth).sort();
@@ -10448,7 +10434,7 @@ ${uni ? `\nUNIMED fin: cod=${uni.cod_financeiro} month=${uni.month}\nUNIMED clie
       // Agrega por cliente
       const byClient = {};
       for (const r of finAll) {
-        if (filterMonth && r.month !== filterMonth) continue;
+        if (filterMonth && _normFinMonth(r.month) !== filterMonth) continue;
         const name = clientMap[r.client_id] || ('Cód. ' + r.cod_financeiro);
         if (!byClient[name]) byClient[name] = 0;
         byClient[name] += r.total_venda;
@@ -10494,7 +10480,7 @@ ${uni ? `\nUNIMED fin: cod=${uni.cod_financeiro} month=${uni.month}\nUNIMED clie
       const filterClient = document.getElementById('fin-filter-client')?.value || '';
       const filterSub    = document.getElementById('fin-filter-subgrupo')?.value || '';
 
-      if (filterMonth)  rows = rows.filter(r => r.month === filterMonth);
+      if (filterMonth)  rows = rows.filter(r => _normFinMonth(r.month) === filterMonth);
       if (filterClient) rows = rows.filter(r => String(r.client_id) === filterClient);
       if (filterSub)    rows = rows.filter(r => r.sub_grupo === filterSub);
 
@@ -10510,7 +10496,7 @@ ${uni ? `\nUNIMED fin: cod=${uni.cod_financeiro} month=${uni.month}\nUNIMED clie
         const name = clientMap[r.client_id] || ('Cód. ' + r.cod_financeiro);
         if (!byClient[name]) byClient[name] = { total: 0, months: {} };
         byClient[name].total += r.total_venda;
-        const mk = r.month || 'S/data';
+        const mk = _normFinMonth(r.month) || 'S/data';
         if (!byClient[name].months[mk]) byClient[name].months[mk] = { total: 0, subs: [] };
         byClient[name].months[mk].total += r.total_venda;
         byClient[name].months[mk].subs.push({ sub: r.sub_grupo, val: r.total_venda });
