@@ -10265,23 +10265,27 @@ ${inactiveSec}
         prodMap[key].kg += total;
       }
 
-      // DEBUG TEMPORÁRIO — remover após diagnosticar
-      console.group('[FIN-DEBUG] _finBuildCrossData');
-      console.log('Total records:', records.length, '| Com kg>0 no prodMap:', Object.keys(prodMap).length);
-      console.log('Clientes com cod_financeiro:', Object.keys(clientByCodFin).length, '| Financeiro rows:', finRows.length);
-      const sampleProdKeys = Object.keys(prodMap).slice(0, 5);
-      console.log('Sample prodMap keys:', sampleProdKeys);
-      const sampleFinRows = finRows.slice(0, 3).map(f => ({ cod: f.cod_financeiro, month: f.month, client_id: f.client_id }));
-      console.log('Sample finRows:', sampleFinRows);
-      // Pega UNIMED e mostra detalhes
-      const unimedFin = finRows.find(f => String(f.cod_financeiro) === '22691' || (clientByCodFin[String(f.cod_financeiro)]?.name||'').includes('UNIMED'));
-      if (unimedFin) {
-        const c = clientByCodFin[String(unimedFin.cod_financeiro).trim()] || {};
-        const prodKey = c.id ? String(c.id) + '|' + unimedFin.month : null;
-        console.log('UNIMED fin row:', unimedFin, '| client.id:', c.id, '| prodKey:', prodKey, '| prodMap hit:', prodMap[prodKey]);
+      // DEBUG TEMPORÁRIO — painel visível na página
+      window._finDebug = {
+        totalRecords: records.length,
+        prodMapKeys: Object.keys(prodMap).length,
+        clientesComCod: Object.keys(clientByCodFin).length,
+        finRows: finRows.length,
+        sampleProdKeys: Object.keys(prodMap).slice(0, 3),
+        sampleFinRows: finRows.slice(0, 3).map(f => `cod=${f.cod_financeiro} month=${f.month} cid=${f.client_id}`),
+      };
+      const dbgEl = document.getElementById('fin-cross-debug');
+      if (dbgEl) {
+        const uni = finRows.find(f => (clientByCodFin[String(f.cod_financeiro)]?.name||'').includes('UNIMED'));
+        const uniC = uni ? (clientByCodFin[String(uni.cod_financeiro).trim()] || {}) : null;
+        const uniPK = uniC?.id ? String(uniC.id)+'|'+uni.month : null;
+        dbgEl.innerHTML = `<pre style="font-size:10px;overflow-x:auto;background:#1e293b;color:#7dd3fc;padding:0.75rem;border-radius:8px;margin-bottom:1rem">
+📦 Records IDB: ${records.length}  |  ProdMap entries: ${Object.keys(prodMap).length}
+👥 Clientes c/ cod_fin: ${Object.keys(clientByCodFin).length}  |  Fin rows: ${finRows.length}
+Sample prodMap keys: ${Object.keys(prodMap).slice(0,3).join(' | ')}
+Sample fin rows: ${finRows.slice(0,3).map(f=>`cod=${f.cod_financeiro} month=${f.month}`).join(' | ')}
+${uni ? `\nUNIMED fin: cod=${uni.cod_financeiro} month=${uni.month}\nUNIMED client.id=${uniC?.id}\nUNIMED prodKey=${uniPK}\nUNIMED prodMap hit: ${JSON.stringify(prodMap[uniPK])}` : 'UNIMED: não encontrado no financeiro'}</pre>`;
       }
-      console.groupEnd();
-      // FIM DEBUG
 
       // Junta com financeiro — usa cod_financeiro para encontrar client.id exato (evita bugs de precisão em IDs grandes)
       const result = {};
