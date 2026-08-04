@@ -9993,7 +9993,12 @@ ${inactiveSec}
       if (!rows || !rows.length) return;
       showOverlay('Salvando dados financeiros...');
       try {
+        const existing = await dbGetAll_raw('financeiro');
+        const existingKeys = new Set(existing.map(r => r.client_id + '|' + r.month + '|' + r.sub_grupo));
+        let saved = 0, skipped = 0;
         for (const row of rows) {
+          const key = row.client_id + '|' + row.month + '|' + row.sub_grupo;
+          if (existingKeys.has(key)) { skipped++; continue; }
           const item = {
             id: genId(),
             client_id: row.client_id,
@@ -10005,8 +10010,10 @@ ${inactiveSec}
           };
           await dbPut('financeiro', item);
           if (navigator.onLine) await callGAS('insert', SHEETS.FINANCEIRO, item);
+          saved++;
         }
-        toast(rows.length + ' registros financeiros salvos!', 'success');
+        const msg = skipped ? saved + ' salvos, ' + skipped + ' já existiam (ignorados).' : saved + ' registros financeiros salvos!';
+        toast(msg, 'success');
         window._finPendingRows = null;
         document.getElementById('fin-preview').classList.add('hidden');
         await refreshFinanceiroFilters();
