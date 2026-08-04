@@ -2174,6 +2174,17 @@ ${printScript}
         if ((updated.includes('client_notes') || isAll) && !document.getElementById('screen-client-notes')?.classList.contains('hidden')) {
           await renderClientNotesList();
         }
+        if (updated.includes('financeiro') || isAll) {
+          await refreshFinanceiroFilters();
+          const finScreen = document.getElementById('screen-financeiro');
+          if (!finScreen?.classList.contains('hidden')) {
+            const activeTab = document.querySelector('#fin-tabs .qf-btn.active')?.dataset?.finTab;
+            if (activeTab === 'view')     await renderFinanceiroView();
+            else if (activeTab === 'cross')    await renderFinanceiroCruzamento();
+            else if (activeTab === 'evolucao') await renderFinanceiroEvolucao();
+            else if (activeTab === 'ranking')  await renderFinanceiroRanking();
+          }
+        }
         await updateSyncStatus();
 
         // Sincroniza configuração de manutenção do GAS
@@ -9878,6 +9889,12 @@ ${inactiveSec}
         document.getElementById('btn-fin-save').addEventListener('click', saveFinanceiroRows);
       }
       await refreshFinanceiroFilters();
+      // Re-renderiza aba ativa (importante após sync ou navegação de volta)
+      const activeTab = document.querySelector('#fin-tabs .qf-btn.active')?.dataset?.finTab;
+      if (activeTab === 'view')          await renderFinanceiroView();
+      else if (activeTab === 'cross')    await renderFinanceiroCruzamento();
+      else if (activeTab === 'evolucao') await renderFinanceiroEvolucao();
+      else if (activeTab === 'ranking')  await renderFinanceiroRanking();
     }
 
     async function processFinanceiroFiles(files) {
