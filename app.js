@@ -10334,43 +10334,77 @@ ${inactiveSec}
 
       if (!rows.length) { container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado encontrado.</p>'; return; }
 
-      const fmtR = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const fmtR  = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       const fmtKg = v => (v||0).toFixed(1).replace('.', ',') + ' kg';
+      const muted = `<span style="color:var(--muted)">—</span>`;
 
-      let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
-        <thead><tr style="background:var(--primary,#2563eb);color:#fff">
-          <th style="padding:7px 10px;text-align:left">Cliente</th>
-          <th style="padding:7px 10px;text-align:right">Faturado</th>
-          <th style="padding:7px 10px;text-align:right">Kg lavado</th>
-          <th style="padding:7px 10px;text-align:right">Preço efetivo/kg</th>
-          <th style="padding:7px 10px;text-align:right">Preço contrato/kg</th>
-          <th style="padding:7px 10px;text-align:right">Diferença</th>
-        </tr></thead><tbody>`;
-
-      for (const r of rows) {
-        const efectivo = r.kg > 0 ? r.totalVenda / r.kg : null;
-        const diff = (efectivo !== null && r.priceKgContract) ? efectivo - r.priceKgContract : null;
-        const diffColor = diff === null ? '' : diff > 0 ? 'color:#16a34a;font-weight:700' : diff < 0 ? 'color:#dc2626;font-weight:700' : '';
-        html += `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:6px 10px">${r.clientName}</td>
-          <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtR(r.totalVenda)}</td>
-          <td style="padding:6px 10px;text-align:right">${r.kg > 0 ? fmtKg(r.kg) : '<span style="color:var(--muted)">—</span>'}</td>
-          <td style="padding:6px 10px;text-align:right">${efectivo !== null ? fmtR(efectivo) : '<span style="color:var(--muted)">—</span>'}</td>
-          <td style="padding:6px 10px;text-align:right">${r.priceKgContract ? fmtR(r.priceKgContract) : '<span style="color:var(--muted)">—</span>'}</td>
-          <td style="padding:6px 10px;text-align:right;${diffColor}">${diff !== null ? (diff >= 0 ? '+' : '') + fmtR(diff) : '<span style="color:var(--muted)">—</span>'}</td>
-        </tr>`;
-      }
-
-      const totKg = rows.reduce((s, r) => s + r.kg, 0);
+      const totKg    = rows.reduce((s, r) => s + r.kg, 0);
       const totVenda = rows.reduce((s, r) => s + r.totalVenda, 0);
-      html += `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
-        <td style="padding:7px 10px">Total</td>
-        <td style="padding:7px 10px;text-align:right">${fmtR(totVenda)}</td>
-        <td style="padding:7px 10px;text-align:right">${fmtKg(totKg)}</td>
-        <td colspan="3" style="padding:7px 10px;text-align:right">${totKg > 0 ? fmtR(totVenda/totKg) + '/kg médio' : '—'}</td>
-      </tr></tfoot></table></div>`;
 
-      container.innerHTML = html;
+      const isMobile = window.innerWidth < 680;
+
+      if (isMobile) {
+        // Layout em cards: uma linha por cliente, info empilhada
+        let html = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem">
+          Total: <strong style="color:var(--text)">${fmtR(totVenda)}</strong>
+          ${totKg > 0 ? ' · ' + fmtKg(totKg) + ' · ' + fmtR(totVenda/totKg) + '/kg médio' : ''}
+        </div>`;
+
+        for (const r of rows) {
+          const efectivo = r.kg > 0 ? r.totalVenda / r.kg : null;
+          const diff     = (efectivo !== null && r.priceKgContract) ? efectivo - r.priceKgContract : null;
+          const diffColor = diff === null ? 'var(--muted)' : diff > 0 ? '#16a34a' : '#dc2626';
+          const diffTxt   = diff === null ? '—' : (diff >= 0 ? '+' : '') + fmtR(diff);
+
+          html += `<div style="background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid var(--primary,#2563eb);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.5rem">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.35rem">
+              <span style="font-weight:700;font-size:0.82rem;line-height:1.3">${escHtml(r.clientName)}</span>
+              <span style="font-weight:700;color:var(--primary,#2563eb);white-space:nowrap;font-size:0.85rem">${fmtR(r.totalVenda)}</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.2rem 0.75rem;font-size:0.76rem">
+              <div><span style="color:var(--muted)">Kg lavado</span><br><strong>${r.kg > 0 ? fmtKg(r.kg) : '—'}</strong></div>
+              <div><span style="color:var(--muted)">Preço efetivo</span><br><strong>${efectivo !== null ? fmtR(efectivo) : '—'}</strong></div>
+              <div><span style="color:var(--muted)">Contrato/kg</span><br><strong>${r.priceKgContract ? fmtR(r.priceKgContract) : '—'}</strong></div>
+              <div><span style="color:var(--muted)">Diferença</span><br><strong style="color:${diffColor}">${diffTxt}</strong></div>
+            </div>
+          </div>`;
+        }
+        container.innerHTML = html;
+      } else {
+        // Layout em tabela para desktop
+        let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+          <thead><tr style="background:var(--primary,#2563eb);color:#fff">
+            <th style="padding:7px 10px;text-align:left">Cliente</th>
+            <th style="padding:7px 10px;text-align:right">Faturado</th>
+            <th style="padding:7px 10px;text-align:right">Kg lavado</th>
+            <th style="padding:7px 10px;text-align:right">Preço efetivo/kg</th>
+            <th style="padding:7px 10px;text-align:right">Preço contrato/kg</th>
+            <th style="padding:7px 10px;text-align:right">Diferença</th>
+          </tr></thead><tbody>`;
+
+        for (const r of rows) {
+          const efectivo  = r.kg > 0 ? r.totalVenda / r.kg : null;
+          const diff      = (efectivo !== null && r.priceKgContract) ? efectivo - r.priceKgContract : null;
+          const diffStyle = diff === null ? '' : diff > 0 ? 'color:#16a34a;font-weight:700' : diff < 0 ? 'color:#dc2626;font-weight:700' : '';
+          html += `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:6px 10px">${escHtml(r.clientName)}</td>
+            <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtR(r.totalVenda)}</td>
+            <td style="padding:6px 10px;text-align:right">${r.kg > 0 ? fmtKg(r.kg) : muted}</td>
+            <td style="padding:6px 10px;text-align:right">${efectivo !== null ? fmtR(efectivo) : muted}</td>
+            <td style="padding:6px 10px;text-align:right">${r.priceKgContract ? fmtR(r.priceKgContract) : muted}</td>
+            <td style="padding:6px 10px;text-align:right;${diffStyle}">${diff !== null ? (diff >= 0 ? '+' : '') + fmtR(diff) : muted}</td>
+          </tr>`;
+        }
+
+        html += `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
+          <td style="padding:7px 10px">Total</td>
+          <td style="padding:7px 10px;text-align:right">${fmtR(totVenda)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtKg(totKg)}</td>
+          <td colspan="3" style="padding:7px 10px;text-align:right">${totKg > 0 ? fmtR(totVenda/totKg) + '/kg médio' : '—'}</td>
+        </tr></tfoot></table></div>`;
+
+        container.innerHTML = html;
+      }
     }
 
     async function renderFinanceiroEvolucao() {
