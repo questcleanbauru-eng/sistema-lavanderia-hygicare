@@ -2179,10 +2179,15 @@ ${printScript}
           const finScreen = document.getElementById('screen-financeiro');
           if (!finScreen?.classList.contains('hidden')) {
             const activeTab = document.querySelector('#fin-tabs .qf-btn.active')?.dataset?.finTab;
-            if (activeTab === 'view')     await renderFinanceiroView();
+            if (activeTab === 'view')          await renderFinanceiroView();
             else if (activeTab === 'cross')    await renderFinanceiroCruzamento();
             else if (activeTab === 'evolucao') await renderFinanceiroEvolucao();
             else if (activeTab === 'ranking')  await renderFinanceiroRanking();
+            else if (activeTab === 'upload') {
+              // Após sync: se agora há dados, vai direto para Dados
+              const finRows = await dbGetAll_raw('financeiro');
+              if (finRows.length > 0) _switchFinTab('view');
+            }
           }
         }
         await updateSyncStatus();
