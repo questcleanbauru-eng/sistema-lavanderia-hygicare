@@ -5432,6 +5432,8 @@ ${opSections}
           { perm: 'pdf_reports',  screen: 'screen-pdf-reports',  fn: initPdfReportsScreen,   icon: '📄', label: 'Rel. PDF' },
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
           { perm: 'admin',        screen: 'screen-admin',        fn: refreshAdminPanel,        icon: '⚙️', label: 'Admin', adminOnly: true },
+          { perm: 'financeiro',   screen: 'screen-financeiro',   fn: initFinanceiroScreen,     icon: '💰', label: 'Financeiro', adminOnly: true },
+          { perm: 'alerts',       screen: 'screen-alerts',       fn: renderAlertsScreen,       icon: '🔔', label: 'Avisos' },
         ];
         const permsStr = (currentUser?.permissions || '').trim();
         const allowed  = permsStr ? new Set(permsStr.split(',').map(s => s.trim())) : null;
@@ -5707,7 +5709,9 @@ ${opSections}
              vazaoCount +
              notes.filter(since).filter(n => allowed.has(String(n.client_id))).length +
              allowedClients.filter(since).length +
-             machines.filter(since).length + processes.filter(since).length + recipes.filter(since).length;
+             machines.filter(since).filter(m => allowed.has(String(m.client_id))).length +
+             processes.filter(since).filter(p => allowed.has(String(machineClient[String(p.machine_id)]))).length +
+             recipes.filter(since).length;
     }
 
     async function _refreshNovidadesDot() {
@@ -5755,13 +5759,13 @@ ${opSections}
       notes.filter(since).filter(n => allowedIds.has(String(n.client_id))).forEach(n =>
         addGroup(String(n.client_id), '📝 Nota do Histórico', '#7c3aed', n.date||n.created_at||'', null));
 
-      clientsAll.filter(since).forEach(c =>
+      clientsAll.filter(since).filter(c => allowedIds.has(String(c.id))).forEach(c =>
         addGroup(String(c.id), '👥 Novo Cliente', '#16a34a', c.created_at||'', null));
 
-      // Itens sem cliente: máquina, processo, receita — permanecem individuais
+      // Itens sem cliente: máquina e processo filtrados por cliente permitido; receitas são globais
       const standaloneItems = [
-        ...machines.filter(since).map(m => ({ name: m.name||'—', tipo: '⚙️ Nova Máquina', cor: '#ea580c', date: m.created_at||'', count: 1, extras: [] })),
-        ...processes.filter(since).map(p => ({ name: p.name||'—', tipo: '🔄 Novo Processo', cor: '#d97706', date: p.created_at||'', count: 1, extras: [] })),
+        ...machines.filter(since).filter(m => allowedIds.has(String(m.client_id))).map(m => ({ name: m.name||'—', tipo: '⚙️ Nova Máquina', cor: '#ea580c', date: m.created_at||'', count: 1, extras: [] })),
+        ...processes.filter(since).filter(p => allowedIds.has(String(machineClientMap[String(p.machine_id)]))).map(p => ({ name: p.name||'—', tipo: '🔄 Novo Processo', cor: '#d97706', date: p.created_at||'', count: 1, extras: [] })),
         ...recipes.filter(since).map(r => ({ name: r.name||'—', tipo: '🗂️ Nova Receita', cor: '#be185d', date: r.created_at||'', count: 1, extras: [] })),
       ];
 
@@ -9868,18 +9872,22 @@ ${inactiveSec}
       if (!_finInitialized) {
         _finInitialized = true;
 
-        const FIN_TABS = ['upload', 'view', 'cross', 'evolucao', 'ranking'];
-        document.querySelectorAll('[data-fin-tab]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            document.querySelectorAll('[data-fin-tab]').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const tab = btn.dataset.finTab;
-            FIN_TABS.forEach(t => document.getElementById('fin-tab-' + t)?.classList.toggle('hidden', t !== tab));
-            if (tab === 'view')      renderFinanceiroView();
-            if (tab === 'cross')     renderFinanceiroCruzamento();
-            if (tab === 'evolucao')  renderFinanceiroEvolucao();
-            if (tab === 'ranking')   renderFinanceiroRanking();
-          });
+        // Delegação única no container — mais robusto que forEach em cada botão
+        document.getElementById('fin-tabs').addEventListener('click', e => {
+          const btn = e.target.closest('[data-fin-tab]');
+          if (!btn) return;
+          _switchFinTab(btn.dataset.finTab);
+        });
+
+        // Delegação no container da lista para collapse/expand sem inline onclick
+        document.getElementById('fin-data-view').addEventListener('click', e => {
+          const header = e.target.closest('[data-collapse-target]');
+          if (!header) return;
+          const el = document.getElementById(header.dataset.collapseTarget);
+          if (!el) return;
+          el.classList.toggle('fin-collapsed');
+          const arrow = header.querySelector('.fv-arrow');
+          if (arrow) arrow.textContent = el.classList.contains('fin-collapsed') ? '▶' : '▼';
         });
 
         const dropZone = document.getElementById('fin-drop-zone');
@@ -9914,12 +9922,12 @@ ${inactiveSec}
 
     function _switchFinTab(tab) {
       const FIN_TABS = ['upload', 'view', 'cross', 'evolucao', 'ranking'];
-      document.querySelectorAll('[data-fin-tab]').forEach(b => b.classList.toggle('active', b.dataset.finTab === tab));
+      document.querySelectorAll('#fin-tabs [data-fin-tab]').forEach(b => b.classList.toggle('active', b.dataset.finTab === tab));
       FIN_TABS.forEach(t => document.getElementById('fin-tab-' + t)?.classList.toggle('hidden', t !== tab));
-      if (tab === 'view')          renderFinanceiroView();
-      else if (tab === 'cross')    renderFinanceiroCruzamento();
-      else if (tab === 'evolucao') renderFinanceiroEvolucao();
-      else if (tab === 'ranking')  renderFinanceiroRanking();
+      if (tab === 'view')          renderFinanceiroView().catch(e => console.error('fin-view:', e));
+      else if (tab === 'cross')    renderFinanceiroCruzamento().catch(e => console.error('fin-cross:', e));
+      else if (tab === 'evolucao') renderFinanceiroEvolucao().catch(e => console.error('fin-evol:', e));
+      else if (tab === 'ranking')  renderFinanceiroRanking().catch(e => console.error('fin-rank:', e));
     }
 
     async function processFinanceiroFiles(files) {
@@ -10516,8 +10524,8 @@ ${inactiveSec}
         const sortedMonths = Object.keys(data.months).sort(); // cronológico asc
         const cid = 'fv-c' + idx;
         html += `<div class="list-item" id="${cid}" style="display:block;margin-bottom:0.6rem">
-          <div onclick="(function(el){el.classList.toggle('fin-collapsed');el.querySelector('.fv-arrow').textContent=el.classList.contains('fin-collapsed')?'▶':'▼'})(document.getElementById('${cid}'))"
-               style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:0.1rem 0;margin-bottom:0.25rem">
+          <div data-collapse-target="${cid}"
+               style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:0.1rem 0;margin-bottom:0.25rem;-webkit-tap-highlight-color:transparent">
             <strong style="font-size:0.88rem">👤 ${clientName}</strong>
             <div style="display:flex;align-items:center;gap:0.5rem">
               <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtBR(data.total)}</span>
