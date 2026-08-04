@@ -9889,12 +9889,27 @@ ${inactiveSec}
         document.getElementById('btn-fin-save').addEventListener('click', saveFinanceiroRows);
       }
       await refreshFinanceiroFilters();
-      // Re-renderiza aba ativa (importante após sync ou navegação de volta)
+      // Se há dados e usuário ainda está na aba Importar, vai direto para Dados
       const activeTab = document.querySelector('#fin-tabs .qf-btn.active')?.dataset?.finTab;
-      if (activeTab === 'view')          await renderFinanceiroView();
-      else if (activeTab === 'cross')    await renderFinanceiroCruzamento();
-      else if (activeTab === 'evolucao') await renderFinanceiroEvolucao();
-      else if (activeTab === 'ranking')  await renderFinanceiroRanking();
+      const hasData = (await dbGetAll_raw('financeiro')).length > 0;
+      if (hasData && activeTab === 'upload') {
+        _switchFinTab('view');
+      } else {
+        if (activeTab === 'view')          await renderFinanceiroView();
+        else if (activeTab === 'cross')    await renderFinanceiroCruzamento();
+        else if (activeTab === 'evolucao') await renderFinanceiroEvolucao();
+        else if (activeTab === 'ranking')  await renderFinanceiroRanking();
+      }
+    }
+
+    function _switchFinTab(tab) {
+      const FIN_TABS = ['upload', 'view', 'cross', 'evolucao', 'ranking'];
+      document.querySelectorAll('[data-fin-tab]').forEach(b => b.classList.toggle('active', b.dataset.finTab === tab));
+      FIN_TABS.forEach(t => document.getElementById('fin-tab-' + t)?.classList.toggle('hidden', t !== tab));
+      if (tab === 'view')          renderFinanceiroView();
+      else if (tab === 'cross')    renderFinanceiroCruzamento();
+      else if (tab === 'evolucao') renderFinanceiroEvolucao();
+      else if (tab === 'ranking')  renderFinanceiroRanking();
     }
 
     async function processFinanceiroFiles(files) {
@@ -10092,6 +10107,17 @@ ${inactiveSec}
         pendWrap.innerHTML = '✅ tudo sincronizado';
       }
       el.classList.remove('hidden');
+      // Botão rápido para ir aos dados
+      let viewBtn = document.getElementById('fin-sync-view-btn');
+      if (!viewBtn) {
+        viewBtn = document.createElement('button');
+        viewBtn.id = 'fin-sync-view-btn';
+        viewBtn.className = 'btn-primary btn-sm';
+        viewBtn.style.marginTop = '0.5rem';
+        viewBtn.textContent = '📊 Ver dados';
+        viewBtn.onclick = () => _switchFinTab('view');
+        el.appendChild(viewBtn);
+      }
     }
 
     async function saveFinanceiroRows() {
