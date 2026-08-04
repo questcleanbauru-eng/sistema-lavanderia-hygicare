@@ -749,6 +749,11 @@ function doPost(e) {
 
     const { action, sheet: sheetName, data, id, actor } = body;
 
+    // ── RELATÓRIO FINANCEIRO MENSAL POR E-MAIL ────────────
+    if (action === 'sendFinanceiroEmail') {
+      return _sendFinanceiroEmail();
+    }
+
     // ── ENVIAR RELATÓRIO POR E-MAIL COM PDF ──────────────
     // Deve ser verificado ANTES do check de sheetName, pois não usa aba
     if (action === 'sendReportEmail') {
@@ -1728,4 +1733,108 @@ function setupMonthlyTriggers() {
   });
   ScriptApp.newTrigger('runMonthlyTrigger').timeBased().onMonthDay(1).atHour(8).create();
   Logger.log('setupMonthlyTriggers: gatilho criado — dia 1 às 8h');
+}
+
+// ── Relatório Financeiro Mensal ──────────────────────────
+function _sendFinanceiroEmail() {
+  var toEmail = getConfig('notification_email');
+  if (!toEmail) return respondError('notification_email não configurado');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Financeiro');
+  if (!sheet || sheet.getLastRow() < 2) return respondError('Sem dados na aba Financeiro');
+
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var idxClient   = headers.indexOf('client_id');
+  var idxCod      = headers.indexOf('cod_financeiro');
+  var idxMonth    = headers.indexOf('month');
+  var idxVenda    = headers.indexOf('total_venda');
+
+  // Busca nomes dos clientes
+  var clientSheet = ss.getSheetByName('Clientes');
+  var clientNames = {};
+  if (clientSheet) {
+    var cData = clientSheet.getDataRange().getValues();
+    var cHeaders = cData[0];
+    var ciId   = cHeaders.indexOf('id');
+    var ciName = cHeaders.indexOf('name');
+    for (var ci = 1; ci < cData.length; ci++) {
+      clientNames[String(cData[ci][ciId])] = cData[ci][ciName];
+    }
+  }
+
+  // Agrupa por mês → cliente
+  var byMonth = {};
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var month = String(row[idxMonth] || '').slice(0, 7);
+    var clientId = String(row[idxClient] || '');
+    var name = clientNames[clientId] || ('Cód. ' + row[idxCod]);
+    var venda = parseFloat(row[idxVenda]) || 0;
+    if (!month) continue;
+    if (!byMonth[month]) byMonth[month] = {};
+    if (!byMonth[month][name]) byMonth[month][name] = 0;
+    byMonth[month][name] += venda;
+  }
+
+  var months = Object.keys(byMonth).sort().reverse();
+  if (!months.length) return respondError('Sem dados agrupados');
+
+  var fmtR = function(v) {
+    return 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  };
+  var fmtMonth = function(m) {
+    var parts = m.split('-');
+    var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1);
+    return Utilities.formatDate(d, Session.getScriptTimeZone(), "MMMM 'de' yyyy");
+  };
+
+  var body = '<div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto">'
+    + '<div style="background:linear-gradient(135deg,#1e3a8a,#2563eb);padding:20px 24px;border-radius:10px 10px 0 0">'
+    + '<h2 style="color:#fff;margin:0;font-size:20px">💰 Relatório Financeiro</h2>'
+    + '<p style="color:#93c5fd;margin:4px 0 0;font-size:13px">Hygicare Lavanderia · Faturamento por cliente</p>'
+    + '</div><div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:20px 24px">';
+
+  months.forEach(function(month) {
+    var clients = byMonth[month];
+    var entries = Object.entries(clients).sort(function(a, b) { return b[1] - a[1]; });
+    var total = entries.reduce(function(s, e) { return s + e[1]; }, 0);
+
+    body += '<h3 style="font-size:15px;color:#1e3a8a;margin:16px 0 8px;text-transform:capitalize">'
+      + fmtMonth(month) + '</h3>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px">'
+      + '<thead><tr style="background:#f1f5f9">'
+      + '<th style="padding:7px 10px;text-align:left;border-bottom:1px solid #e2e8f0">Cliente</th>'
+      + '<th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0">Faturado</th>'
+      + '<th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0">%</th>'
+      + '</tr></thead><tbody>';
+
+    entries.forEach(function(e, idx) {
+      var pct = total > 0 ? (e[1] / total * 100).toFixed(1) : '0.0';
+      body += '<tr style="background:' + (idx % 2 === 0 ? '#fff' : '#f8fafc') + '">'
+        + '<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9">' + e[0] + '</td>'
+        + '<td style="padding:6px 10px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:600">' + fmtR(e[1]) + '</td>'
+        + '<td style="padding:6px 10px;text-align:right;border-bottom:1px solid #f1f5f9;color:#64748b">' + pct + '%</td>'
+        + '</tr>';
+    });
+
+    body += '<tr style="background:#eff6ff;font-weight:700">'
+      + '<td style="padding:7px 10px">Total ' + fmtMonth(month) + '</td>'
+      + '<td style="padding:7px 10px;text-align:right;color:#1e3a8a">' + fmtR(total) + '</td>'
+      + '<td style="padding:7px 10px;text-align:right">100%</td>'
+      + '</tr></tbody></table>';
+  });
+
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  body += '<p style="font-size:11px;color:#94a3b8;margin-top:16px;border-top:1px solid #e2e8f0;padding-top:12px">Gerado em ' + now + ' · Hygicare Sistema de Lavanderia</p>'
+    + '</div></div>';
+
+  MailApp.sendEmail({
+    to: toEmail,
+    subject: '[Hygicare] 💰 Relatório Financeiro — ' + fmtMonth(months[0]),
+    htmlBody: body
+  });
+
+  return respond({ sent: true, to: toEmail, months: months });
 }

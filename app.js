@@ -9847,14 +9847,17 @@ ${inactiveSec}
       if (!_finInitialized) {
         _finInitialized = true;
 
+        const FIN_TABS = ['upload', 'view', 'cross', 'evolucao', 'ranking'];
         document.querySelectorAll('[data-fin-tab]').forEach(btn => {
           btn.addEventListener('click', () => {
             document.querySelectorAll('[data-fin-tab]').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const tab = btn.dataset.finTab;
-            document.getElementById('fin-tab-upload').classList.toggle('hidden', tab !== 'upload');
-            document.getElementById('fin-tab-view').classList.toggle('hidden', tab !== 'view');
-            if (tab === 'view') renderFinanceiroView();
+            FIN_TABS.forEach(t => document.getElementById('fin-tab-' + t)?.classList.toggle('hidden', t !== tab));
+            if (tab === 'view')      renderFinanceiroView();
+            if (tab === 'cross')     renderFinanceiroCruzamento();
+            if (tab === 'evolucao')  renderFinanceiroEvolucao();
+            if (tab === 'ranking')   renderFinanceiroRanking();
           });
         });
 
@@ -9865,6 +9868,8 @@ ${inactiveSec}
         dropZone.addEventListener('dragleave', () => { dropZone.style.background = ''; });
         dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.background = ''; if (e.dataTransfer.files[0]) processFinanceiroFile(e.dataTransfer.files[0]); });
         fileInput.addEventListener('change', e => { if (e.target.files[0]) processFinanceiroFile(e.target.files[0]); fileInput.value = ''; });
+
+        document.getElementById('btn-fin-email').addEventListener('click', sendFinanceiroEmail);
 
         document.getElementById('btn-fin-cancel').addEventListener('click', () => {
           document.getElementById('fin-preview').classList.add('hidden');
@@ -10055,6 +10060,244 @@ ${inactiveSec}
       ).join('');
 
       [monthSel, clientSel, subSel].forEach(sel => { sel.onchange = renderFinanceiroView; });
+    }
+
+    async function sendFinanceiroEmail() {
+      const finAll = await dbGetAll_raw('financeiro');
+      if (!finAll.length) { toast('Nenhum dado financeiro para enviar.', 'error'); return; }
+      if (!navigator.onLine) { toast('Sem conexão.', 'error'); return; }
+      showOverlay('Enviando relatório...');
+      try {
+        const r = await fetch(gasApiUrl(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ payload: JSON.stringify({ action: 'sendFinanceiroEmail' }) })
+        });
+        const res = await r.json();
+        if (res.status === 'ok') toast('Relatório financeiro enviado por e-mail!', 'success');
+        else toast('Erro: ' + (res.error || 'falha no envio'), 'error');
+      } catch (e) {
+        toast('Erro ao enviar: ' + e.message, 'error');
+      } finally {
+        hideOverlay();
+      }
+    }
+
+    // ── helpers financeiros ──────────────────────────────────
+    function _finMonthFromRecord(r) {
+      const d = r.date_start || r.date_end || r.created_at || '';
+      const m = d.slice(0, 7); // "2026-06"
+      return m.length === 7 ? m : null;
+    }
+
+    async function _finBuildCrossData(filterMonth) {
+      const finRows  = await dbGetAll_raw('financeiro');
+      const records  = await dbGetAll_raw('records');
+      const clients  = await dbGetAll_raw('clients');
+      const clientMap = Object.fromEntries(clients.map(c => [c.id, c]));
+
+      // Agrupa registros de produção por client_id + month
+      const prodMap = {};
+      for (const r of records) {
+        if (r.maintenance) continue;
+        const month = _finMonthFromRecord(r);
+        if (!month) continue;
+        const key = r.client_id + '|' + month;
+        if (!prodMap[key]) prodMap[key] = { kg: 0, priceKg: parseFloat(r.price_kg || clientMap[r.client_id]?.price_kg || 0) || null };
+        prodMap[key].kg += parseFloat(r.total) || 0;
+      }
+
+      // Junta com financeiro
+      const result = {};
+      for (const f of finRows) {
+        if (filterMonth && f.month !== filterMonth) continue;
+        const key = f.client_id + '|' + f.month;
+        if (!result[key]) {
+          const c = clientMap[f.client_id] || {};
+          result[key] = {
+            clientName: c.name || ('Cód. ' + f.cod_financeiro),
+            month: f.month,
+            totalVenda: 0,
+            kg: prodMap[key]?.kg || 0,
+            priceKgContract: parseFloat(c.price_kg || 0) || null
+          };
+        }
+        result[key].totalVenda += f.total_venda;
+      }
+      return Object.values(result).sort((a, b) => b.totalVenda - a.totalVenda);
+    }
+
+    async function renderFinanceiroCruzamento() {
+      const filterMonth = document.getElementById('fin-cross-month')?.value || '';
+      const rows = await _finBuildCrossData(filterMonth);
+      const container = document.getElementById('fin-cross-view');
+
+      // Preenche filtro de mês
+      const finAll  = await dbGetAll_raw('financeiro');
+      const months  = [...new Set(finAll.map(r => r.month).filter(Boolean))].sort().reverse();
+      const monthSel = document.getElementById('fin-cross-month');
+      const cur = monthSel.value;
+      monthSel.innerHTML = '<option value="">Todos os meses</option>' + months.map(m => {
+        const [y, mo] = m.split('-');
+        const label = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        return `<option value="${m}"${m === cur ? ' selected' : ''}>${label}</option>`;
+      }).join('');
+      monthSel.onchange = renderFinanceiroCruzamento;
+
+      if (!rows.length) { container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado encontrado.</p>'; return; }
+
+      const fmtR = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const fmtKg = v => (v||0).toFixed(1).replace('.', ',') + ' kg';
+
+      let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        <thead><tr style="background:var(--primary,#2563eb);color:#fff">
+          <th style="padding:7px 10px;text-align:left">Cliente</th>
+          <th style="padding:7px 10px;text-align:right">Faturado</th>
+          <th style="padding:7px 10px;text-align:right">Kg lavado</th>
+          <th style="padding:7px 10px;text-align:right">Preço efetivo/kg</th>
+          <th style="padding:7px 10px;text-align:right">Preço contrato/kg</th>
+          <th style="padding:7px 10px;text-align:right">Diferença</th>
+        </tr></thead><tbody>`;
+
+      for (const r of rows) {
+        const efectivo = r.kg > 0 ? r.totalVenda / r.kg : null;
+        const diff = (efectivo !== null && r.priceKgContract) ? efectivo - r.priceKgContract : null;
+        const diffColor = diff === null ? '' : diff > 0 ? 'color:#16a34a;font-weight:700' : diff < 0 ? 'color:#dc2626;font-weight:700' : '';
+        html += `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:6px 10px">${r.clientName}</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtR(r.totalVenda)}</td>
+          <td style="padding:6px 10px;text-align:right">${r.kg > 0 ? fmtKg(r.kg) : '<span style="color:var(--muted)">—</span>'}</td>
+          <td style="padding:6px 10px;text-align:right">${efectivo !== null ? fmtR(efectivo) : '<span style="color:var(--muted)">—</span>'}</td>
+          <td style="padding:6px 10px;text-align:right">${r.priceKgContract ? fmtR(r.priceKgContract) : '<span style="color:var(--muted)">—</span>'}</td>
+          <td style="padding:6px 10px;text-align:right;${diffColor}">${diff !== null ? (diff >= 0 ? '+' : '') + fmtR(diff) : '<span style="color:var(--muted)">—</span>'}</td>
+        </tr>`;
+      }
+
+      const totKg = rows.reduce((s, r) => s + r.kg, 0);
+      const totVenda = rows.reduce((s, r) => s + r.totalVenda, 0);
+      html += `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
+        <td style="padding:7px 10px">Total</td>
+        <td style="padding:7px 10px;text-align:right">${fmtR(totVenda)}</td>
+        <td style="padding:7px 10px;text-align:right">${fmtKg(totKg)}</td>
+        <td colspan="3" style="padding:7px 10px;text-align:right">${totKg > 0 ? fmtR(totVenda/totKg) + '/kg médio' : '—'}</td>
+      </tr></tfoot></table></div>`;
+
+      container.innerHTML = html;
+    }
+
+    async function renderFinanceiroEvolucao() {
+      const finAll   = await dbGetAll_raw('financeiro');
+      const clients  = await dbGetAll_raw('clients');
+      const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
+
+      const clientSel = document.getElementById('fin-evol-client');
+      const filterClient = clientSel.value;
+      const clientIds = [...new Set(finAll.map(r => r.client_id).filter(Boolean))];
+      const cur = clientSel.value;
+      clientSel.innerHTML = '<option value="">Todos os clientes</option>' + clientIds.map(id => {
+        const name = clientMap[id] || ('ID ' + id);
+        return `<option value="${id}"${String(id) === cur ? ' selected' : ''}>${name}</option>`;
+      }).join('');
+      clientSel.onchange = renderFinanceiroEvolucao;
+
+      // Agrupa por mês (e opcionalmente por cliente)
+      const byMonth = {};
+      for (const r of finAll) {
+        if (filterClient && String(r.client_id) !== filterClient) continue;
+        if (!byMonth[r.month]) byMonth[r.month] = 0;
+        byMonth[r.month] += r.total_venda;
+      }
+
+      const months = Object.keys(byMonth).sort();
+      const container = document.getElementById('fin-evol-view');
+      if (!months.length) { container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado encontrado.</p>'; return; }
+
+      const fmtR = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const maxVal = Math.max(...months.map(m => byMonth[m]));
+
+      let html = '<div style="display:flex;flex-direction:column;gap:0.6rem">';
+      for (let i = 0; i < months.length; i++) {
+        const m = months[i];
+        const val = byMonth[m];
+        const prev = i > 0 ? byMonth[months[i-1]] : null;
+        const delta = prev !== null ? val - prev : null;
+        const deltaColor = delta === null ? '' : delta >= 0 ? '#16a34a' : '#dc2626';
+        const deltaSign = delta === null ? '' : delta >= 0 ? '▲' : '▼';
+        const [y, mo] = m.split('-');
+        const label = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        const barPct = maxVal > 0 ? (val / maxVal * 100).toFixed(1) : 0;
+
+        html += `<div style="background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+            <span style="font-weight:600;font-size:0.9rem">${label}</span>
+            <div style="display:flex;align-items:center;gap:0.75rem">
+              ${delta !== null ? `<span style="font-size:0.8rem;color:${deltaColor}">${deltaSign} ${fmtR(Math.abs(delta))}</span>` : ''}
+              <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtR(val)}</span>
+            </div>
+          </div>
+          <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${barPct}%;background:var(--primary,#2563eb);border-radius:4px;transition:width 0.4s"></div>
+          </div>
+        </div>`;
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    async function renderFinanceiroRanking() {
+      const finAll   = await dbGetAll_raw('financeiro');
+      const clients  = await dbGetAll_raw('clients');
+      const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
+
+      const monthSel = document.getElementById('fin-rank-month');
+      const filterMonth = monthSel.value;
+      const months = [...new Set(finAll.map(r => r.month).filter(Boolean))].sort().reverse();
+      const cur = monthSel.value;
+      monthSel.innerHTML = '<option value="">Todos os meses</option>' + months.map(m => {
+        const [y, mo] = m.split('-');
+        const label = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        return `<option value="${m}"${m === cur ? ' selected' : ''}>${label}</option>`;
+      }).join('');
+      monthSel.onchange = renderFinanceiroRanking;
+
+      // Agrega por cliente
+      const byClient = {};
+      for (const r of finAll) {
+        if (filterMonth && r.month !== filterMonth) continue;
+        const name = clientMap[r.client_id] || ('Cód. ' + r.cod_financeiro);
+        if (!byClient[name]) byClient[name] = 0;
+        byClient[name] += r.total_venda;
+      }
+
+      const ranked = Object.entries(byClient).sort((a, b) => b[1] - a[1]);
+      const container = document.getElementById('fin-rank-view');
+      if (!ranked.length) { container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado encontrado.</p>'; return; }
+
+      const total = ranked.reduce((s, [, v]) => s + v, 0);
+      const maxVal = ranked[0][1];
+      const fmtR = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const medals = ['🥇','🥈','🥉'];
+
+      let html = `<div style="margin-bottom:0.75rem;font-size:0.85rem;color:var(--muted)">${ranked.length} clientes · Total: <strong style="color:var(--text)">${fmtR(total)}</strong></div>`;
+      html += '<div style="display:flex;flex-direction:column;gap:0.5rem">';
+      ranked.forEach(([name, val], i) => {
+        const pct = (val / total * 100).toFixed(1);
+        const barPct = (val / maxVal * 100).toFixed(1);
+        html += `<div style="background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:10px;padding:0.65rem 1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem">
+            <span style="font-weight:600;font-size:0.88rem">${medals[i] || (i+1)+'º'} ${name}</span>
+            <div style="display:flex;align-items:center;gap:0.6rem">
+              <span style="font-size:0.78rem;color:var(--muted)">${pct}%</span>
+              <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtR(val)}</span>
+            </div>
+          </div>
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${barPct}%;background:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#cd7f32':'var(--primary,#2563eb)'};border-radius:3px"></div>
+          </div>
+        </div>`;
+      });
+      html += '</div>';
+      container.innerHTML = html;
     }
 
     async function renderFinanceiroView() {

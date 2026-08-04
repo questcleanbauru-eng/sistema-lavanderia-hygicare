@@ -676,12 +676,18 @@
             <div class="screen-title"><h2>💰 Financeiro</h2></div>
           </div>
           <div class="quick-filters" id="fin-tabs" style="margin-bottom:1rem">
-            <button class="qf-btn active" data-fin-tab="upload">📤 Importar Excel</button>
+            <button class="qf-btn active" data-fin-tab="upload">📤 Importar</button>
             <button class="qf-btn" data-fin-tab="view">📊 Dados</button>
+            <button class="qf-btn" data-fin-tab="cross">⚖️ Cruzamento</button>
+            <button class="qf-btn" data-fin-tab="evolucao">📈 Evolução</button>
+            <button class="qf-btn" data-fin-tab="ranking">🏆 Ranking</button>
           </div>
 
           <!-- ABA: Upload -->
           <div id="fin-tab-upload">
+            <div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">
+              <button id="btn-fin-email" class="btn-secondary btn-sm">📧 Enviar relatório por e-mail</button>
+            </div>
             <div id="fin-drop-zone" style="border:2px dashed var(--border);border-radius:12px;padding:2.5rem 1rem;text-align:center;cursor:pointer;transition:background 0.2s;margin-bottom:1rem">
               <div style="font-size:2.5rem;margin-bottom:0.5rem">📊</div>
               <p style="font-weight:600;margin:0 0 0.25rem">Clique ou arraste o arquivo Excel</p>
@@ -701,6 +707,30 @@
               </div>
               <div id="fin-unmatched" class="hidden" style="padding:0.65rem 0.85rem;background:#fef3c7;border-radius:8px;font-size:0.82rem;color:#78350f"></div>
             </div>
+          </div>
+
+          <!-- ABA: Cruzamento -->
+          <div id="fin-tab-cross" class="hidden">
+            <div class="filter-bar" style="margin-bottom:1rem">
+              <select id="fin-cross-month" class="filter-select" style="min-width:140px"><option value="">Todos os meses</option></select>
+            </div>
+            <div id="fin-cross-view"></div>
+          </div>
+
+          <!-- ABA: Evolução -->
+          <div id="fin-tab-evolucao" class="hidden">
+            <div class="filter-bar" style="margin-bottom:1rem">
+              <select id="fin-evol-client" class="filter-select" style="min-width:180px"><option value="">Todos os clientes</option></select>
+            </div>
+            <div id="fin-evol-view"></div>
+          </div>
+
+          <!-- ABA: Ranking -->
+          <div id="fin-tab-ranking" class="hidden">
+            <div class="filter-bar" style="margin-bottom:1rem">
+              <select id="fin-rank-month" class="filter-select" style="min-width:140px"><option value="">Todos os meses</option></select>
+            </div>
+            <div id="fin-rank-view"></div>
           </div>
 
           <!-- ABA: Dados -->
