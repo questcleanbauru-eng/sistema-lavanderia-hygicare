@@ -796,7 +796,7 @@ ${printScript}
       'create_note','edit_note','delete_note']);
 
     // Chaves de tela — fonte única para formulário de usuário e applyNavPermissions
-    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports'];
+    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports','financeiro'];
 
     // Mutex: impede dois syncs completos simultâneos (IIFE de startup + _autoSync)
     let _fullSyncRunning = false;
