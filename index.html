@@ -745,10 +745,13 @@
 
           <!-- ABA: Dados -->
           <div id="fin-tab-view" class="hidden">
-            <div class="filter-bar" style="margin-bottom:1rem">
+            <div class="filter-bar" style="margin-bottom:0.5rem">
               <select id="fin-filter-month" class="filter-select" style="min-width:140px"><option value="">Todos os meses</option></select>
               <select id="fin-filter-client" class="filter-select" style="min-width:160px"><option value="">Todos os clientes</option></select>
               <select id="fin-filter-subgrupo" class="filter-select" style="min-width:140px"><option value="">Todos os subgrupos</option></select>
+            </div>
+            <div style="margin-bottom:0.75rem">
+              <button id="fin-clear-filters" class="btn-secondary btn-sm" style="font-size:0.75rem;padding:0.25rem 0.65rem">✕ Limpar filtros</button>
             </div>
             <div id="fin-data-view"></div>
           </div>

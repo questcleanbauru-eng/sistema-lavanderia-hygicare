@@ -965,7 +965,7 @@ ${printScript}
         const data = await _originalGetAll(store);
         if (!currentUser || currentUser.role === 'admin' || currentUser.role === 'diretor') return data;
         if (store !== 'clients') return data;
-        if (currentUser.role === 'gerente' || currentUser.role === 'consultor') {
+        if (currentUser.role === 'gerente' || currentUser.role === 'consultor' || currentUser.role === 'tecnico') {
           const managed = getManagedSellerNames();
           return data.filter(c => managed.has((c.seller || '').toLowerCase()));
         }
@@ -1024,6 +1024,13 @@ ${printScript}
     // Mostrar botoes admin-only apenas para administradores
     if (currentUser?.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    }
+    // Mostrar botão Financeiro para usuários com permissão 'financeiro' (mesmo não sendo admin)
+    if (currentUser?.role !== 'admin') {
+      const perms = (currentUser?.permissions || '').split(',').map(s => s.trim());
+      if (perms.includes('financeiro')) {
+        document.querySelector('.drawer-item[data-target="screen-financeiro"]')?.classList.remove('hidden');
+      }
     }
 
     document.getElementById('btn-pdf-executive')?.addEventListener('click', async () => {
@@ -5432,7 +5439,7 @@ ${opSections}
           { perm: 'pdf_reports',  screen: 'screen-pdf-reports',  fn: initPdfReportsScreen,   icon: '📄', label: 'Rel. PDF' },
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
           { perm: 'admin',        screen: 'screen-admin',        fn: refreshAdminPanel,        icon: '⚙️', label: 'Admin', adminOnly: true },
-          { perm: 'financeiro',   screen: 'screen-financeiro',   fn: initFinanceiroScreen,     icon: '💰', label: 'Financeiro', adminOnly: true },
+          { perm: 'financeiro',   screen: 'screen-financeiro',   fn: initFinanceiroScreen,     icon: '💰', label: 'Financeiro' },
           { perm: 'alerts',       screen: 'screen-alerts',       fn: renderAlertsScreen,       icon: '🔔', label: 'Avisos' },
         ];
         const permsStr = (currentUser?.permissions || '').trim();
@@ -9866,6 +9873,15 @@ ${inactiveSec}
     // =====================================================
     // MÓDULO FINANCEIRO (admin)
     // =====================================================
+
+    // Retorna registros financeiros filtrados pelo usuário logado (igual ao window.getAll para clientes)
+    async function _getFinRows() {
+      const all = await dbGetAll_raw('financeiro');
+      if (!currentUser || currentUser.role === 'admin' || currentUser.role === 'diretor') return all;
+      const allowed = new Set((await window.getAll('clients')).map(c => String(c.id)));
+      return all.filter(r => allowed.has(String(r.client_id)));
+    }
+
     let _finInitialized = false;
 
     async function initFinanceiroScreen() {
@@ -9905,6 +9921,17 @@ ${inactiveSec}
           window._finPendingRows = null;
         });
         document.getElementById('btn-fin-save').addEventListener('click', saveFinanceiroRows);
+
+        document.getElementById('fin-clear-filters')?.addEventListener('click', () => {
+          ['fin-filter-month', 'fin-filter-client', 'fin-filter-subgrupo'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.value = ''; el.dispatchEvent(new Event('change')); }
+          });
+          // Limpa também o campo de busca do _makeSearchable se existir
+          const ssInput = document.querySelector('#fin-tab-view .ss-input');
+          if (ssInput) ssInput.value = '';
+          renderFinanceiroView();
+        });
       }
       await refreshFinanceiroFilters();
       // Se há dados e usuário ainda está na aba Importar, vai direto para Dados
@@ -10191,7 +10218,7 @@ ${inactiveSec}
     }
 
     async function refreshFinanceiroFilters() {
-      const rows = await dbGetAll_raw('financeiro');
+      const rows = await _getFinRows();
       const clients = await dbGetAll_raw('clients');
       const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
       const months    = [...new Set(rows.map(r => _normFinMonth(r.month)).filter(Boolean))].sort().reverse();
@@ -10221,6 +10248,7 @@ ${inactiveSec}
       ).join('');
 
       [monthSel, clientSel, subSel].forEach(sel => { sel.onchange = renderFinanceiroView; });
+      _makeSearchable(clientSel);
       _updateFinSyncStatus();
     }
 
@@ -10264,7 +10292,7 @@ ${inactiveSec}
     }
 
     async function _finBuildCrossData(filterMonth) {
-      const finRows  = await dbGetAll_raw('financeiro');
+      const finRows  = await _getFinRows();
       const records  = await dbGetAll_raw('records');
       const clients  = await dbGetAll_raw('clients');
 
@@ -10321,7 +10349,7 @@ ${inactiveSec}
       const container = document.getElementById('fin-cross-view');
 
       // Preenche filtro de mês
-      const finAll  = await dbGetAll_raw('financeiro');
+      const finAll  = await _getFinRows();
       const months  = [...new Set(finAll.map(r => _normFinMonth(r.month)).filter(Boolean))].sort().reverse();
       const monthSel = document.getElementById('fin-cross-month');
       const cur = monthSel.value;
@@ -10408,7 +10436,7 @@ ${inactiveSec}
     }
 
     async function renderFinanceiroEvolucao() {
-      const finAll   = await dbGetAll_raw('financeiro');
+      const finAll   = await _getFinRows();
       const clients  = await dbGetAll_raw('clients');
       const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
 
@@ -10450,15 +10478,15 @@ ${inactiveSec}
         const label = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
         const barPct = maxVal > 0 ? (val / maxVal * 100).toFixed(1) : 0;
 
-        html += `<div style="background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
-            <span style="font-weight:600;font-size:0.9rem">${label}</span>
-            <div style="display:flex;align-items:center;gap:0.75rem">
-              ${delta !== null ? `<span style="font-size:0.8rem;color:${deltaColor}">${deltaSign} ${fmtR(Math.abs(delta))}</span>` : ''}
-              <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtR(val)}</span>
+        html += `<div style="background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.8rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;gap:0.4rem">
+            <span style="font-weight:600;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${label}</span>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+              ${delta !== null ? `<span style="font-size:0.75rem;color:${deltaColor}">${deltaSign} ${fmtR(Math.abs(delta))}</span>` : ''}
+              <span style="font-weight:700;color:var(--primary,#2563eb);font-size:0.82rem">${fmtR(val)}</span>
             </div>
           </div>
-          <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+          <div style="height:6px;background:var(--border);border-radius:4px;overflow:hidden">
             <div style="height:100%;width:${barPct}%;background:var(--primary,#2563eb);border-radius:4px;transition:width 0.4s"></div>
           </div>
         </div>`;
@@ -10468,7 +10496,7 @@ ${inactiveSec}
     }
 
     async function renderFinanceiroRanking() {
-      const finAll   = await dbGetAll_raw('financeiro');
+      const finAll   = await _getFinRows();
       const clients  = await dbGetAll_raw('clients');
       const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
 
@@ -10506,15 +10534,15 @@ ${inactiveSec}
       ranked.forEach(([name, val], i) => {
         const pct = (val / total * 100).toFixed(1);
         const barPct = (val / maxVal * 100).toFixed(1);
-        html += `<div style="background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:10px;padding:0.65rem 1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem">
-            <span style="font-weight:600;font-size:0.88rem">${medals[i] || (i+1)+'º'} ${name}</span>
-            <div style="display:flex;align-items:center;gap:0.6rem">
-              <span style="font-size:0.78rem;color:var(--muted)">${pct}%</span>
-              <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtR(val)}</span>
+        html += `<div style="background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.8rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.28rem;gap:0.4rem">
+            <span style="font-weight:600;font-size:0.79rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${medals[i] || (i+1)+'º'} ${escHtml(name)}</span>
+            <div style="display:flex;align-items:center;gap:0.45rem;flex-shrink:0">
+              <span style="font-size:0.73rem;color:var(--muted)">${pct}%</span>
+              <span style="font-weight:700;color:var(--primary,#2563eb);font-size:0.81rem">${fmtR(val)}</span>
             </div>
           </div>
-          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
             <div style="height:100%;width:${barPct}%;background:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#cd7f32':'var(--primary,#2563eb)'};border-radius:3px"></div>
           </div>
         </div>`;
@@ -10524,7 +10552,7 @@ ${inactiveSec}
     }
 
     async function renderFinanceiroView() {
-      let rows = await dbGetAll_raw('financeiro');
+      let rows = await _getFinRows();
       const clients = await dbGetAll_raw('clients');
       const clientMap = Object.fromEntries(clients.map(c => [c.id, c.name]));
 
@@ -10557,13 +10585,13 @@ ${inactiveSec}
       Object.entries(byClient).sort((a, b) => b[1].total - a[1].total).forEach(([clientName, data], idx) => {
         const sortedMonths = Object.keys(data.months).sort(); // cronológico asc
         const cid = 'fv-c' + idx;
-        html += `<div class="list-item" id="${cid}" style="display:block;margin-bottom:0.6rem">
+        html += `<div class="list-item" id="${cid}" style="display:block;margin-bottom:0.5rem;padding:0.55rem 0.85rem">
           <div data-collapse-target="${cid}"
-               style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:0.1rem 0;margin-bottom:0.25rem;-webkit-tap-highlight-color:transparent">
-            <strong style="font-size:0.88rem">👤 ${clientName}</strong>
-            <div style="display:flex;align-items:center;gap:0.5rem">
-              <span style="font-weight:700;color:var(--primary,#2563eb)">${fmtBR(data.total)}</span>
-              <span class="fv-arrow" style="color:var(--muted);font-size:0.75rem;min-width:10px">▼</span>
+               style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:0.05rem 0;margin-bottom:0.2rem;-webkit-tap-highlight-color:transparent;gap:0.4rem">
+            <strong style="font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">👤 ${escHtml(clientName)}</strong>
+            <div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0">
+              <span style="font-weight:700;color:var(--primary,#2563eb);font-size:0.82rem">${fmtBR(data.total)}</span>
+              <span class="fv-arrow" style="color:var(--muted);font-size:0.7rem;min-width:9px">▼</span>
             </div>
           </div>
           <div class="fv-detail">`;
@@ -10577,10 +10605,10 @@ ${inactiveSec}
           const dSign  = delta === null ? '' : delta >= 0 ? '▲' : '▼';
           const [y, mo] = month.split('-');
           const mLabel  = mo ? new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: '2-digit' }) : month;
-          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;border-top:1px solid var(--border);font-size:0.84rem">
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.22rem 0;border-top:1px solid var(--border);font-size:0.77rem">
             <span style="color:var(--muted)">${mLabel}</span>
-            <div style="display:flex;align-items:center;gap:0.5rem">
-              ${delta !== null ? `<span style="font-size:0.9rem;font-weight:700;color:${dColor}">${dSign}</span>` : ''}
+            <div style="display:flex;align-items:center;gap:0.4rem">
+              ${delta !== null ? `<span style="font-size:0.82rem;font-weight:700;color:${dColor}">${dSign}</span>` : ''}
               <span style="font-weight:600">${fmtBR(val)}</span>
             </div>
           </div>`;
