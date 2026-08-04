@@ -9829,7 +9829,12 @@ ${inactiveSec}
         toast('Atualizando permissões...', 'info', 2000);
         await doRefresh('users', true);   // permissões aplicadas em segundos
         doRefresh('all', true);           // resto dos dados em background
+        // Pré-carrega filtros financeiros silenciosamente (sem navegar)
+        setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 3000);
       }, 400);
+    } else {
+      // App abrindo sem sync: pré-carrega filtros do financeiro do IDB local
+      setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 1500);
     }
 
     // ── Persistência de filtros entre navegações ──────────────────────────────
@@ -10533,7 +10538,7 @@ ${inactiveSec}
           html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;border-top:1px solid var(--border);font-size:0.84rem">
             <span style="color:var(--muted)">${mLabel}</span>
             <div style="display:flex;align-items:center;gap:0.5rem">
-              ${delta !== null ? `<span style="font-size:0.76rem;color:${dColor}">${dSign} ${fmtBR(Math.abs(delta))}</span>` : ''}
+              ${delta !== null ? `<span style="font-size:0.9rem;font-weight:700;color:${dColor}">${dSign}</span>` : ''}
               <span style="font-weight:600">${fmtBR(val)}</span>
             </div>
           </div>`;

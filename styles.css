@@ -2086,3 +2086,18 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 
 /* Financeiro — collapse por cliente */
 .fin-collapsed .fv-detail { display: none; }
+
+/* Financeiro — abas fixas no topo ao rolar a lista */
+#fin-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg, #f9fafb);
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
