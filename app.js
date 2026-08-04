@@ -9866,8 +9866,8 @@ ${inactiveSec}
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.background = 'var(--hover,#f1f5f9)'; });
         dropZone.addEventListener('dragleave', () => { dropZone.style.background = ''; });
-        dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.background = ''; if (e.dataTransfer.files[0]) processFinanceiroFile(e.dataTransfer.files[0]); });
-        fileInput.addEventListener('change', e => { if (e.target.files[0]) processFinanceiroFile(e.target.files[0]); fileInput.value = ''; });
+        dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.background = ''; if (e.dataTransfer.files.length) processFinanceiroFiles(Array.from(e.dataTransfer.files)); });
+        fileInput.addEventListener('change', e => { if (e.target.files.length) processFinanceiroFiles(Array.from(e.target.files)); fileInput.value = ''; });
 
         document.getElementById('btn-fin-email').addEventListener('click', sendFinanceiroEmail);
 
@@ -9878,6 +9878,60 @@ ${inactiveSec}
         document.getElementById('btn-fin-save').addEventListener('click', saveFinanceiroRows);
       }
       await refreshFinanceiroFilters();
+    }
+
+    async function processFinanceiroFiles(files) {
+      if (files.length === 1) { await processFinanceiroFile(files[0]); return; }
+      // Múltiplos arquivos: processa sequencialmente e acumula resultado
+      showOverlay('Lendo ' + files.length + ' arquivos...');
+      const clients = await dbGetAll_raw('clients');
+      const clientByCod = {};
+      clients.forEach(c => { if (c.cod_financeiro) clientByCod[String(c.cod_financeiro).trim()] = c; });
+      const allMatched = [], allUnmatched = new Set();
+      for (const file of files) {
+        try {
+          const buf = await file.arrayBuffer();
+          const wb  = XLSX.read(buf, { type: 'array' });
+          const ws  = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+          if (!rows.length) continue;
+          const keys = Object.keys(rows[0]);
+          const colCod   = keys.find(k => /^cod[\.\s]*$/i.test(k.trim()));
+          const colValor = keys.find(k => /r[s$][\s_]*total[\s_]*venda/i.test(k) || /total[\s_]*venda/i.test(k));
+          const colSub   = keys.find(k => /sub[\s_]*grupo/i.test(k));
+          const colDate  = keys.find(k => /^data|date|emis/i.test(k.trim()));
+          if (!colCod || !colValor || !colSub) continue;
+          let detectedMonth = null;
+          if (colDate) {
+            for (const r of rows) {
+              const v = r[colDate];
+              if (!v) continue;
+              if (typeof v === 'number') { const d = XLSX.SSF.parse_date_code(v); if (d) { detectedMonth = d.y + '-' + String(d.m).padStart(2,'0'); break; } }
+              else { const mt = String(v).match(/(\d{4})[\/\-](\d{2})|(\d{2})[\/\-](\d{2})[\/\-](\d{4})/); if (mt) { detectedMonth = mt[1] ? mt[1]+'-'+mt[2] : mt[5]+'-'+mt[4]; break; } }
+            }
+          }
+          if (!detectedMonth) { const now = new Date(); detectedMonth = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0'); }
+          const grouped = {};
+          for (const r of rows) {
+            const cod = String(r[colCod]||'').trim();
+            const sub = String(r[colSub]||'').trim();
+            const val = parseFloat(String(r[colValor]).replace(',','.')) || 0;
+            if (!cod || !sub || !val || !/lavanderia/i.test(sub)) continue;
+            const key = cod+'|'+sub;
+            if (!grouped[key]) grouped[key] = { cod_financeiro: cod, sub_grupo: sub, total_venda: 0 };
+            grouped[key].total_venda += val;
+          }
+          for (const g of Object.values(grouped)) {
+            const client = clientByCod[g.cod_financeiro];
+            if (client) allMatched.push({ ...g, client_id: client.id, client_name: client.name, month: detectedMonth });
+            else allUnmatched.add(g.cod_financeiro);
+          }
+        } catch(e) { console.warn('Erro ao ler arquivo:', file.name, e); }
+      }
+      hideOverlay();
+      if (!allMatched.length) { toast('Nenhum dado válido encontrado nos ' + files.length + ' arquivos.', 'error'); return; }
+      window._finPendingRows = allMatched;
+      _renderFinanceiroPreview(allMatched, [...allUnmatched], files.length + ' arquivos');
     }
 
     async function processFinanceiroFile(file) {
@@ -9949,42 +10003,7 @@ ${inactiveSec}
         }
 
         window._finPendingRows = matched;
-
-        const fmt = v => 'R$ ' + v.toFixed(2).replace('.', ',');
-        const [y, mo] = detectedMonth.split('-');
-        const monthLabel = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-
-        document.getElementById('fin-preview-title').textContent = matched.length + ' registros — ' + monthLabel;
-
-        document.getElementById('fin-preview-table').innerHTML =
-          `<thead><tr style="background:var(--primary,#2563eb);color:#fff">
-            <th style="padding:6px 8px;text-align:left">Cliente</th>
-            <th style="padding:6px 8px;text-align:left">Cód.</th>
-            <th style="padding:6px 8px;text-align:left">Sub Grupo</th>
-            <th style="padding:6px 8px;text-align:right">Total Venda</th>
-          </tr></thead><tbody>` +
-          matched.map((r, i) => `<tr style="background:${i%2?'var(--surface,#f8fafc)':''}">
-            <td style="padding:5px 8px">${r.client_name}</td>
-            <td style="padding:5px 8px;color:var(--muted)">${r.cod_financeiro}</td>
-            <td style="padding:5px 8px">${r.sub_grupo}</td>
-            <td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(r.total_venda)}</td>
-          </tr>`).join('') +
-          `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
-            <td colspan="3" style="padding:6px 8px">Total</td>
-            <td style="padding:6px 8px;text-align:right">${fmt(matched.reduce((s,r)=>s+r.total_venda,0))}</td>
-          </tr></tfoot>`;
-
-        const unmEl = document.getElementById('fin-unmatched');
-        if (unmatched.length) {
-          unmEl.classList.remove('hidden');
-          unmEl.innerHTML = '<strong>⚠️ ' + unmatched.length + ' código(s) sem cliente correspondente (ignorados):</strong> ' + unmatched.join(', ') +
-            '<br><small>Configure o campo "Código Financeiro" nos clientes para incluí-los.</small>';
-        } else {
-          unmEl.classList.add('hidden');
-        }
-
-        document.getElementById('fin-preview').classList.remove('hidden');
-        document.getElementById('fin-preview').scrollIntoView({ behavior: 'smooth' });
+        _renderFinanceiroPreview(matched, unmatched, detectedMonth);
       } catch (err) {
         console.error(err);
         toast('Erro ao ler arquivo: ' + err.message, 'error');
@@ -9993,39 +10012,89 @@ ${inactiveSec}
       }
     }
 
+    function _renderFinanceiroPreview(matched, unmatched, monthOrLabel) {
+      const fmt = v => 'R$ ' + v.toFixed(2).replace('.', ',');
+      let title = matched.length + ' registros';
+      if (typeof monthOrLabel === 'string' && monthOrLabel.includes('-')) {
+        const [y, mo] = monthOrLabel.split('-');
+        title += ' — ' + new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+      } else {
+        title += ' — ' + monthOrLabel;
+      }
+      document.getElementById('fin-preview-title').textContent = title;
+      document.getElementById('fin-preview-table').innerHTML =
+        `<thead><tr style="background:var(--primary,#2563eb);color:#fff">
+          <th style="padding:6px 8px;text-align:left">Cliente</th>
+          <th style="padding:6px 8px;text-align:left">Cód.</th>
+          <th style="padding:6px 8px;text-align:left">Sub Grupo</th>
+          <th style="padding:6px 8px;text-align:right">Total Venda</th>
+        </tr></thead><tbody>` +
+        matched.map((r, i) => `<tr style="background:${i%2?'var(--surface,#f8fafc)':''}">
+          <td style="padding:5px 8px">${r.client_name}</td>
+          <td style="padding:5px 8px;color:var(--muted)">${r.cod_financeiro}</td>
+          <td style="padding:5px 8px">${r.sub_grupo}</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(r.total_venda)}</td>
+        </tr>`).join('') +
+        `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
+          <td colspan="3" style="padding:6px 8px">Total</td>
+          <td style="padding:6px 8px;text-align:right">${fmt(matched.reduce((s,r)=>s+r.total_venda,0))}</td>
+        </tr></tfoot>`;
+      const unmEl = document.getElementById('fin-unmatched');
+      if (unmatched.length) {
+        unmEl.classList.remove('hidden');
+        unmEl.innerHTML = '<strong>⚠️ ' + unmatched.length + ' código(s) sem cliente (ignorados):</strong> ' + unmatched.join(', ') +
+          '<br><small>Configure "Código Financeiro" nos clientes para incluí-los.</small>';
+      } else {
+        unmEl.classList.add('hidden');
+      }
+      document.getElementById('fin-preview').classList.remove('hidden');
+      document.getElementById('fin-preview').scrollIntoView({ behavior: 'smooth' });
+    }
+
     async function saveFinanceiroRows() {
       const rows = window._finPendingRows;
       if (!rows || !rows.length) return;
-      showOverlay('Salvando dados financeiros...');
-      try {
-        const existing = await dbGetAll_raw('financeiro');
-        const existingKeys = new Set(existing.map(r => r.client_id + '|' + r.month + '|' + r.sub_grupo));
-        let saved = 0, skipped = 0;
-        for (const row of rows) {
-          const key = row.client_id + '|' + row.month + '|' + row.sub_grupo;
-          if (existingKeys.has(key)) { skipped++; continue; }
-          const item = {
-            id: genId(),
-            client_id: row.client_id,
-            cod_financeiro: row.cod_financeiro,
-            sub_grupo: row.sub_grupo,
-            month: row.month,
-            total_venda: row.total_venda,
-            created_at: new Date().toISOString()
-          };
-          await dbPut('financeiro', item);
-          if (navigator.onLine) await callGAS('insert', SHEETS.FINANCEIRO, item);
-          saved++;
-        }
-        const msg = skipped ? saved + ' salvos, ' + skipped + ' já existiam (ignorados).' : saved + ' registros financeiros salvos!';
-        toast(msg, 'success');
-        window._finPendingRows = null;
-        document.getElementById('fin-preview').classList.add('hidden');
-        await refreshFinanceiroFilters();
-      } catch (err) {
-        toast('Erro ao salvar: ' + err.message, 'error');
-      } finally {
-        hideOverlay();
+
+      // 1. Salva no IDB imediatamente (sem bloquear o app)
+      const existing = await dbGetAll_raw('financeiro');
+      const existingKeys = new Set(existing.map(r => String(r.client_id) + '|' + r.month + '|' + r.sub_grupo));
+      const toSave = [];
+      let skipped = 0;
+      for (const row of rows) {
+        const key = String(row.client_id) + '|' + row.month + '|' + row.sub_grupo;
+        if (existingKeys.has(key)) { skipped++; continue; }
+        toSave.push({
+          id: genId(),
+          client_id: row.client_id,
+          cod_financeiro: row.cod_financeiro,
+          sub_grupo: row.sub_grupo,
+          month: row.month,
+          total_venda: row.total_venda,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      for (const item of toSave) await dbPut('financeiro', item);
+
+      window._finPendingRows = null;
+      document.getElementById('fin-preview').classList.add('hidden');
+      await refreshFinanceiroFilters();
+
+      const msg = skipped
+        ? toSave.length + ' salvos localmente' + (skipped ? ', ' + skipped + ' já existiam.' : '.')
+        : toSave.length + ' registros salvos!';
+      toast(msg + (navigator.onLine ? ' Sincronizando...' : ''), 'success');
+
+      // 2. Sincroniza com GAS em background (não bloqueia o app)
+      if (navigator.onLine && toSave.length) {
+        (async () => {
+          let synced = 0;
+          for (const item of toSave) {
+            const ok = await callGAS('insert', SHEETS.FINANCEIRO, item);
+            if (ok) synced++;
+          }
+          if (synced > 0) toast(synced + ' registros sincronizados com a planilha.', 'success');
+        })();
       }
     }
 
@@ -10085,33 +10154,41 @@ ${inactiveSec}
 
     // ── helpers financeiros ──────────────────────────────────
     function _finMonthFromRecord(r) {
-      const d = r.date_start || r.date_end || r.created_at || '';
-      const m = d.slice(0, 7); // "2026-06"
-      return m.length === 7 ? m : null;
+      // Prioriza date_end (fim do período de faturamento), depois date_start, depois created_at
+      for (const d of [r.date_end, r.date_start, r.created_at]) {
+        if (!d) continue;
+        const s = String(d);
+        if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);          // ISO: "2026-05-31"
+        const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        if (m) return m[3] + '-' + m[2];                            // BR: "31/05/2026"
+      }
+      return null;
     }
 
     async function _finBuildCrossData(filterMonth) {
       const finRows  = await dbGetAll_raw('financeiro');
       const records  = await dbGetAll_raw('records');
       const clients  = await dbGetAll_raw('clients');
-      const clientMap = Object.fromEntries(clients.map(c => [c.id, c]));
+      const clientMap = Object.fromEntries(clients.map(c => [String(c.id), c]));
 
       // Agrupa registros de produção por client_id + month
       const prodMap = {};
       for (const r of records) {
         if (r.maintenance) continue;
+        const total = parseFloat(r.total) || 0;
+        if (total <= 0) continue;
         const month = _finMonthFromRecord(r);
         if (!month) continue;
-        const key = r.client_id + '|' + month;
-        if (!prodMap[key]) prodMap[key] = { kg: 0, priceKg: parseFloat(r.price_kg || clientMap[r.client_id]?.price_kg || 0) || null };
-        prodMap[key].kg += parseFloat(r.total) || 0;
+        const key = String(r.client_id) + '|' + month;
+        if (!prodMap[key]) prodMap[key] = { kg: 0, priceKg: parseFloat(r.price_kg || clientMap[String(r.client_id)]?.price_kg || 0) || null };
+        prodMap[key].kg += total;
       }
 
       // Junta com financeiro
       const result = {};
       for (const f of finRows) {
         if (filterMonth && f.month !== filterMonth) continue;
-        const key = f.client_id + '|' + f.month;
+        const key = String(f.client_id) + '|' + f.month;
         if (!result[key]) {
           const c = clientMap[f.client_id] || {};
           result[key] = {

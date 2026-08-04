@@ -241,21 +241,24 @@ const SHEET_LABELS = {
 };
 
 // Abas que usam fila (batching) em vez de e-mail individual por registro
-var NOTIF_BATCH_SHEETS = ['Registros', 'VazaoRegistros'];
+// Sheets que NUNCA disparam notificação (imports em massa, configs)
+var NO_NOTIF_SHEETS = ['Financeiro', 'Config', 'AppConfig', 'Usuarios'];
+
+// Todas as sheets ativas → enviadas em um único e-mail consolidado
+var NOTIF_BATCH_SHEETS = ['Registros', 'VazaoRegistros', 'Clientes', 'Maquinas', 'Processos',
+                           'Receitas', 'ReceitaProdutos', 'ClienteNotas', 'Vazoes'];
 
 // ── Enviar e-mail de notificação ─────────────────────────────
-// Lê o e-mail de destino da chave "notification_email" na aba Config.
-// Se não estiver configurado, não faz nada (sem erro).
 function sendNotification(action, sheetName, payload, actor) {
   try {
     var toEmail = getConfig('notification_email');
     if (!toEmail) return;
 
-    if (sheetName === 'Config' || sheetName === 'Usuarios') return;
+    // Sheets que nunca notificam
+    if (NO_NOTIF_SHEETS.indexOf(sheetName) >= 0) return;
 
-    // Registros e VazaoRegistros: enfileirar para enviar um único e-mail consolidado
-    if (NOTIF_BATCH_SHEETS.indexOf(sheetName) >= 0 &&
-        (action === 'insert' || action === 'upsert')) {
+    // Todas as demais: enfileirar para um único e-mail consolidado
+    if (NOTIF_BATCH_SHEETS.indexOf(sheetName) >= 0) {
       _enqueueNotification(sheetName, action, payload, actor);
       return;
     }
@@ -507,16 +510,132 @@ function _flushNotifBatch() {
   var toEmail = getConfig('notification_email');
   if (!toEmail) return;
 
+  // Coleta tudo que está na fila
+  var allQueues = {};
   NOTIF_BATCH_SHEETS.forEach(function(sheetName) {
     var qKey = 'notif_q_' + sheetName;
     var raw  = props.getProperty(qKey);
     if (!raw) return;
     props.deleteProperty(qKey);
-    var queue = [];
-    try { queue = JSON.parse(raw); } catch(e) { return; }
-    if (queue.length === 0) return;
-    _sendBatchEmail(toEmail, sheetName, queue);
+    try {
+      var q = JSON.parse(raw);
+      if (q.length) allQueues[sheetName] = q;
+    } catch(e) {}
   });
+
+  if (Object.keys(allQueues).length === 0) return;
+
+  // Registros + VazaoRegistros → seção detalhada
+  var prodSheets = ['Registros', 'VazaoRegistros'];
+  var hasProd = prodSheets.some(function(s) { return !!allQueues[s]; });
+
+  // Outras sheets → resumo simples
+  var otherSheets = Object.keys(allQueues).filter(function(s) { return prodSheets.indexOf(s) < 0; });
+
+  if (hasProd && !otherSheets.length) {
+    // Apenas produção → e-mail detalhado existente
+    prodSheets.forEach(function(sheetName) {
+      if (allQueues[sheetName]) _sendBatchEmail(toEmail, sheetName, allQueues[sheetName]);
+    });
+  } else if (!hasProd && otherSheets.length) {
+    // Apenas outros → e-mail resumo
+    _sendOtherBatchEmail(toEmail, allQueues, otherSheets);
+  } else {
+    // Combinado: produção + outros → um único e-mail
+    _sendCombinedBatchEmail(toEmail, allQueues, prodSheets, otherSheets);
+  }
+}
+
+var SHEET_LABELS_PT = {
+  Clientes: 'Clientes', Maquinas: 'Máquinas', Processos: 'Processos',
+  Receitas: 'Receitas', ReceitaProdutos: 'Produtos de Receita',
+  ClienteNotas: 'Histórico de Clientes', Vazoes: 'Vazões',
+  Registros: 'Registros de Produção', VazaoRegistros: 'Leituras de Vazão'
+};
+var ACTION_PT = { insert: 'criado', update: 'atualizado', delete: 'excluído', upsert: 'importado' };
+
+function _otherSummaryHtml(allQueues, otherSheets) {
+  var rows = '';
+  otherSheets.forEach(function(sheetName) {
+    var q = allQueues[sheetName] || [];
+    var byAction = {};
+    q.forEach(function(e) { byAction[e.action] = (byAction[e.action] || 0) + 1; });
+    var parts = Object.keys(byAction).map(function(a) {
+      return byAction[a] + ' ' + ACTION_PT[a];
+    }).join(', ');
+    rows += '<tr><td style="padding:6px 12px;border-bottom:1px solid #f1f5f9">'
+      + (SHEET_LABELS_PT[sheetName] || sheetName) + '</td>'
+      + '<td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;color:#64748b">' + parts + '</td></tr>';
+  });
+  return '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">'
+    + '<thead><tr style="background:#f1f5f9"><th style="padding:7px 12px;text-align:left">Módulo</th>'
+    + '<th style="padding:7px 12px;text-align:left">Atividade</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>';
+}
+
+function _sendOtherBatchEmail(toEmail, allQueues, otherSheets) {
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  var body = _batchEmailShell(
+    '🔔 Atividade do Sistema',
+    _otherSummaryHtml(allQueues, otherSheets),
+    now
+  );
+  MailApp.sendEmail({ to: toEmail, subject: '[Hygicare] 🔔 Atividade do Sistema — ' + now, htmlBody: body });
+}
+
+function _sendCombinedBatchEmail(toEmail, allQueues, prodSheets, otherSheets) {
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var thStyle = 'padding:7px 10px;font-size:10px;font-weight:700;color:#fff;background:#1e3a8a;text-align:left';
+
+  var prodHtml = '';
+  var totalKg = 0;
+  prodSheets.forEach(function(sheetName) {
+    var q = allQueues[sheetName];
+    if (!q || !q.length) return;
+    var nameCache = {};
+    function getN(refSheet, id) {
+      if (!id) return null;
+      var k = refSheet + '_' + id;
+      if (nameCache[k] !== undefined) return nameCache[k];
+      try {
+        var s = ss.getSheetByName(refSheet);
+        if (!s) return (nameCache[k] = null);
+        var rn = findRowById(s, id);
+        if (rn < 0) return (nameCache[k] = null);
+        var hdrs = s.getRange(1,1,1,s.getLastColumn()).getValues()[0];
+        var row  = s.getRange(rn,1,1,s.getLastColumn()).getValues()[0];
+        return (nameCache[k] = rowToObj(hdrs, row).name || null);
+      } catch(e) { return (nameCache[k] = null); }
+    }
+    var rows = '';
+    q.forEach(function(entry, i) {
+      var p = entry.item || {};
+      var clientName  = getN('Clientes', p.client_id) || ('ID ' + p.client_id);
+      var machineName = getN('Maquinas', p.machine_id) || ('ID ' + p.machine_id);
+      var processName = sheetName === 'Registros' ? (getN('Processos', p.process_id) || ('ID ' + p.process_id)) : (p.vazao_name || p.name || '');
+      var total = parseFloat(p.total || 0);
+      totalKg += total;
+      rows += '<tr style="background:' + (i%2===0?'#f8fafc':'#fff') + '">'
+        + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + clientName + '</td>'
+        + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + machineName + '</td>'
+        + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px">' + processName + '</td>'
+        + '<td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:right;font-weight:700;color:#15803d">' + total.toFixed(2) + ' kg</td>'
+        + '</tr>';
+    });
+    prodHtml += '<h4 style="color:#1e3a8a;margin:12px 0 6px">' + (SHEET_LABELS_PT[sheetName]||sheetName) + ' (' + q.length + ')</h4>'
+      + '<table style="width:100%;border-collapse:collapse"><thead><tr>'
+      + '<th style="' + thStyle + '">Cliente</th><th style="' + thStyle + '">Máquina</th>'
+      + '<th style="' + thStyle + '">Processo</th><th style="' + thStyle + ';text-align:right">Total</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody>'
+      + '<tfoot><tr style="background:#f0fdf4"><td colspan="3" style="padding:8px 10px;font-weight:700;color:#15803d;border-top:2px solid #bbf7d0">Total Geral</td>'
+      + '<td style="padding:8px 10px;font-weight:700;color:#15803d;border-top:2px solid #bbf7d0;text-align:right">' + totalKg.toFixed(2) + ' kg</td></tr></tfoot></table>';
+  });
+
+  var otherHtml = otherSheets.length ? '<h4 style="color:#1e3a8a;margin:16px 0 6px">Outras Atividades</h4>' + _otherSummaryHtml(allQueues, otherSheets) : '';
+
+  var body = _batchEmailShell('🔔 Atividades do Sistema', prodHtml + otherHtml, now);
+  MailApp.sendEmail({ to: toEmail, subject: '[Hygicare] 🔔 Atividades — ' + now, htmlBody: body });
 }
 
 function _sendBatchEmail(toEmail, sheetName, queue) {
