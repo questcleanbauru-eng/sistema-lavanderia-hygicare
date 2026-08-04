@@ -388,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     appMain.classList.remove('hidden');
     _applyCustomLogo();
     userNameSpan.textContent = `👤 ${currentUser.name}`;
-    const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', diretor: 'Diretor' }[currentUser.role] || 'Vendedor';
+    const _roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', tecnico: 'Técnico', diretor: 'Diretor' }[currentUser.role] || 'Vendedor';
     const _subtitle  = document.getElementById('header-subtitle');
     if (_subtitle) {
       _subtitle.textContent = `${currentUser.name} · ${_roleLabel}`;
@@ -929,7 +929,7 @@ ${printScript}
     // FILTRO DE DADOS POR USUÁRIO (vendedor / gerente)
     // =====================================================
     function getManagedSellerNames() {
-      if (currentUser.role === 'consultor') {
+      if (currentUser.role === 'consultor' || currentUser.role === 'tecnico') {
         const allUsers = JSON.parse(localStorage.getItem('hygicare_users') || '[]');
         const myName  = (currentUser.sellerName || currentUser.name || '').toLowerCase();
         const access  = (currentUser.sellers_access || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -10051,25 +10051,51 @@ ${inactiveSec}
       document.getElementById('fin-preview').scrollIntoView({ behavior: 'smooth' });
     }
 
+    function _finDedupKey(r) {
+      return String(r.cod_financeiro || '') + '|' + (r.month || '') + '|' + String(r.sub_grupo || '').trim().toUpperCase();
+    }
+
+    async function _updateFinSyncStatus() {
+      const el = document.getElementById('fin-sync-status');
+      if (!el) return;
+      const rows = await dbGetAll_raw('financeiro');
+      if (!rows.length) { el.classList.add('hidden'); return; }
+      const total   = rows.length;
+      // gas_synced=false → aguardando; undefined/true → sincronizado (registros antigos sem flag = OK)
+      const pending = rows.filter(r => r.gas_synced === false).length;
+      const synced  = total - pending;
+      document.getElementById('fin-sync-total').textContent = total;
+      document.getElementById('fin-sync-ok').textContent    = synced;
+      const pendWrap = document.getElementById('fin-sync-pending-wrap');
+      if (pending > 0) {
+        pendWrap.style.color = '#d97706';
+        pendWrap.innerHTML = '⏳ <strong>' + pending + '</strong> aguardando envio';
+      } else {
+        pendWrap.style.color = '#16a34a';
+        pendWrap.innerHTML = '✅ tudo sincronizado';
+      }
+      el.classList.remove('hidden');
+    }
+
     async function saveFinanceiroRows() {
       const rows = window._finPendingRows;
       if (!rows || !rows.length) return;
 
-      // 1. Salva no IDB imediatamente (sem bloquear o app)
+      // 1. Salva no IDB imediatamente — dedup por cod_financeiro+month+sub_grupo (evita discrepâncias de client_id)
       const existing = await dbGetAll_raw('financeiro');
-      const existingKeys = new Set(existing.map(r => String(r.client_id) + '|' + r.month + '|' + r.sub_grupo));
+      const existingKeys = new Set(existing.map(r => _finDedupKey(r)));
       const toSave = [];
       let skipped = 0;
       for (const row of rows) {
-        const key = String(row.client_id) + '|' + row.month + '|' + row.sub_grupo;
-        if (existingKeys.has(key)) { skipped++; continue; }
+        if (existingKeys.has(_finDedupKey(row))) { skipped++; continue; }
         toSave.push({
           id: genId(),
           client_id: row.client_id,
           cod_financeiro: row.cod_financeiro,
-          sub_grupo: row.sub_grupo,
+          sub_grupo: String(row.sub_grupo || '').trim().toUpperCase(),
           month: row.month,
           total_venda: row.total_venda,
+          gas_synced: false,
           created_at: new Date().toISOString()
         });
       }
@@ -10079,11 +10105,12 @@ ${inactiveSec}
       window._finPendingRows = null;
       document.getElementById('fin-preview').classList.add('hidden');
       await refreshFinanceiroFilters();
+      await _updateFinSyncStatus();
 
       const msg = skipped
-        ? toSave.length + ' salvos localmente' + (skipped ? ', ' + skipped + ' já existiam.' : '.')
+        ? toSave.length + ' salvos' + (skipped ? ', ' + skipped + ' já existiam.' : '.')
         : toSave.length + ' registros salvos!';
-      toast(msg + (navigator.onLine ? ' Sincronizando...' : ''), 'success');
+      toast(msg + (navigator.onLine && toSave.length ? ' Sincronizando...' : ''), 'success');
 
       // 2. Sincroniza com GAS em background (não bloqueia o app)
       if (navigator.onLine && toSave.length) {
@@ -10091,9 +10118,13 @@ ${inactiveSec}
           let synced = 0;
           for (const item of toSave) {
             const ok = await callGAS('insert', SHEETS.FINANCEIRO, item);
-            if (ok) synced++;
+            if (ok) {
+              synced++;
+              await dbPut('financeiro', { ...item, gas_synced: true });
+            }
           }
-          if (synced > 0) toast(synced + ' registros sincronizados com a planilha.', 'success');
+          await _updateFinSyncStatus();
+          if (synced > 0) toast(synced + ' registros enviados para a planilha.', 'success');
         })();
       }
     }
@@ -10129,6 +10160,7 @@ ${inactiveSec}
       ).join('');
 
       [monthSel, clientSel, subSel].forEach(sel => { sel.onchange = renderFinanceiroView; });
+      _updateFinSyncStatus();
     }
 
     async function sendFinanceiroEmail() {
@@ -10169,9 +10201,15 @@ ${inactiveSec}
       const finRows  = await dbGetAll_raw('financeiro');
       const records  = await dbGetAll_raw('records');
       const clients  = await dbGetAll_raw('clients');
-      const clientMap = Object.fromEntries(clients.map(c => [String(c.id), c]));
 
-      // Agrupa registros de produção por client_id + month
+      // Dois índices de clientes: por ID (exato, do IDB) e por cod_financeiro (estável, pequeno)
+      const clientById     = Object.fromEntries(clients.map(c => [String(c.id), c]));
+      const clientByCodFin = {};
+      for (const c of clients) {
+        if (c.cod_financeiro) clientByCodFin[String(c.cod_financeiro).trim()] = c;
+      }
+
+      // Agrupa kg de produção por client_id (IDB exact) + month
       const prodMap = {};
       for (const r of records) {
         if (r.maintenance) continue;
@@ -10180,26 +10218,31 @@ ${inactiveSec}
         const month = _finMonthFromRecord(r);
         if (!month) continue;
         const key = String(r.client_id) + '|' + month;
-        if (!prodMap[key]) prodMap[key] = { kg: 0, priceKg: parseFloat(r.price_kg || clientMap[String(r.client_id)]?.price_kg || 0) || null };
+        if (!prodMap[key]) prodMap[key] = { kg: 0 };
         prodMap[key].kg += total;
       }
 
-      // Junta com financeiro
+      // Junta com financeiro — usa cod_financeiro para encontrar client.id exato (evita bugs de precisão em IDs grandes)
       const result = {};
       for (const f of finRows) {
         if (filterMonth && f.month !== filterMonth) continue;
-        const key = String(f.client_id) + '|' + f.month;
+        const key = String(f.cod_financeiro || f.client_id) + '|' + f.month;
         if (!result[key]) {
-          const c = clientMap[f.client_id] || {};
+          // Lookup pelo cod_financeiro (mais confiável) e fallback por client_id
+          const c = clientByCodFin[String(f.cod_financeiro || '').trim()] || clientById[String(f.client_id)] || {};
+          // Usa o client.id real do IDB (não o f.client_id que pode ter vindo corrompido do GAS)
+          const exactClientId = c.id ? String(c.id) : null;
+          const prodKey = exactClientId ? exactClientId + '|' + f.month : null;
+          const kg = prodKey ? (prodMap[prodKey]?.kg || 0) : 0;
           result[key] = {
             clientName: c.name || ('Cód. ' + f.cod_financeiro),
             month: f.month,
             totalVenda: 0,
-            kg: prodMap[key]?.kg || 0,
+            kg,
             priceKgContract: parseFloat(c.price_kg || 0) || null
           };
         }
-        result[key].totalVenda += f.total_venda;
+        result[key].totalVenda += parseFloat(f.total_venda) || 0;
       }
       return Object.values(result).sort((a, b) => b.totalVenda - a.totalVenda);
     }

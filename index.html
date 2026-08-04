@@ -84,6 +84,7 @@
                 <option value="vendedor">Vendedor</option>
                 <option value="gerente">Gerente</option>
                 <option value="consultor">Consultor Lavanderia</option>
+                <option value="tecnico">Técnico</option>
                 <option value="diretor">Diretor</option>
                 <option value="admin">Administrador</option>
               </select>
@@ -706,6 +707,15 @@
                 <table id="fin-preview-table" style="width:100%;border-collapse:collapse;font-size:0.82rem"></table>
               </div>
               <div id="fin-unmatched" class="hidden" style="padding:0.65rem 0.85rem;background:#fef3c7;border-radius:8px;font-size:0.82rem;color:#78350f"></div>
+            </div>
+            <div id="fin-sync-status" class="hidden" style="margin-top:1rem;padding:0.75rem 1rem;background:var(--surface);border-radius:10px;border:1px solid var(--border);font-size:0.82rem">
+              <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                <span>📦 <strong id="fin-sync-total">0</strong> registros locais</span>
+                <span style="color:var(--muted)">•</span>
+                <span style="color:#16a34a">✅ <strong id="fin-sync-ok">0</strong> na planilha</span>
+                <span style="color:var(--muted)">•</span>
+                <span id="fin-sync-pending-wrap" style="color:#d97706">⏳ <strong id="fin-sync-pending">0</strong> aguardando envio</span>
+              </div>
             </div>
           </div>
 
