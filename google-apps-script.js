@@ -106,17 +106,18 @@ function testEmail() {
 function getOrCreateSheet(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
+  const headers = HEADERS[name];
   if (!sheet) {
     sheet = ss.insertSheet(name);
-    const headers = HEADERS[name];
-    if (headers) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length)
-        .setFontWeight('bold')
-        .setBackground('#1e3a8a')
-        .setFontColor('#ffffff');
-      sheet.setFrozenRows(1);
-    }
+  }
+  // Adiciona cabeçalho se a aba está vazia (criada manualmente sem headers)
+  if (headers && sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground('#1e3a8a')
+      .setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
   }
   return sheet;
 }
