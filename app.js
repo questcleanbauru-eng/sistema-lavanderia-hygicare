@@ -9886,7 +9886,7 @@ ${inactiveSec}
         if (!rows.length) { toast('Planilha vazia ou inválida.', 'error'); return; }
 
         const keys = Object.keys(rows[0]);
-        const colCod    = keys.find(k => /^cod[\.\s]*$/i.test(k.trim()) || (/^c[oó]d(igo)?[\s.]*$/i.test(k.trim()) && !/pr[oó]prio/i.test(k)));
+        const colCod    = keys.find(k => /^cod[\.\s]*$/i.test(k.trim()));
         const colValor  = keys.find(k => /r[s$][\s_]*total[\s_]*venda/i.test(k) || /total[\s_]*venda/i.test(k));
         const colSub    = keys.find(k => /sub[\s_]*grupo/i.test(k));
         const colDate   = keys.find(k => /^data|date|emis/i.test(k.trim()));
