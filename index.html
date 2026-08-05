@@ -286,24 +286,7 @@
             <div class="api-badge" id="api-badge">✅ API: <span id="api-count">0</span></div>
             <div class="refresh-split">
               <button id="btn-refresh-data" class="hdr-btn hdr-btn-green">🔄 Atualizar</button>
-              <div class="refresh-dropdown-wrap">
-                <button id="btn-refresh-arrow" class="hdr-btn hdr-btn-green refresh-arrow" title="Escolher aba">▾</button>
-                <div id="refresh-dropdown" class="refresh-dropdown hidden">
-                  <div class="refresh-dropdown-title">Atualizar apenas:</div>
-                  <button class="refresh-opt" data-sheet="all">🔄 Tudo (9 abas)</button>
-                  <button class="refresh-opt" data-sheet="clients">👥 Clientes</button>
-                  <button class="refresh-opt" data-sheet="machines">⚙️ Maquinas</button>
-                  <button class="refresh-opt" data-sheet="processes">📋 Processos</button>
-                  <button class="refresh-opt" data-sheet="records">📝 Registros</button>
-                  <button class="refresh-opt" data-sheet="users">👤 Usuarios</button>
-                  <button class="refresh-opt" data-sheet="vazoes">💧 Vazões</button>
-                  <button class="refresh-opt" data-sheet="vazao_records">📊 Leituras Vazão</button>
-                  <button class="refresh-opt" data-sheet="recipes">📄 Receitas</button>
-                  <button class="refresh-opt" data-sheet="recipe_products">🧴 Produtos Receita</button>
-                  <hr style="border:none;border-top:1px solid #e2e8f0;margin:0.4rem 0">
-                  <button class="refresh-opt" id="btn-force-sw-update" style="color:#dc2626;font-weight:700">⬆️ Atualizar App</button>
-                </div>
-              </div>
+              <button id="btn-force-sw-update" class="hdr-btn hdr-btn-ghost" title="Atualizar versão do app" style="padding:0.35rem 0.55rem;font-size:1rem">⬆️</button>
             </div>
             <button id="btn-novidades" class="hdr-btn hdr-btn-ghost" title="Novidades" style="position:relative;font-size:1.1rem;padding:0.35rem 0.6rem">🔔<span id="novidades-dot" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;background:#ef4444;border-radius:50%;border:1.5px solid #fff"></span></button>
             <span id="user-name" class="user-chip"></span>
@@ -333,6 +316,13 @@
       <!-- Banner de manutenção ativa — visível apenas para admin -->
       <div id="admin-maint-banner" style="display:none;align-items:center;justify-content:center;gap:0.5rem;background:#f59e0b;color:#78350f;font-weight:700;font-size:0.85rem;padding:0.45rem 1rem;text-align:center;letter-spacing:0.02em">
         🔧 MODO MANUTENÇÃO ATIVO — outros usuários estão bloqueados
+      </div>
+
+      <!-- Barra de nova versão disponível -->
+      <div id="update-bar" style="display:none;align-items:center;justify-content:center;gap:0.75rem;background:#1d4ed8;color:#fff;font-size:0.84rem;font-weight:600;padding:0.5rem 1rem;flex-wrap:wrap">
+        🆕 Nova versão do app disponível!
+        <button id="btn-update-now" style="background:#fff;color:#1d4ed8;border:none;border-radius:6px;padding:0.28rem 0.85rem;font-size:0.82rem;font-weight:700;cursor:pointer">Atualizar agora</button>
+        <button id="btn-update-bar-dismiss" style="background:none;border:none;color:rgba(255,255,255,0.65);font-size:1.1rem;cursor:pointer;padding:0.1rem 0.3rem;line-height:1" title="Fechar">✕</button>
       </div>
 
       <main>

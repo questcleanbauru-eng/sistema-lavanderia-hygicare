@@ -238,13 +238,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     try {
       const swReg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
-      // Força o waiting SW a ativar imediatamente quando detectado
+      // Quando nova versão é instalada: mostra barra informativa (não força reload)
       swReg.addEventListener('updatefound', () => {
         const newSW = swReg.installing;
         if (!newSW) return;
         newSW.addEventListener('statechange', () => {
           if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-            newSW.postMessage({ type: 'SKIP_WAITING' });
+            window._pendingSW = newSW;
+            const bar = document.getElementById('update-bar');
+            if (bar) bar.style.display = 'flex';
           }
         });
       });
@@ -2248,26 +2250,26 @@ ${printScript}
     // Botão principal — atualiza tudo
     document.getElementById('btn-refresh-data').addEventListener('click', () => doRefresh('all'));
 
-    // Seta — abre/fecha dropdown
-    const refreshDropdown = document.getElementById('refresh-dropdown');
-    document.getElementById('btn-refresh-arrow').addEventListener('click', e => {
-      e.stopPropagation();
-      refreshDropdown.classList.toggle('hidden');
+    // Botão de atualizar versão do app
+    document.getElementById('btn-force-sw-update')?.addEventListener('click', () => {
+      if (window._pendingSW) {
+        toast('⏳ Aplicando atualização…', 'info', 2000);
+        window._pendingSW.postMessage({ type: 'SKIP_WAITING' });
+      } else {
+        _forceSwUpdate();
+      }
     });
-    // Fechar ao clicar fora
-    document.addEventListener('click', () => refreshDropdown.classList.add('hidden'));
 
-    // Opções individuais
-    document.querySelectorAll('.refresh-opt').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        refreshDropdown.classList.add('hidden');
-        if (btn.id === 'btn-force-sw-update') {
-          _forceSwUpdate();
-        } else {
-          doRefresh(btn.dataset.sheet);
-        }
-      });
+    // Barra de nova versão
+    document.getElementById('btn-update-now')?.addEventListener('click', () => {
+      if (window._pendingSW) {
+        window._pendingSW.postMessage({ type: 'SKIP_WAITING' });
+      } else {
+        _forceSwUpdate();
+      }
+    });
+    document.getElementById('btn-update-bar-dismiss')?.addEventListener('click', () => {
+      document.getElementById('update-bar').style.display = 'none';
     });
 
     async function _forceSwUpdate() {
