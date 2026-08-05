@@ -794,6 +794,11 @@ ${printScript}
     }
     window.show = show;
 
+    // Sync pendentes de equipamentos quando conexão voltar
+    window.addEventListener('online', () => {
+      setTimeout(() => _syncPendingEquip().catch(() => {}), 1500);
+    });
+
     // Chaves de ação — separa de chaves de tela
     const ACTION_KEYS = new Set(['send_record','edit_record','delete_record','pdf_report',
       'create_client','edit_client','delete_client','create_machine','edit_machine','delete_machine','edit_bomba',
@@ -1997,6 +2002,7 @@ ${printScript}
       recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
       client_notes:    { sheet: SHEETS.CLIENT_NOTES,    store: 'client_notes',    label: 'histórico clientes' },
       financeiro:      { sheet: SHEETS.FINANCEIRO,      store: 'financeiro',      label: 'financeiro'         },
+      equipamentos:    { sheet: SHEETS.EQUIPAMENTOS,    store: 'equipamentos',    label: 'equipamentos'       },
     };
 
     // Sync silencioso na inicialização — preenche IndexedDB a partir do GAS
@@ -9858,6 +9864,7 @@ ${inactiveSec}
         // Pré-carrega filtros financeiros silenciosamente (sem navegar)
         setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 3000);
         setTimeout(() => _maybeCheckEquipAlerts(), 4000);
+        setTimeout(() => _syncPendingEquip().catch(() => {}), 5000);
       }, 400);
     } else {
       // App abrindo sem sync: pré-carrega filtros do financeiro do IDB local
@@ -11025,6 +11032,9 @@ ${inactiveSec}
       await dbAdd('equipamentos', record);
     }
 
+    // Sync GAS — envia sem fotos (base64 muito grande para planilha)
+    await _syncEquipRecord(record);
+
     // Update badge
     const all = await dbGetAll_raw('equipamentos');
     const badge = document.getElementById('equip-count');
@@ -11039,6 +11049,46 @@ ${inactiveSec}
     // Offer print
     if (confirm('Vistoria salva! Deseja imprimir o relatório?')) {
       _printEquipReport(record, clientName);
+    }
+  }
+
+  async function _syncEquipRecord(record) {
+    // Monta payload sem fotos para não estourar o tamanho da planilha
+    const itemsSummary = (record.items || [])
+      .map(i => `${i.qty || 1}x ${i.name}`)
+      .join('; ');
+    const payload = {
+      id:          record.id,
+      date:        record.date,
+      client_id:   record.client_id,
+      items:       itemsSummary,
+      obs:         record.obs || '',
+      tech:        currentUser?.name || currentUser?.username || '',
+      updated_at:  record.updated_at,
+    };
+    try {
+      let ok;
+      if (record.synced) {
+        ok = await patchSheetDB(SHEETS.EQUIPAMENTOS, record.id, payload);
+      } else {
+        ok = await postToSheetDB(SHEETS.EQUIPAMENTOS, payload);
+      }
+      if (ok) {
+        record.synced = true;
+        await dbPut('equipamentos', record);
+      }
+      return ok;
+    } catch(e) {
+      console.warn('equip sync error:', e);
+      return false;
+    }
+  }
+
+  async function _syncPendingEquip() {
+    const all = await dbGetAll_raw('equipamentos');
+    const pending = all.filter(r => !r.synced);
+    for (const r of pending) {
+      await _syncEquipRecord(r);
     }
   }
 
@@ -11091,12 +11141,14 @@ ${inactiveSec}
         e.stopPropagation();
         const id = Number(delBtn.dataset.id);
         if (!confirm('Excluir esta vistoria?')) return;
+        const recToDel = await getById('equipamentos', id);
         const db = await openDB();
         await new Promise((res, rej) => {
           const tx = db.transaction('equipamentos', 'readwrite');
           tx.objectStore('equipamentos').delete(id);
           tx.oncomplete = res; tx.onerror = rej;
         });
+        if (recToDel?.synced) deleteSheetDB(SHEETS.EQUIPAMENTOS, id).catch(() => {});
         await _renderEquipList();
         await _checkEquipAlerts();
         const all = await dbGetAll_raw('equipamentos');
