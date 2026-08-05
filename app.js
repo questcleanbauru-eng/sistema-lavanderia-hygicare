@@ -10659,11 +10659,15 @@ ${inactiveSec}
     });
   }
 
-  function _addEquipItemRow(container, name='', photoData='') {
+  function _addEquipItemRow(container, name='', photoData='', qty=1) {
     const row = document.createElement('div');
     row.className = 'equip-item-row';
     row.innerHTML = `
       <div class="equip-item-top">
+        <input type="number" class="equip-item-qty" value="${Number(qty)||1}" min="1" max="999"
+          title="Quantidade" style="width:48px;text-align:center;font-size:0.88rem;font-weight:700;
+          border:none;background:transparent;outline:none;color:var(--primary,#2563eb);padding:0.2rem 0;flex-shrink:0">
+        <span style="color:var(--border,#d1d5db);flex-shrink:0">×</span>
         <input type="text" class="equip-item-name" placeholder="Nome do equipamento" value="${escHtml(name)}">
         <button type="button" class="equip-item-remove-btn" title="Remover">✕</button>
       </div>
@@ -10696,6 +10700,7 @@ ${inactiveSec}
   function _equipGetItemsFromForm() {
     return [...document.querySelectorAll('#equip-items-container .equip-item-row')].map(row => ({
       name:  row.querySelector('.equip-item-name')?.value?.trim() || '',
+      qty:   Number(row.querySelector('.equip-item-qty')?.value) || 1,
       photo: row.querySelector('.equip-photo-preview')?.src || '',
     })).filter(i => i.name);
   }
@@ -10823,8 +10828,13 @@ ${inactiveSec}
               <div style="font-size:0.76rem;color:var(--muted);margin-top:0.2rem">${tags}</div>
               ${r.obs ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.obs)}</div>` : ''}
             </div>
-            <button class="equip-delete-btn" data-id="${r.id}"
-              style="flex-shrink:0;background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0.2rem 0.3rem;line-height:1;border-radius:6px">✕</button>
+            <div style="display:flex;align-items:center;gap:0.3rem;flex-shrink:0">
+              <button class="equip-print-btn" data-id="${r.id}"
+                style="background:none;border:1px solid var(--border);color:var(--muted);font-size:0.8rem;cursor:pointer;padding:0.2rem 0.45rem;line-height:1;border-radius:6px"
+                title="Imprimir">🖨️</button>
+              <button class="equip-delete-btn" data-id="${r.id}"
+                style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0.2rem 0.3rem;line-height:1;border-radius:6px">✕</button>
+            </div>
           </div>
           ${photos.length ? `<div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.6rem">${photos.map(i=>`<img src="${i.photo}" class="equip-photo-thumb">`).join('')}</div>` : ''}
         </div>
@@ -10845,8 +10855,13 @@ ${inactiveSec}
     const clientSel = document.getElementById('equip-client');
     const clients   = await window.getAll('clients');
     const sorted    = clients.slice().sort((a,b)=>(a.name||a.trade_name||'').localeCompare(b.name||b.trade_name||''));
-    clientSel.innerHTML = '<option value="">-- Selecione --</option>' +
+    clientSel.innerHTML = '<option value="">-- Selecione o cliente --</option>' +
       sorted.map(c => `<option value="${c.id}">${escHtml(c.name || c.trade_name || String(c.id))}</option>`).join('');
+    // reset e reaplica searchable
+    delete clientSel.dataset.ssInit;
+    const oldWrap = clientSel.closest('.ss-wrap');
+    if (oldWrap) oldWrap.replaceWith(clientSel);
+    _makeSearchable(clientSel);
 
     // Default date to today
     document.getElementById('equip-date').value = new Date().toISOString().slice(0,10);
@@ -10857,12 +10872,102 @@ ${inactiveSec}
       if (rec) {
         document.getElementById('equip-date').value = rec.date || '';
         clientSel.value = String(rec.client_id || '');
-        document.getElementById('equip-obs').value  = rec.obs || '';
-        (rec.items || []).forEach(item => _addEquipItemRow(container, item.name, item.photo));
+        const ssInput = clientSel.parentNode?.querySelector('.ss-input');
+        if (ssInput) ssInput.value = clientSel.options[clientSel.selectedIndex]?.text || '';
+        document.getElementById('equip-obs').value = rec.obs || '';
+        (rec.items || []).forEach(item => _addEquipItemRow(container, item.name, item.photo, item.qty));
       }
     }
 
     if (!container.children.length) _addEquipItemRow(container);
+  }
+
+  function _printEquipReport(record, clientName) {
+    const dateStr = record.date
+      ? new Date(record.date + 'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
+      : '—';
+    const techName = currentUser?.name || currentUser?.username || 'Técnico';
+    const items = Array.isArray(record.items) ? record.items : [];
+
+    const itemsHtml = items.map(it => `
+      <tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:14px">${escHtml(it.name || '')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;text-align:center">${it.qty || 1}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb">
+          ${it.photo ? `<img src="${it.photo}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb">` : '—'}
+        </td>
+      </tr>`).join('');
+
+    const win = window.open('', '_blank', 'width=800,height=900');
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Vistoria — ${escHtml(clientName)}</title>
+      <style>
+        * { margin:0;padding:0;box-sizing:border-box }
+        body { font-family: system-ui, sans-serif; color:#111827; padding:32px; max-width:720px; margin:auto }
+        .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; padding-bottom:20px; border-bottom:2px solid #2563eb }
+        .brand { font-size:13px; color:#6b7280 }
+        .brand strong { display:block; font-size:20px; color:#111827; margin-bottom:4px }
+        .badge { background:#2563eb; color:#fff; border-radius:8px; padding:4px 12px; font-size:12px; font-weight:700; white-space:nowrap }
+        .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px }
+        .info-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px }
+        .info-box label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; display:block; margin-bottom:4px }
+        .info-box span { font-size:15px; font-weight:600 }
+        .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; margin:0 0 10px }
+        table { width:100%; border-collapse:collapse; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; margin-bottom:24px }
+        thead { background:#2563eb; color:#fff }
+        thead th { padding:10px 12px; text-align:left; font-size:13px }
+        .obs-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px; font-size:14px; line-height:1.6; min-height:60px }
+        .footer { margin-top:32px; padding-top:16px; border-top:1px solid #e5e7eb; display:flex; justify-content:space-between; font-size:12px; color:#9ca3af }
+        @media print { body { padding:16px } .no-print { display:none } }
+      </style>
+    </head><body>
+      <div class="header">
+        <div class="brand">
+          <strong>Hygicare Lavanderia</strong>
+          Relatório de Vistoria de Equipamentos
+        </div>
+        <span class="badge">🔧 VISTORIA</span>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-box" style="grid-column:1/-1">
+          <label>Cliente</label>
+          <span style="font-size:17px">${escHtml(clientName)}</span>
+        </div>
+        <div class="info-box">
+          <label>Data</label>
+          <span style="font-size:13px;font-weight:500;text-transform:capitalize">${dateStr}</span>
+        </div>
+        <div class="info-box">
+          <label>Técnico responsável</label>
+          <span>${escHtml(techName)}</span>
+        </div>
+      </div>
+
+      <p class="section-title">Equipamentos vistoriados</p>
+      <table>
+        <thead><tr>
+          <th>Equipamento</th>
+          <th style="width:70px;text-align:center">Qtd</th>
+          <th style="width:100px">Foto</th>
+        </tr></thead>
+        <tbody>${itemsHtml || '<tr><td colspan="3" style="padding:12px;color:#6b7280;text-align:center">Nenhum equipamento registrado</td></tr>'}</tbody>
+      </table>
+
+      <p class="section-title">Observações</p>
+      <div class="obs-box">${record.obs ? escHtml(record.obs).replace(/\n/g,'<br>') : '<span style="color:#9ca3af">Nenhuma observação.</span>'}</div>
+
+      <div class="footer">
+        <span>Gerado em ${new Date().toLocaleString('pt-BR')}</span>
+        <span>Hygicare Sistema de Lavanderia</span>
+      </div>
+
+      <div class="no-print" style="margin-top:24px;text-align:center">
+        <button onclick="window.print()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 32px;font-size:15px;font-weight:600;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
+      </div>
+    </body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 600);
   }
 
   async function _saveEquipRecord(e) {
@@ -10873,6 +10978,10 @@ ${inactiveSec}
     const items    = _equipGetItemsFromForm();
 
     if (!date || !clientId) { alert('Preencha data e cliente.'); return; }
+
+    const clients   = await window.getAll('clients');
+    const clientObj = clients.find(c => String(c.id) === String(clientId));
+    const clientName = clientObj?.name || clientObj?.trade_name || String(clientId);
 
     const record = {
       date,
@@ -10901,6 +11010,11 @@ ${inactiveSec}
     document.getElementById('equip-list-view').classList.remove('hidden');
     await _renderEquipList();
     await _checkEquipAlerts();
+
+    // Offer print
+    if (confirm('Vistoria salva! Deseja imprimir o relatório?')) {
+      _printEquipReport(record, clientName);
+    }
   }
 
   async function initEquipmentScreen() {
@@ -10936,6 +11050,17 @@ ${inactiveSec}
 
     // Event delegation for list (cards + delete) — set once
     document.getElementById('equip-list-container')?.addEventListener('click', async e => {
+      const printBtn = e.target.closest('.equip-print-btn');
+      if (printBtn) {
+        e.stopPropagation();
+        const id  = Number(printBtn.dataset.id);
+        const rec = await getById('equipamentos', id);
+        if (!rec) return;
+        const cls = await window.getAll('clients');
+        const obj = cls.find(c => String(c.id) === String(rec.client_id));
+        _printEquipReport(rec, obj?.name || obj?.trade_name || String(rec.client_id));
+        return;
+      }
       const delBtn = e.target.closest('.equip-delete-btn');
       if (delBtn) {
         e.stopPropagation();
