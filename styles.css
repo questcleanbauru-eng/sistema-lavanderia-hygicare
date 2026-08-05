@@ -1328,6 +1328,7 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   .header-actions { gap: 0.2rem; flex-shrink: 0; }
   .hdr-btn { padding: 0.3rem 0.55rem; font-size: 0.78rem; border-radius: 6px; }
   .hdr-btn-ghost { display: none; }
+  #btn-force-sw-update { display: inline-flex; }
   .user-chip { display: none; }
 
   /* NAV — scroll horizontal, altura mínima de 48px para toque */
