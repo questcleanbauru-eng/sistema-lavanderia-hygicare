@@ -5461,7 +5461,6 @@ ${opSections}
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
           { perm: 'admin',        screen: 'screen-admin',        fn: refreshAdminPanel,        icon: '⚙️', label: 'Admin', adminOnly: true },
           { perm: 'financeiro',   screen: 'screen-financeiro',   fn: initFinanceiroScreen,     icon: '💰', label: 'Financeiro' },
-          { perm: 'equipment',    screen: 'screen-equipment',    fn: initEquipmentScreen,      icon: '🔧', label: 'Equipamentos' },
           { perm: 'alerts',       screen: 'screen-alerts',       fn: renderAlertsScreen,       icon: '🔔', label: 'Avisos' },
         ];
         const permsStr = (currentUser?.permissions || '').trim();
