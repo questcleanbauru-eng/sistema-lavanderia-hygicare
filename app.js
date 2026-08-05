@@ -2275,6 +2275,9 @@ ${printScript}
     document.getElementById('btn-update-bar-dismiss')?.addEventListener('click', () => {
       document.getElementById('update-bar').style.display = 'none';
     });
+    document.getElementById('btn-force-sw-update-home')?.addEventListener('click', () => {
+      document.getElementById('btn-force-sw-update')?.click();
+    });
 
     async function _forceSwUpdate() {
       toast('⏳ Limpando cache e atualizando app…', 'info', 3000);
