@@ -10762,8 +10762,8 @@ ${inactiveSec}
       }
     }
 
-    // Blocking modal (for technicians when app loads)
-    if (showBlocking && blockList.length && !isUnblocked) {
+    // Blocking modal (somente para não-admin com pendências)
+    if (showBlocking && blockList.length && !isUnblocked && u.role !== 'admin' && u.role !== 'diretor') {
       _showEquipBlockModal(blockList);
     }
   }
