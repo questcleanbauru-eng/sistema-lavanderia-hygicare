@@ -773,7 +773,12 @@ ${printScript}
     function show(id) {
       if (id !== 'screen-form') _clearEditMode();
       screens.forEach(s => s.classList.add('hidden'));
-      document.getElementById(id).classList.remove('hidden');
+      const target = document.getElementById(id);
+      target.classList.remove('hidden');
+      // Scroll para o topo ao mudar de tela
+      target.scrollTop = 0;
+      document.querySelector('main')?.scrollTo(0, 0);
+      window.scrollTo(0, 0);
       navBtns.forEach(b => {
         b.classList.toggle('active', b.dataset.screen === id || b.id === 'nav-' + id.replace('screen-', ''));
       });
