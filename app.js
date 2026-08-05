@@ -10784,20 +10784,6 @@ ${inactiveSec}
     const unblockUntil = u.equip_unblock_until ? new Date(u.equip_unblock_until) : null;
     const isUnblocked  = unblockUntil && unblockUntil > today;
 
-    // Alert bar na tela de equipamentos
-    const bar  = document.getElementById('equip-alert-bar');
-    const text = document.getElementById('equip-alert-text');
-    if (bar && text) {
-      const pending = [...blockList, ...alertList];
-      if (pending.length) {
-        text.textContent = `${pending.length} cliente(s) sem vistoria recente: ${pending.slice(0,3).map(x=>x.name).join(', ')}${pending.length>3?'...':''}`;
-        bar.classList.remove('hidden');
-        bar.style.display = 'flex';
-      } else {
-        bar.classList.add('hidden');
-      }
-    }
-
     // Card na home screen
     _renderEquipHomeCard(blockList, alertList);
 
