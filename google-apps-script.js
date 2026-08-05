@@ -42,6 +42,7 @@ const HEADERS = {
   ClienteNotas:    ['id','client_id','type','title','content','date','created_by','created_at','synced_at','scheduled_date'],
   Config:          ['chave','valor'],
   AppConfig:       ['id','key','active','message','updated_at'],
+  Equipamentos:    ['id','date','client_id','items','photo_urls','obs','tech','updated_at'],
 };
 
 // ── Resposta padrão ──────────────────────────────────────────
@@ -919,6 +920,16 @@ function doPost(e) {
       catch(e) { return respondError(e.message); }
     }
 
+    // ── UPLOAD DE FOTOS DE EQUIPAMENTO PARA O DRIVE ──────
+    if (action === 'uploadEquipPhotos') {
+      return respondUploadEquipPhotos(data || []);
+    }
+
+    // ── DELETAR FOTOS DE EQUIPAMENTO DO DRIVE ─────────────
+    if (action === 'deleteEquipPhotos') {
+      return respondDeleteEquipPhotos(data || []);
+    }
+
     if (!sheetName) return respondError('Campo "sheet" obrigatório');
 
     const sheet = getOrCreateSheet(sheetName);
@@ -1282,6 +1293,55 @@ function respondSendEmailWithPdf(body) {
   }
 
   return respond({ ok: true, message: 'E-mail enviado para ' + to + ' com PDF em anexo.' });
+}
+
+// ============================================================
+// UPLOAD DE FOTOS DE EQUIPAMENTO PARA O GOOGLE DRIVE
+// ============================================================
+// data: [{base64, filename}]  (base64 pode incluir o prefixo data:image/...)
+// Retorna: { ok, results: [{ok, fileId, url}] }
+function respondUploadEquipPhotos(photos) {
+  if (!Array.isArray(photos) || !photos.length) return respondError('Nenhuma foto enviada.');
+  try {
+    var folders = DriveApp.getFoldersByName('Hygicare Equipamentos');
+    var folder  = folders.hasNext() ? folders.next() : DriveApp.createFolder('Hygicare Equipamentos');
+
+    var results = photos.map(function(p) {
+      try {
+        var b64   = (p.base64 || '').replace(/^data:image\/[^;]+;base64,/, '');
+        var bytes = Utilities.base64Decode(b64);
+        var blob  = Utilities.newBlob(bytes, 'image/jpeg', p.filename || 'foto.jpg');
+        var file  = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        return {
+          ok:     true,
+          fileId: file.getId(),
+          url:    'https://drive.google.com/uc?export=view&id=' + file.getId()
+        };
+      } catch(err) {
+        Logger.log('uploadEquipPhotos item error: ' + err.message);
+        return { ok: false, error: err.message };
+      }
+    });
+
+    return respond({ ok: true, results: results });
+  } catch(err) {
+    return respondError('Falha ao acessar Drive: ' + err.message);
+  }
+}
+
+// ============================================================
+// DELETAR FOTOS DE EQUIPAMENTO DO GOOGLE DRIVE
+// ============================================================
+// data: ['fileId1', 'fileId2', ...]
+// Retorna: { ok, deleted }
+function respondDeleteEquipPhotos(fileIds) {
+  if (!Array.isArray(fileIds)) return respondError('fileIds deve ser array.');
+  var deleted = 0;
+  fileIds.forEach(function(id) {
+    try { DriveApp.getFileById(id).setTrashed(true); deleted++; } catch(e) {}
+  });
+  return respond({ ok: true, deleted: deleted });
 }
 
 // ============================================================

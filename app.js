@@ -11032,8 +11032,10 @@ ${inactiveSec}
       await dbAdd('equipamentos', record);
     }
 
-    // Sync GAS — envia sem fotos (base64 muito grande para planilha)
+    // Sync metadata na planilha
     await _syncEquipRecord(record);
+    // Upload fotos para o Drive em segundo plano (não bloqueia o fluxo)
+    _uploadEquipPhotos(record).catch(() => {});
 
     // Update badge
     const all = await dbGetAll_raw('equipamentos');
@@ -11053,15 +11055,19 @@ ${inactiveSec}
   }
 
   async function _syncEquipRecord(record) {
-    // Monta payload sem fotos para não estourar o tamanho da planilha
     const itemsSummary = (record.items || [])
       .map(i => `${i.qty || 1}x ${i.name}`)
+      .join('; ');
+    const photoUrls = (record.items || [])
+      .filter(i => i.photo_url)
+      .map(i => i.photo_url)
       .join('; ');
     const payload = {
       id:          record.id,
       date:        record.date,
       client_id:   record.client_id,
       items:       itemsSummary,
+      photo_urls:  photoUrls,
       obs:         record.obs || '',
       tech:        currentUser?.name || currentUser?.username || '',
       updated_at:  record.updated_at,
@@ -11081,6 +11087,36 @@ ${inactiveSec}
     } catch(e) {
       console.warn('equip sync error:', e);
       return false;
+    }
+  }
+
+  async function _uploadEquipPhotos(record) {
+    const toUpload = (record.items || [])
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item }) => item.photo && item.photo.startsWith('data:') && !item.photo_url);
+
+    if (!toUpload.length || !navigator.onLine) return;
+
+    const photos = toUpload.map(({ item, idx }) => ({
+      base64:   item.photo,
+      filename: `equip_${record.id}_item${idx}.jpg`,
+    }));
+
+    try {
+      const result = await callGAS('uploadEquipPhotos', null, photos);
+      if (!result?.results) return;
+      toUpload.forEach(({ item }, i) => {
+        const r = result.results[i];
+        if (r?.ok) {
+          item.photo_url      = r.url;
+          item.photo_drive_id = r.fileId;
+        }
+      });
+      await dbPut('equipamentos', record);
+      // Re-sync para gravar photo_urls na planilha
+      await _syncEquipRecord(record);
+    } catch(e) {
+      console.warn('equip photo upload error:', e);
     }
   }
 
@@ -11148,7 +11184,13 @@ ${inactiveSec}
           tx.objectStore('equipamentos').delete(id);
           tx.oncomplete = res; tx.onerror = rej;
         });
-        if (recToDel?.synced) deleteSheetDB(SHEETS.EQUIPAMENTOS, id).catch(() => {});
+        if (recToDel?.synced) {
+          deleteSheetDB(SHEETS.EQUIPAMENTOS, id).catch(() => {});
+          const driveIds = (recToDel.items || [])
+            .filter(i => i.photo_drive_id)
+            .map(i => i.photo_drive_id);
+          if (driveIds.length) callGAS('deleteEquipPhotos', null, driveIds).catch(() => {});
+        }
         await _renderEquipList();
         await _checkEquipAlerts();
         const all = await dbGetAll_raw('equipamentos');
