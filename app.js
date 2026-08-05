@@ -5486,6 +5486,9 @@ ${opSections}
         });
       }
 
+      // Card de vistorias pendentes de equipamentos
+      if (_hasEquipPerm()) _checkEquipAlerts(false).catch(() => {});
+
       // Card de agendamentos próximos
       const agCard = document.getElementById('home-agendamentos-card');
       if (agCard) {
@@ -10716,6 +10719,33 @@ ${inactiveSec}
     if (_hasEquipPerm()) _checkEquipAlerts(true).catch(() => {});
   }
 
+  function _renderEquipHomeCard(blockList, alertList) {
+    const card = document.getElementById('home-equip-card');
+    if (!card) return;
+    const all = [...blockList, ...alertList];
+    if (!all.length) { card.style.display = 'none'; return; }
+    const isUrgent = blockList.length > 0;
+    const color = isUrgent ? '#dc2626' : '#d97706';
+    const bgColor = isUrgent ? '#fef2f2' : '#fffbeb';
+    const borderColor = isUrgent ? '#dc2626' : '#f59e0b';
+    const icon = isUrgent ? '🔴' : '⚠️';
+    const label = isUrgent
+      ? `${blockList.length} cliente(s) com vistoria muito atrasada (>60 dias)`
+      : `${alertList.length} cliente(s) com vistoria pendente (>30 dias)`;
+    const names = all.slice(0,3).map(x => x.name).join(', ') + (all.length > 3 ? `… +${all.length-3}` : '');
+    card.style.display = '';
+    card.innerHTML = `
+      <div style="background:${bgColor};border:1px solid ${borderColor};border-left:4px solid ${borderColor};
+        border-radius:12px;padding:0.85rem 1rem;cursor:pointer"
+        onclick="show('screen-equipment');initEquipmentScreen()">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem">
+          <div style="font-weight:700;color:${color};font-size:0.88rem">${icon} ${label}</div>
+          <span style="font-size:1rem;color:${color}">›</span>
+        </div>
+        <div style="font-size:0.78rem;color:${isUrgent?'#b91c1c':'#92400e'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${names}</div>
+      </div>`;
+  }
+
   async function _checkEquipAlerts(showBlocking = false) {
     const u = currentUser;
     if (!u) return;
@@ -10754,13 +10784,16 @@ ${inactiveSec}
     if (bar && text) {
       const pending = [...blockList, ...alertList];
       if (pending.length) {
-        text.textContent = `⚠️ ${pending.length} cliente(s) sem vistoria recente: ${pending.slice(0,3).map(x=>x.name).join(', ')}${pending.length>3?'...':''}`;
+        text.textContent = `${pending.length} cliente(s) sem vistoria recente: ${pending.slice(0,3).map(x=>x.name).join(', ')}${pending.length>3?'...':''}`;
         bar.classList.remove('hidden');
         bar.style.display = 'flex';
       } else {
         bar.classList.add('hidden');
       }
     }
+
+    // Card na home screen
+    _renderEquipHomeCard(blockList, alertList);
 
     // Blocking modal (somente para não-admin com pendências)
     if (showBlocking && blockList.length && !isUnblocked && u.role !== 'admin' && u.role !== 'diretor') {
