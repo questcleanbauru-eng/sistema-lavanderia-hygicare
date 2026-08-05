@@ -4152,6 +4152,7 @@ ${printScript}
 
     window.renderAlertsScreen    = renderAlertsScreen;
     window.initPdfReportsScreen  = initPdfReportsScreen;
+    window.initEquipmentScreen   = initEquipmentScreen;
     window.initPdfConfigScreen   = initPdfConfigScreen;
 
     // =====================================================
