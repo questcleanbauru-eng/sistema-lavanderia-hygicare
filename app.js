@@ -10684,7 +10684,7 @@ ${inactiveSec}
         ${photoData ? `<img class="equip-photo-preview equip-photo-thumb" src="${photoData}">` : ''}
         <label class="equip-photo-btn">
           📷 <span class="equip-photo-lbl">${photoData ? 'Trocar foto' : 'Foto'}</span>
-          <input type="file" accept="image/*" capture="environment" class="equip-photo-input" style="display:none">
+          <input type="file" accept="image/*" class="equip-photo-input" style="display:none">
         </label>
       </div>
     `;
