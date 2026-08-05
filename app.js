@@ -10845,8 +10845,12 @@ ${inactiveSec}
 
     container.innerHTML = filtered.map(r => {
       const cname   = clientMap[String(r.client_id)] || String(r.client_id);
-      const dateStr = r.date ? new Date(r.date + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
-      const items   = Array.isArray(r.items) ? r.items : [];
+      const rawDate = r.date ? String(r.date).slice(0, 10) : '';
+      const dateStr = rawDate ? new Date(rawDate + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+      const items   = Array.isArray(r.items) ? r.items
+        : typeof r.items === 'string' && r.items
+          ? r.items.split(';').map(s => { const m = s.trim().match(/^(\d+)x\s+(.+)$/); return m ? { qty: Number(m[1]), name: m[2].trim(), photo: '' } : { qty:1, name: s.trim(), photo:'' }; }).filter(i=>i.name)
+          : [];
       const photos  = items.filter(i => i.photo);
       const tags    = [
         `📅 ${dateStr}`,
@@ -10903,12 +10907,22 @@ ${inactiveSec}
     if (editId) {
       const rec = await getById('equipamentos', editId);
       if (rec) {
-        document.getElementById('equip-date').value = rec.date || '';
+        // date pode vir como "YYYY-MM-DD" ou "YYYY-MM-DDTHH:mm:ss" (se veio do sheet)
+        document.getElementById('equip-date').value = rec.date ? String(rec.date).slice(0,10) : '';
         clientSel.value = String(rec.client_id || '');
         const ssInput = clientSel.parentNode?.querySelector('.ss-input');
         if (ssInput) ssInput.value = clientSel.options[clientSel.selectedIndex]?.text || '';
         document.getElementById('equip-obs').value = rec.obs || '';
-        (rec.items || []).forEach(item => _addEquipItemRow(container, item.name, item.photo, item.qty));
+        // items pode ser array (normal) ou string resumo (se o registro foi sobrescrito pelo sheet)
+        const itemsArr = Array.isArray(rec.items)
+          ? rec.items
+          : typeof rec.items === 'string' && rec.items
+            ? rec.items.split(';').map(s => {
+                const m = s.trim().match(/^(\d+)x\s+(.+)$/);
+                return m ? { qty: Number(m[1]), name: m[2].trim(), photo: '' } : { qty: 1, name: s.trim(), photo: '' };
+              }).filter(i => i.name)
+            : [];
+        itemsArr.forEach(item => _addEquipItemRow(container, item.name, item.photo, item.qty));
       }
     }
 
