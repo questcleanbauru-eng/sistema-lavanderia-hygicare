@@ -11011,46 +11011,55 @@ ${inactiveSec}
 
     if (!date || !clientId) { alert('Preencha data e cliente.'); return; }
 
-    const clients   = await window.getAll('clients');
-    const clientObj = clients.find(c => String(c.id) === String(clientId));
-    const clientName = clientObj?.name || clientObj?.trade_name || String(clientId);
+    // Spinner no botão
+    const submitBtn = document.querySelector('#form-equipment [type="submit"]');
+    const origText  = submitBtn?.innerHTML;
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '⏳ Salvando…'; }
 
-    const record = {
-      date,
-      client_id: Number(clientId),
-      items,
-      obs,
-      synced: false,
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      const clients   = await window.getAll('clients');
+      const clientObj = clients.find(c => String(c.id) === String(clientId));
+      const clientName = clientObj?.name || clientObj?.trade_name || String(clientId);
 
-    if (_equipEditingId) {
-      record.id = _equipEditingId;
-      await dbPut('equipamentos', record);
-    } else {
-      record.id = genId();
-      await dbAdd('equipamentos', record);
-    }
+      const record = {
+        date,
+        client_id: Number(clientId),
+        items,
+        obs,
+        synced: false,
+        updated_at: new Date().toISOString(),
+      };
 
-    // Sync metadata na planilha
-    await _syncEquipRecord(record);
-    // Upload fotos para o Drive em segundo plano (não bloqueia o fluxo)
-    _uploadEquipPhotos(record).catch(() => {});
+      if (_equipEditingId) {
+        record.id = _equipEditingId;
+        await dbPut('equipamentos', record);
+      } else {
+        record.id = genId();
+        await dbAdd('equipamentos', record);
+      }
 
-    // Update badge
-    const all = await dbGetAll_raw('equipamentos');
-    const badge = document.getElementById('equip-count');
-    if (badge) badge.textContent = all.length;
+      // Sync metadata na planilha
+      await _syncEquipRecord(record);
+      // Upload fotos para o Drive em segundo plano (não bloqueia o fluxo)
+      _uploadEquipPhotos(record).catch(() => {});
 
-    // Back to list
-    document.getElementById('equip-form-view').classList.add('hidden');
-    document.getElementById('equip-list-view').classList.remove('hidden');
-    await _renderEquipList();
-    await _checkEquipAlerts();
+      // Update badge
+      const all = await dbGetAll_raw('equipamentos');
+      const badge = document.getElementById('equip-count');
+      if (badge) badge.textContent = all.length;
 
-    // Offer print
-    if (confirm('Vistoria salva! Deseja imprimir o relatório?')) {
-      _printEquipReport(record, clientName);
+      // Back to list
+      document.getElementById('equip-form-view').classList.add('hidden');
+      document.getElementById('equip-list-view').classList.remove('hidden');
+      await _renderEquipList();
+      await _checkEquipAlerts();
+
+      // Offer print
+      if (confirm('Vistoria salva! Deseja imprimir o relatório?')) {
+        _printEquipReport(record, clientName);
+      }
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = origText; }
     }
   }
 
