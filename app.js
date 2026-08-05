@@ -808,7 +808,7 @@ ${printScript}
       'create_note','edit_note','delete_note']);
 
     // Chaves de tela — fonte única para formulário de usuário e applyNavPermissions
-    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports','financeiro','equipment'];
+    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports','financeiro'];
 
     // Mutex: impede dois syncs completos simultâneos (IIFE de startup + _autoSync)
     let _fullSyncRunning = false;
@@ -1037,7 +1037,7 @@ ${printScript}
     // Mostrar botoes admin-only apenas para administradores
     if (currentUser?.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-      document.getElementById('drawer-equip-btn')?.classList.remove('hidden');
+      // drawer-equip-btn desativado
     }
     // Mostrar botão Financeiro/Equipamentos para usuários com permissão (mesmo não sendo admin)
     if (currentUser?.role !== 'admin') {
@@ -1045,9 +1045,7 @@ ${printScript}
       if (perms.includes('financeiro')) {
         document.querySelector('.drawer-item[data-target="screen-financeiro"]')?.classList.remove('hidden');
       }
-      if (perms.includes('equipment')) {
-        document.getElementById('drawer-equip-btn')?.classList.remove('hidden');
-      }
+      // equipment desativado
     }
 
     document.getElementById('btn-pdf-executive')?.addEventListener('click', async () => {
@@ -10725,10 +10723,7 @@ ${inactiveSec}
   }
 
   function _hasEquipPerm() {
-    if (!currentUser) return false;
-    if (currentUser.role === 'admin') return true;
-    const perms = (currentUser.permissions || '').split(',').map(s => s.trim());
-    return perms.includes('equipment');
+    return false; // tela desativada
   }
 
   function _maybeCheckEquipAlerts() {
