@@ -2002,7 +2002,8 @@ ${printScript}
       recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
       client_notes:    { sheet: SHEETS.CLIENT_NOTES,    store: 'client_notes',    label: 'histórico clientes' },
       financeiro:      { sheet: SHEETS.FINANCEIRO,      store: 'financeiro',      label: 'financeiro'         },
-      equipamentos:    { sheet: SHEETS.EQUIPAMENTOS,    store: 'equipamentos',    label: 'equipamentos'       },
+      // equipamentos NÃO entra no SHEET_MAP: a planilha recebe apenas resumo/backup,
+      // o IDB é a fonte de verdade (guarda array de items + fotos base64).
     };
 
     // Sync silencioso na inicialização — preenche IndexedDB a partir do GAS
@@ -10915,10 +10916,13 @@ ${inactiveSec}
   }
 
   function _printEquipReport(record, clientName) {
-    const dateStr = record.date
-      ? new Date(record.date + 'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
+    // Aceita tanto "YYYY-MM-DD" quanto "YYYY-MM-DDTHH:mm:ss" (caso veio do sheet)
+    const rawDate = record.date ? String(record.date).slice(0, 10) : '';
+    const dateStr = rawDate
+      ? new Date(rawDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
       : '—';
     const techName = currentUser?.name || currentUser?.username || 'Técnico';
+    // items pode ser array (IDB) ou string resumo (se veio do sheet — fallback)
     const items = Array.isArray(record.items) ? record.items : [];
 
     const itemsHtml = items.map(it => `
