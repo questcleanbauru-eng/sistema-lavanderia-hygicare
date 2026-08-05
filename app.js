@@ -9848,12 +9848,12 @@ ${inactiveSec}
         doRefresh('all', true);           // resto dos dados em background
         // Pré-carrega filtros financeiros silenciosamente (sem navegar)
         setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 3000);
-        setTimeout(() => _checkEquipAlerts(true).catch(() => {}), 4000);
+        setTimeout(() => _maybeCheckEquipAlerts(), 4000);
       }, 400);
     } else {
       // App abrindo sem sync: pré-carrega filtros do financeiro do IDB local
       setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 1500);
-      setTimeout(() => _checkEquipAlerts(true).catch(() => {}), 2000);
+      setTimeout(() => _maybeCheckEquipAlerts(), 2000);
     }
 
     // ── Persistência de filtros entre navegações ──────────────────────────────
@@ -10703,6 +10703,17 @@ ${inactiveSec}
       name:  row.querySelector('.equip-item-name')?.value?.trim() || '',
       photo: row.querySelector('img.equip-photo-preview')?.src || '',
     })).filter(i => i.name);
+  }
+
+  function _hasEquipPerm() {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    const perms = (currentUser.permissions || '').split(',').map(s => s.trim());
+    return perms.includes('equipment');
+  }
+
+  function _maybeCheckEquipAlerts() {
+    if (_hasEquipPerm()) _checkEquipAlerts(true).catch(() => {});
   }
 
   async function _checkEquipAlerts(showBlocking = false) {
