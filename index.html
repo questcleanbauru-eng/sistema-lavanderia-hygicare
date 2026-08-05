@@ -761,63 +761,75 @@
 
         <!-- EQUIPAMENTOS -->
         <section id="screen-equipment" class="screen hidden">
-          <div class="screen-header">
-            <div class="screen-title"><h2>🔧 Equipamentos</h2><span class="count-badge" id="equip-count">0</span></div>
-            <button id="btn-new-equip" class="btn-primary" style="white-space:nowrap">+ Nova Vistoria</button>
-          </div>
 
-          <!-- Barra de alertas de clientes pendentes -->
-          <div id="equip-alert-bar" class="hidden" style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.75rem;font-size:0.82rem;color:#92400e;display:flex;align-items:center;gap:0.5rem">
-            <span style="font-size:1rem">⚠️</span>
-            <span id="equip-alert-text"></span>
-          </div>
-
-          <!-- LISTA DE VISTORIAS -->
+          <!-- LISTA -->
           <div id="equip-list-view">
-            <div class="filter-bar" style="margin-bottom:0.75rem">
-              <select id="equip-filter-client" class="filter-select" style="min-width:200px"><option value="">Todos os clientes</option></select>
+            <div class="equip-list-header">
+              <div style="display:flex;align-items:center;gap:0.5rem">
+                <h2 style="margin:0;font-size:1.15rem">🔧 Vistorias</h2>
+                <span class="count-badge" id="equip-count">0</span>
+              </div>
+              <button id="btn-new-equip" class="btn-primary equip-new-btn">+ Nova</button>
             </div>
-            <div id="equip-list-container"><p style="color:var(--muted);padding:1rem 0">Nenhuma vistoria registrada.</p></div>
+
+            <div id="equip-alert-bar" class="equip-alert hidden">
+              <span class="equip-alert-icon">⚠️</span>
+              <span id="equip-alert-text"></span>
+            </div>
+
+            <select id="equip-filter-client" class="filter-select equip-filter-full">
+              <option value="">📋 Todos os clientes</option>
+            </select>
+
+            <div id="equip-list-container">
+              <p class="equip-empty">Nenhuma vistoria registrada.</p>
+            </div>
           </div>
 
-          <!-- FORMULÁRIO DE NOVA VISTORIA (hidden by default) -->
+          <!-- FORMULÁRIO -->
           <div id="equip-form-view" class="hidden">
-            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
-              <button id="btn-equip-back" class="btn-secondary btn-sm">← Voltar</button>
-              <h3 style="margin:0;font-size:1rem" id="equip-form-title">Nova Vistoria</h3>
+            <div class="equip-form-topbar">
+              <button id="btn-equip-back" class="equip-back-btn">←</button>
+              <h3 id="equip-form-title" style="margin:0;font-size:1rem;font-weight:700">Nova Vistoria</h3>
             </div>
-            <form id="form-equipment" style="display:flex;flex-direction:column;gap:0.85rem">
-              <div class="form-row">
-                <div class="form-group" style="flex:1">
-                  <label class="form-label">Data *</label>
-                  <input type="date" id="equip-date" class="form-input" required>
+
+            <form id="form-equipment" class="equip-form">
+
+              <div class="equip-section">
+                <p class="equip-section-title">📋 Dados</p>
+                <div class="equip-field-pair">
+                  <div class="form-group">
+                    <label class="form-label">Data *</label>
+                    <input type="date" id="equip-date" class="form-input" required>
+                  </div>
+                </div>
+                <div class="form-group" style="margin-top:0.75rem">
+                  <label class="form-label">Cliente *</label>
+                  <select id="equip-client" class="form-input" required>
+                    <option value="">-- Selecione o cliente --</option>
+                  </select>
                 </div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Cliente *</label>
-                <select id="equip-client" class="form-input" required>
-                  <option value="">-- Selecione --</option>
-                </select>
-              </div>
 
-              <!-- Linhas de equipamentos (dinâmico) -->
-              <div>
-                <label class="form-label">Equipamentos vistoriados</label>
-                <div id="equip-items-container" style="display:flex;flex-direction:column;gap:0.6rem;margin-bottom:0.5rem"></div>
-                <button type="button" id="btn-add-equip-item" class="btn-secondary btn-sm" style="width:100%;justify-content:center">
+              <div class="equip-section">
+                <p class="equip-section-title">🔧 Equipamentos</p>
+                <div id="equip-items-container" style="display:flex;flex-direction:column;gap:0.6rem;margin-bottom:0.6rem"></div>
+                <button type="button" id="btn-add-equip-item" class="equip-add-btn">
                   ➕ Adicionar equipamento
                 </button>
               </div>
 
-              <div class="form-group">
-                <label class="form-label">Observação</label>
-                <textarea id="equip-obs" class="form-input" rows="3" style="resize:vertical" placeholder="Condições encontradas, pendências, recomendações..."></textarea>
+              <div class="equip-section">
+                <p class="equip-section-title">💬 Observação</p>
+                <textarea id="equip-obs" class="form-input" rows="4"
+                  placeholder="Condições encontradas, pendências, recomendações..."></textarea>
               </div>
 
-              <div style="display:flex;gap:0.75rem;padding-top:0.5rem">
-                <button type="button" id="btn-equip-cancel" class="btn-secondary" style="flex:1">Cancelar</button>
-                <button type="submit" class="btn-primary" style="flex:2">💾 Salvar Vistoria</button>
+              <div class="equip-form-actions">
+                <button type="button" id="btn-equip-cancel" class="btn-secondary equip-action-btn">Cancelar</button>
+                <button type="submit" class="btn-primary equip-action-btn">💾 Salvar</button>
               </div>
+
             </form>
           </div>
         </section>

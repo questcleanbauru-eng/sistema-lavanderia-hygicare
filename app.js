@@ -10662,46 +10662,41 @@ ${inactiveSec}
   function _addEquipItemRow(container, name='', photoData='') {
     const row = document.createElement('div');
     row.className = 'equip-item-row';
-    row.style.cssText = 'display:flex;gap:0.5rem;align-items:flex-start;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:0.5rem;';
     row.innerHTML = `
-      <div style="flex:1;display:flex;flex-direction:column;gap:0.4rem">
-        <input type="text" class="form-input equip-item-name" placeholder="Nome do equipamento" value="${escHtml(name)}" style="font-size:0.85rem">
-        <div class="equip-photo-area" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
-          ${photoData ? `<img class="equip-photo-preview" src="${photoData}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">` : '<span class="equip-photo-preview" style="display:none"></span>'}
-          <label style="cursor:pointer;font-size:0.78rem;color:var(--primary,#2563eb);display:flex;align-items:center;gap:0.25rem">
-            📷 <span>${photoData ? 'Trocar foto' : 'Adicionar foto'}</span>
-            <input type="file" accept="image/*" capture="environment" class="equip-photo-input" style="display:none">
-          </label>
-        </div>
+      <div class="equip-item-top">
+        <input type="text" class="equip-item-name" placeholder="Nome do equipamento" value="${escHtml(name)}">
+        <button type="button" class="equip-item-remove-btn" title="Remover">✕</button>
       </div>
-      <button type="button" class="equip-item-remove" style="flex-shrink:0;background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0.1rem 0.2rem;line-height:1">✕</button>
+      <div class="equip-item-photo-bar">
+        ${photoData ? `<img class="equip-photo-preview equip-photo-thumb" src="${photoData}">` : ''}
+        <label class="equip-photo-btn">
+          📷 <span class="equip-photo-lbl">${photoData ? 'Trocar foto' : 'Foto'}</span>
+          <input type="file" accept="image/*" capture="environment" class="equip-photo-input" style="display:none">
+        </label>
+      </div>
     `;
-    // photo change handler
     row.querySelector('.equip-photo-input').addEventListener('change', async e => {
       const file = e.target.files?.[0];
       if (!file) return;
       const data = await _compressPhoto(file);
       let preview = row.querySelector('.equip-photo-preview');
-      if (preview.tagName === 'SPAN') {
-        const img = document.createElement('img');
-        img.className = 'equip-photo-preview';
-        img.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border)';
-        preview.replaceWith(img);
-        preview = img;
+      if (!preview) {
+        preview = document.createElement('img');
+        preview.className = 'equip-photo-preview equip-photo-thumb';
+        row.querySelector('.equip-item-photo-bar').prepend(preview);
       }
       preview.src = data;
-      const lbl = row.querySelector('.equip-photo-area label span');
-      if (lbl) lbl.textContent = 'Trocar foto';
+      const lbl = row.querySelector('.equip-photo-lbl');
+      if (lbl) lbl.textContent = 'Trocar';
     });
-    // remove row
-    row.querySelector('.equip-item-remove').addEventListener('click', () => row.remove());
+    row.querySelector('.equip-item-remove-btn').addEventListener('click', () => row.remove());
     container.appendChild(row);
   }
 
   function _equipGetItemsFromForm() {
     return [...document.querySelectorAll('#equip-items-container .equip-item-row')].map(row => ({
       name:  row.querySelector('.equip-item-name')?.value?.trim() || '',
-      photo: row.querySelector('img.equip-photo-preview')?.src || '',
+      photo: row.querySelector('.equip-photo-preview')?.src || '',
     })).filter(i => i.name);
   }
 
@@ -10806,7 +10801,7 @@ ${inactiveSec}
     if (clientFilter) filtered = filtered.filter(r => String(r.client_id) === clientFilter);
 
     if (!filtered.length) {
-      container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhuma vistoria registrada.</p>';
+      container.innerHTML = '<p class="equip-empty">Nenhuma vistoria encontrada.</p>';
       return;
     }
 
@@ -10814,18 +10809,24 @@ ${inactiveSec}
       const cname   = clientMap[String(r.client_id)] || String(r.client_id);
       const dateStr = r.date ? new Date(r.date + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
       const items   = Array.isArray(r.items) ? r.items : [];
-      const photos  = items.filter(i => i.photo).length;
+      const photos  = items.filter(i => i.photo);
+      const tags    = [
+        `📅 ${dateStr}`,
+        `🔧 ${items.length} equip.`,
+        photos.length ? `📷 ${photos.length}` : '',
+      ].filter(Boolean).join(' · ');
       return `
-        <div class="list-item equip-card" data-id="${r.id}" style="display:block;margin-bottom:0.5rem;cursor:pointer">
+        <div class="equip-card" data-id="${r.id}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem">
-            <div>
-              <div style="font-weight:600;font-size:0.88rem">👤 ${escHtml(cname)}</div>
-              <div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem">📅 ${dateStr} · 🔧 ${items.length} equipamento(s)${photos ? ` · 📷 ${photos} foto(s)` : ''}</div>
-              ${r.obs ? `<div style="font-size:0.78rem;margin-top:0.25rem;color:var(--muted)">${escHtml(r.obs.slice(0,80))}${r.obs.length>80?'…':''}</div>` : ''}
+            <div style="min-width:0;flex:1">
+              <div style="font-weight:700;font-size:0.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(cname)}</div>
+              <div style="font-size:0.76rem;color:var(--muted);margin-top:0.2rem">${tags}</div>
+              ${r.obs ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.obs)}</div>` : ''}
             </div>
-            <button class="btn-secondary btn-sm equip-delete-btn" data-id="${r.id}" style="flex-shrink:0;font-size:0.72rem;padding:0.2rem 0.5rem;color:#dc2626;border-color:#dc2626">✕</button>
+            <button class="equip-delete-btn" data-id="${r.id}"
+              style="flex-shrink:0;background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0.2rem 0.3rem;line-height:1;border-radius:6px">✕</button>
           </div>
-          ${items.some(i=>i.photo) ? `<div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">${items.filter(i=>i.photo).map(i=>`<img src="${i.photo}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`).join('')}</div>` : ''}
+          ${photos.length ? `<div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.6rem">${photos.map(i=>`<img src="${i.photo}" class="equip-photo-thumb">`).join('')}</div>` : ''}
         </div>
       `;
     }).join('');
