@@ -2101,3 +2101,8 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   padding-right: 1.5rem;
   border-bottom: 1px solid var(--border, #e5e7eb);
 }
+
+/* Equipamentos */
+.equip-card { transition: box-shadow 0.15s; }
+.equip-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+.equip-item-row input.equip-item-name { padding: 0.3rem 0.5rem; }

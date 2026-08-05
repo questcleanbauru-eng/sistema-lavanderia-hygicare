@@ -18,7 +18,8 @@ const SHEETS = {
   RECIPE_PRODUCTS: "ReceitaProdutos",
   CLIENT_NOTES: "ClienteNotas",
   APP_CONFIG: "AppConfig",
-  FINANCEIRO: "Financeiro"
+  FINANCEIRO: "Financeiro",
+  EQUIPAMENTOS: "Equipamentos"
 };
 
 // Modo de debug

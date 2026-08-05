@@ -796,7 +796,7 @@ ${printScript}
       'create_note','edit_note','delete_note']);
 
     // Chaves de tela — fonte única para formulário de usuário e applyNavPermissions
-    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports','financeiro'];
+    const SCREEN_PERM_KEYS = ['clients','machines','processes','form','reports','charts','users','vazao','recipes','client_notes','pdf_reports','financeiro','equipment'];
 
     // Mutex: impede dois syncs completos simultâneos (IIFE de startup + _autoSync)
     let _fullSyncRunning = false;
@@ -1017,6 +1017,7 @@ ${printScript}
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
         if (screenId === 'screen-users')        await renderUsersList();
         if (screenId === 'screen-financeiro')   await initFinanceiroScreen();
+        if (screenId === 'screen-equipment')    await initEquipmentScreen();
         if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
       });
     });
@@ -1024,12 +1025,16 @@ ${printScript}
     // Mostrar botoes admin-only apenas para administradores
     if (currentUser?.role === 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+      document.getElementById('drawer-equip-btn')?.classList.remove('hidden');
     }
-    // Mostrar botão Financeiro para usuários com permissão 'financeiro' (mesmo não sendo admin)
+    // Mostrar botão Financeiro/Equipamentos para usuários com permissão (mesmo não sendo admin)
     if (currentUser?.role !== 'admin') {
       const perms = (currentUser?.permissions || '').split(',').map(s => s.trim());
       if (perms.includes('financeiro')) {
         document.querySelector('.drawer-item[data-target="screen-financeiro"]')?.classList.remove('hidden');
+      }
+      if (perms.includes('equipment')) {
+        document.getElementById('drawer-equip-btn')?.classList.remove('hidden');
       }
     }
 
@@ -5440,6 +5445,7 @@ ${opSections}
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
           { perm: 'admin',        screen: 'screen-admin',        fn: refreshAdminPanel,        icon: '⚙️', label: 'Admin', adminOnly: true },
           { perm: 'financeiro',   screen: 'screen-financeiro',   fn: initFinanceiroScreen,     icon: '💰', label: 'Financeiro' },
+          { perm: 'equipment',    screen: 'screen-equipment',    fn: initEquipmentScreen,      icon: '🔧', label: 'Equipamentos' },
           { perm: 'alerts',       screen: 'screen-alerts',       fn: renderAlertsScreen,       icon: '🔔', label: 'Avisos' },
         ];
         const permsStr = (currentUser?.permissions || '').trim();
@@ -9842,10 +9848,12 @@ ${inactiveSec}
         doRefresh('all', true);           // resto dos dados em background
         // Pré-carrega filtros financeiros silenciosamente (sem navegar)
         setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 3000);
+        setTimeout(() => _checkEquipAlerts(true).catch(() => {}), 4000);
       }, 400);
     } else {
       // App abrindo sem sync: pré-carrega filtros do financeiro do IDB local
       setTimeout(() => refreshFinanceiroFilters().catch(() => {}), 1500);
+      setTimeout(() => _checkEquipAlerts(true).catch(() => {}), 2000);
     }
 
     // ── Persistência de filtros entre navegações ──────────────────────────────
@@ -10619,6 +10627,333 @@ ${inactiveSec}
 
       container.innerHTML = html;
     }
+
+  // ─────────────────────────────────────────────────────────
+  // EQUIPAMENTOS
+  // ─────────────────────────────────────────────────────────
+  let _equipInitialized = false;
+  let _equipEditingId   = null;
+  const EQUIP_ALERT_DAYS  = 30; // dias para aviso
+  const EQUIP_BLOCK_DAYS  = 60; // dias para bloqueio
+
+  async function _compressPhoto(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 800;
+          let w = img.width, h = img.height;
+          if (w > MAX || h > MAX) {
+            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+            else       { w = Math.round(w * MAX / h); h = MAX; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function _addEquipItemRow(container, name='', photoData='') {
+    const row = document.createElement('div');
+    row.className = 'equip-item-row';
+    row.style.cssText = 'display:flex;gap:0.5rem;align-items:flex-start;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:0.5rem;';
+    row.innerHTML = `
+      <div style="flex:1;display:flex;flex-direction:column;gap:0.4rem">
+        <input type="text" class="form-input equip-item-name" placeholder="Nome do equipamento" value="${escHtml(name)}" style="font-size:0.85rem">
+        <div class="equip-photo-area" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+          ${photoData ? `<img class="equip-photo-preview" src="${photoData}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">` : '<span class="equip-photo-preview" style="display:none"></span>'}
+          <label style="cursor:pointer;font-size:0.78rem;color:var(--primary,#2563eb);display:flex;align-items:center;gap:0.25rem">
+            📷 <span>${photoData ? 'Trocar foto' : 'Adicionar foto'}</span>
+            <input type="file" accept="image/*" capture="environment" class="equip-photo-input" style="display:none">
+          </label>
+        </div>
+      </div>
+      <button type="button" class="equip-item-remove" style="flex-shrink:0;background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0.1rem 0.2rem;line-height:1">✕</button>
+    `;
+    // photo change handler
+    row.querySelector('.equip-photo-input').addEventListener('change', async e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const data = await _compressPhoto(file);
+      let preview = row.querySelector('.equip-photo-preview');
+      if (preview.tagName === 'SPAN') {
+        const img = document.createElement('img');
+        img.className = 'equip-photo-preview';
+        img.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border)';
+        preview.replaceWith(img);
+        preview = img;
+      }
+      preview.src = data;
+      const lbl = row.querySelector('.equip-photo-area label span');
+      if (lbl) lbl.textContent = 'Trocar foto';
+    });
+    // remove row
+    row.querySelector('.equip-item-remove').addEventListener('click', () => row.remove());
+    container.appendChild(row);
+  }
+
+  function _equipGetItemsFromForm() {
+    return [...document.querySelectorAll('#equip-items-container .equip-item-row')].map(row => ({
+      name:  row.querySelector('.equip-item-name')?.value?.trim() || '',
+      photo: row.querySelector('img.equip-photo-preview')?.src || '',
+    })).filter(i => i.name);
+  }
+
+  async function _checkEquipAlerts(showBlocking = false) {
+    const u = currentUser;
+    if (!u) return;
+    const clients  = await window.getAll('clients');
+    if (!clients.length) return;
+    const records  = await dbGetAll_raw('equipamentos');
+    const today    = new Date();
+
+    // Últimos registros por client_id
+    const lastMap  = {};
+    records.forEach(r => {
+      const cid  = String(r.client_id);
+      const prev = lastMap[cid];
+      if (!prev || new Date(r.date) > new Date(prev.date)) lastMap[cid] = r;
+    });
+
+    const alertList  = [];
+    const blockList  = [];
+    clients.forEach(c => {
+      const cid  = String(c.id);
+      const last = lastMap[cid];
+      const days = last
+        ? Math.floor((today - new Date(last.date)) / 86400000)
+        : 999;
+      if (days >= EQUIP_BLOCK_DAYS) blockList.push({ name: c.name || c.trade_name || cid, days });
+      else if (days >= EQUIP_ALERT_DAYS) alertList.push({ name: c.name || c.trade_name || cid, days });
+    });
+
+    // Check admin unblock
+    const unblockUntil = u.equip_unblock_until ? new Date(u.equip_unblock_until) : null;
+    const isUnblocked  = unblockUntil && unblockUntil > today;
+
+    // Alert bar na tela de equipamentos
+    const bar  = document.getElementById('equip-alert-bar');
+    const text = document.getElementById('equip-alert-text');
+    if (bar && text) {
+      const pending = [...blockList, ...alertList];
+      if (pending.length) {
+        text.textContent = `⚠️ ${pending.length} cliente(s) sem vistoria recente: ${pending.slice(0,3).map(x=>x.name).join(', ')}${pending.length>3?'...':''}`;
+        bar.classList.remove('hidden');
+        bar.style.display = 'flex';
+      } else {
+        bar.classList.add('hidden');
+      }
+    }
+
+    // Blocking modal (for technicians when app loads)
+    if (showBlocking && blockList.length && !isUnblocked) {
+      _showEquipBlockModal(blockList);
+    }
+  }
+
+  function _showEquipBlockModal(blockList) {
+    const existing = document.getElementById('equip-block-modal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'equip-block-modal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem';
+    overlay.innerHTML = `
+      <div style="background:var(--bg,#f9fafb);border-radius:14px;padding:1.5rem;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.25)">
+        <h3 style="margin:0 0 0.5rem;font-size:1.05rem;color:#dc2626">🔴 Vistorias em atraso</h3>
+        <p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.75rem">Os clientes abaixo estão há mais de ${EQUIP_BLOCK_DAYS} dias sem registro de equipamentos. Atualize-os para continuar usando o app.</p>
+        <ul style="margin:0 0 1rem;padding-left:1.25rem;font-size:0.85rem;display:flex;flex-direction:column;gap:0.3rem">
+          ${blockList.map(x=>`<li><strong>${escHtml(x.name)}</strong> — ${x.days} dias sem vistoria</li>`).join('')}
+        </ul>
+        <button id="equip-block-go-btn" class="btn-primary" style="width:100%">📋 Ir para Equipamentos</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#equip-block-go-btn').addEventListener('click', () => {
+      overlay.remove();
+      document.querySelector('.drawer-item[data-target="screen-equipment"]')?.click()
+        || document.getElementById('drawer-equip-btn')?.click();
+    });
+  }
+
+  async function _renderEquipList() {
+    const container   = document.getElementById('equip-list-container');
+    const clientFilter = document.getElementById('equip-filter-client')?.value || '';
+    if (!container) return;
+
+    const records = await dbGetAll_raw('equipamentos');
+    const clients = await window.getAll('clients');
+    const clientMap = Object.fromEntries(clients.map(c => [String(c.id), c.name || c.trade_name || String(c.id)]));
+
+    let filtered = records.slice().sort((a,b) => new Date(b.date) - new Date(a.date));
+    if (clientFilter) filtered = filtered.filter(r => String(r.client_id) === clientFilter);
+
+    if (!filtered.length) {
+      container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhuma vistoria registrada.</p>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(r => {
+      const cname   = clientMap[String(r.client_id)] || String(r.client_id);
+      const dateStr = r.date ? new Date(r.date + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+      const items   = Array.isArray(r.items) ? r.items : [];
+      const photos  = items.filter(i => i.photo).length;
+      return `
+        <div class="list-item equip-card" data-id="${r.id}" style="display:block;margin-bottom:0.5rem;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem">
+            <div>
+              <div style="font-weight:600;font-size:0.88rem">👤 ${escHtml(cname)}</div>
+              <div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem">📅 ${dateStr} · 🔧 ${items.length} equipamento(s)${photos ? ` · 📷 ${photos} foto(s)` : ''}</div>
+              ${r.obs ? `<div style="font-size:0.78rem;margin-top:0.25rem;color:var(--muted)">${escHtml(r.obs.slice(0,80))}${r.obs.length>80?'…':''}</div>` : ''}
+            </div>
+            <button class="btn-secondary btn-sm equip-delete-btn" data-id="${r.id}" style="flex-shrink:0;font-size:0.72rem;padding:0.2rem 0.5rem;color:#dc2626;border-color:#dc2626">✕</button>
+          </div>
+          ${items.some(i=>i.photo) ? `<div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem">${items.filter(i=>i.photo).map(i=>`<img src="${i.photo}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`).join('')}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function _openEquipForm(editId = null) {
+    _equipEditingId = editId;
+    document.getElementById('equip-list-view').classList.add('hidden');
+    document.getElementById('equip-form-view').classList.remove('hidden');
+    document.getElementById('equip-form-title').textContent = editId ? 'Editar Vistoria' : 'Nova Vistoria';
+
+    const container = document.getElementById('equip-items-container');
+    container.innerHTML = '';
+
+    // Populate client select
+    const clientSel = document.getElementById('equip-client');
+    const clients   = await window.getAll('clients');
+    const sorted    = clients.slice().sort((a,b)=>(a.name||a.trade_name||'').localeCompare(b.name||b.trade_name||''));
+    clientSel.innerHTML = '<option value="">-- Selecione --</option>' +
+      sorted.map(c => `<option value="${c.id}">${escHtml(c.name || c.trade_name || String(c.id))}</option>`).join('');
+
+    // Default date to today
+    document.getElementById('equip-date').value = new Date().toISOString().slice(0,10);
+    document.getElementById('equip-obs').value  = '';
+
+    if (editId) {
+      const rec = await getById('equipamentos', editId);
+      if (rec) {
+        document.getElementById('equip-date').value = rec.date || '';
+        clientSel.value = String(rec.client_id || '');
+        document.getElementById('equip-obs').value  = rec.obs || '';
+        (rec.items || []).forEach(item => _addEquipItemRow(container, item.name, item.photo));
+      }
+    }
+
+    if (!container.children.length) _addEquipItemRow(container);
+  }
+
+  async function _saveEquipRecord(e) {
+    e.preventDefault();
+    const date     = document.getElementById('equip-date').value;
+    const clientId = document.getElementById('equip-client').value;
+    const obs      = document.getElementById('equip-obs').value.trim();
+    const items    = _equipGetItemsFromForm();
+
+    if (!date || !clientId) { alert('Preencha data e cliente.'); return; }
+
+    const record = {
+      date,
+      client_id: Number(clientId),
+      items,
+      obs,
+      synced: false,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (_equipEditingId) {
+      record.id = _equipEditingId;
+      await dbPut('equipamentos', record);
+    } else {
+      record.id = genId();
+      await dbAdd('equipamentos', record);
+    }
+
+    // Update badge
+    const all = await dbGetAll_raw('equipamentos');
+    const badge = document.getElementById('equip-count');
+    if (badge) badge.textContent = all.length;
+
+    // Back to list
+    document.getElementById('equip-form-view').classList.add('hidden');
+    document.getElementById('equip-list-view').classList.remove('hidden');
+    await _renderEquipList();
+    await _checkEquipAlerts();
+  }
+
+  async function initEquipmentScreen() {
+    if (_equipInitialized) {
+      await _renderEquipList();
+      await _checkEquipAlerts();
+      return;
+    }
+    _equipInitialized = true;
+
+    // Populate client filter
+    const filterSel = document.getElementById('equip-filter-client');
+    const clients   = await window.getAll('clients');
+    const sorted    = clients.slice().sort((a,b)=>(a.name||a.trade_name||'').localeCompare(b.name||b.trade_name||''));
+    filterSel.innerHTML = '<option value="">Todos os clientes</option>' +
+      sorted.map(c => `<option value="${c.id}">${escHtml(c.name || c.trade_name || String(c.id))}</option>`).join('');
+    filterSel.addEventListener('change', () => _renderEquipList());
+
+    // Buttons
+    document.getElementById('btn-new-equip')?.addEventListener('click', () => _openEquipForm(null));
+    document.getElementById('btn-equip-back')?.addEventListener('click', () => {
+      document.getElementById('equip-form-view').classList.add('hidden');
+      document.getElementById('equip-list-view').classList.remove('hidden');
+    });
+    document.getElementById('btn-equip-cancel')?.addEventListener('click', () => {
+      document.getElementById('equip-form-view').classList.add('hidden');
+      document.getElementById('equip-list-view').classList.remove('hidden');
+    });
+    document.getElementById('btn-add-equip-item')?.addEventListener('click', () => {
+      _addEquipItemRow(document.getElementById('equip-items-container'));
+    });
+    document.getElementById('form-equipment')?.addEventListener('submit', _saveEquipRecord);
+
+    // Event delegation for list (cards + delete) — set once
+    document.getElementById('equip-list-container')?.addEventListener('click', async e => {
+      const delBtn = e.target.closest('.equip-delete-btn');
+      if (delBtn) {
+        e.stopPropagation();
+        const id = Number(delBtn.dataset.id);
+        if (!confirm('Excluir esta vistoria?')) return;
+        const db = await openDB();
+        await new Promise((res, rej) => {
+          const tx = db.transaction('equipamentos', 'readwrite');
+          tx.objectStore('equipamentos').delete(id);
+          tx.oncomplete = res; tx.onerror = rej;
+        });
+        await _renderEquipList();
+        await _checkEquipAlerts();
+        const all = await dbGetAll_raw('equipamentos');
+        const badge = document.getElementById('equip-count');
+        if (badge) badge.textContent = all.length;
+        return;
+      }
+      const card = e.target.closest('.equip-card');
+      if (card) _openEquipForm(Number(card.dataset.id));
+    });
+
+    // Badge
+    const all = await dbGetAll_raw('equipamentos');
+    const badge = document.getElementById('equip-count');
+    if (badge) badge.textContent = all.length;
+
+    await _renderEquipList();
+    await _checkEquipAlerts();
+  }
 
   } // fim initApp()
 
