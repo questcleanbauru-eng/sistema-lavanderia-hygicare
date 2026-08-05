@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v367';
+const CACHE = 'lavanderia-cache-v369';
 const ASSETS = [
   '/',
   '/index.html',
@@ -13,10 +13,9 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
+  // Sem self.skipWaiting() — novo SW espera, banner decide a hora de ativar
   e.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
   );
 });
 
@@ -42,11 +41,23 @@ self.addEventListener('fetch', e => {
   if (url.includes('script.google.com')) return;
   if (url.includes('googleusercontent.com')) return;
   if (url.includes('googleapis.com')) return;
-  if (url.includes('/api/')) return; // proxy Vercel — nunca cachear chamadas à API
-  // cdn.jsdelivr.net é cacheado normalmente (stale-while-revalidate)
-  // para que Chart.js funcione offline após o primeiro carregamento
+  if (url.includes('/api/')) return;
 
-  // Stale-while-revalidate: responde do cache imediatamente e atualiza em background
+  // Network-first para navegação (HTML) — garante que o app sempre carrega a versão mais nova
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res && res.status === 200)
+            caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(e.request).then(r => r || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Stale-while-revalidate para assets (JS, CSS, imagens)
   e.respondWith(
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(e.request);

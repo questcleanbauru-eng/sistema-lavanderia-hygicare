@@ -250,12 +250,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         });
       });
-      // Quando o novo SW assumir o controle: recarrega automaticamente
+      // Quando o novo SW assumir o controle: recarrega a página
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.location.reload();
       });
-      // Verifica nova versão do SW a cada inicialização
+      // Checa nova versão ao carregar e toda vez que a aba volta a ficar visível
       swReg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') swReg.update().catch(() => {});
+      });
     } catch (e) { console.warn('SW falhou:', e); }
   }
 
