@@ -893,6 +893,9 @@ ${printScript}
     document.getElementById('drawer-logout')?.addEventListener('click', () => {
       document.getElementById('btn-logout')?.click();
     });
+    document.getElementById('drawer-sw-update')?.addEventListener('click', () => {
+      document.getElementById('btn-force-sw-update')?.click();
+    });
 
     // Estado compartilhado entre funções (sem poluir window)
     let _shareCtx      = null;

@@ -1318,11 +1318,11 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
 
   /* HEADER mobile — compacto e limpo */
   header { padding: 0 0.85rem; border-bottom: 1px solid var(--border); }
-  .header-top { height: 50px; gap: 0.35rem; }
+  .header-top { min-height: 54px; height: auto; gap: 0.35rem; padding: 0.4rem 0; }
   .brand-icon { flex-shrink: 0; height: 28px; width: 28px; border-radius: 6px; }
   .header-brand { min-width: 0; overflow: hidden; }
   .header-brand h1 { font-size: 0.92rem; line-height: 1.2; }
-  #header-subtitle { display: block; font-size: 0.7rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #header-subtitle { display: block; font-size: 0.7rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .api-badge { display: none; }
   .sync-pill { display: none; }
   .header-actions { gap: 0.2rem; flex-shrink: 0; }
