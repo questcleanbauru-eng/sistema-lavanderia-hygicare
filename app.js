@@ -3106,6 +3106,8 @@ ${printScript}
 
       const machOrder = _getMachOrder();
       const canEdit = canDo('edit_machine');
+      // Sem busca/filtro: grupos começam recolhidos. Com filtro ativo: abertos.
+      const _startCollapsed = !String(filter || '').trim() && !clientFilter;
       list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { client, items }], idx) => {
         const groupId  = `mach-group-${idx}`;
         const clientId = client?.id;
@@ -3116,10 +3118,10 @@ ${printScript}
             <span>👤 ${clientName}</span>
             <div style="display:flex;align-items:center;gap:0.5rem">
               <span class="badge">${items.length} máquina(s)</span>
-              <span class="cg-chevron" style="font-size:0.75rem;transition:transform 0.2s;display:inline-block">▼</span>
+              <span class="cg-chevron" style="font-size:0.75rem;transition:transform 0.2s;display:inline-block${_startCollapsed ? ';transform:rotate(-90deg)' : ''}">▼</span>
             </div>
           </div>
-          <div id="${groupId}">
+          <div id="${groupId}"${_startCollapsed ? ' class="collapsed"' : ''}>
             ${ordered.map((m, i) => `
               <div class="list-item" data-machine-id="${m.id}">
                 <div class="list-item-content">
