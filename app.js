@@ -2899,6 +2899,32 @@ ${printScript}
       } finally { if (el) el.disabled = false; }
     };
 
+    // Liga/desliga uma flag booleana do cliente direto na lista (vazao_only / no_reports)
+    window._toggleClientFlag = async function(id, field, el) {
+      if (currentUser?.role !== 'admin') return toast('Apenas administradores podem alterar esta configuração.', 'error');
+      if (field !== 'vazao_only' && field !== 'no_reports') return;
+      if (el) el.disabled = true;
+      try {
+        const all = await dbGetAll_raw('clients');
+        const c = all.find(x => Number(x.id) === Number(id));
+        if (!c) return;
+        const next = !c[field];
+        const updated = { ...c, [field]: next };
+        // "Apenas Vazão" e "Sem relatório/vazão" são mutuamente exclusivos
+        if (next && field === 'vazao_only') updated.no_reports = false;
+        if (next && field === 'no_reports') updated.vazao_only = false;
+        await dbPut('clients', updated);
+        await patchSheetDB(SHEETS.CLIENTS, updated.id, updated);
+        const label = field === 'vazao_only' ? 'Apenas Vazão' : 'Sem relatório/vazão';
+        toast(`${label}: ${next ? 'ativado' : 'desativado'}.`, 'success');
+        await renderClientsList(document.getElementById('search-clients')?.value || '');
+        await refreshClientsSelects();
+      } catch(err) {
+        toast('Erro: ' + err.message, 'error');
+        if (el) el.disabled = false;
+      }
+    };
+
     window._toggleClientActive = async function(id, el) {
       if (currentUser?.role !== 'admin') return toast('Apenas administradores podem alterar o status do cliente.', 'error');
       if (el) el.disabled = true;
@@ -2948,6 +2974,8 @@ ${printScript}
           </div>
           <div class="list-item-actions">
             ${currentUser?.role === 'admin' ? `<button class="btn-sm" onclick="window._toggleClientActive(${c.id},this)" style="background:${isActive?'#dcfce7':'#fee2e2'};color:${isActive?'#166534':'#991b1b'};border:1px solid ${isActive?'#86efac':'#fca5a5'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">${isActive?'🟢 Ativo':'🔴 Inativo'}</button>` : ''}
+            ${currentUser?.role === 'admin' && isActive ? `<button class="btn-sm" title="Apenas Vazão — sem alertas de relatório" onclick="window._toggleClientFlag(${c.id},'vazao_only',this)" style="background:${vazaoOnly?'#e0f2fe':'#f1f5f9'};color:${vazaoOnly?'#0369a1':'#94a3b8'};border:1px solid ${vazaoOnly?'#7dd3fc':'#e2e8f0'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">💧 Vazão</button>` : ''}
+            ${currentUser?.role === 'admin' && isActive ? `<button class="btn-sm" title="Não emite relatório nem vazão" onclick="window._toggleClientFlag(${c.id},'no_reports',this)" style="background:${noReports?'#e2e8f0':'#f1f5f9'};color:${noReports?'#334155':'#94a3b8'};border:1px solid ${noReports?'#cbd5e1':'#e2e8f0'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">🚫 S/ relatório</button>` : ''}
             ${canDo('edit_client') ? `<button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>` : ''}
             ${canDo('delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id}, this)">🗑️</button>` : ''}
           </div>
