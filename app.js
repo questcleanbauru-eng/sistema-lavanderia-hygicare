@@ -4119,11 +4119,13 @@ ${printScript}
         bySeller[seller].push(item);
       });
 
-      const overdueHtml = overdue.length ? Object.entries(bySeller).map(([seller, items]) => {
+      window._alertWaMsgs = {};
+      const overdueHtml = overdue.length ? Object.entries(bySeller).map(([seller, items], gi) => {
         const waMsg = `*Hygicare — Aviso de Relatórios Pendentes*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
           items.map(({client, daysSince}) =>
-            `• ${client.name}${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias' : 'sem registros'}`
+            `• *${client.name}*${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias sem relatório' : 'sem registros'}`
           ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.';
+        window._alertWaMsgs[gi] = waMsg;
         const waLink = `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
         const cardsHtml = items.map(({ client, last, daysSince }) => {
@@ -4155,10 +4157,16 @@ ${printScript}
         return `<div style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
             <div style="font-weight:700;font-size:0.88rem;color:var(--text)">👨‍💼 ${escHtml(seller)} <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(${items.length} cliente${items.length!==1?'s':''})</span></div>
-            <a href="${waLink}" target="_blank" rel="noopener"
-              style="display:inline-flex;align-items:center;gap:0.3rem;background:#25D366;color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600;flex-shrink:0">
-              📱 WhatsApp
-            </a>
+            <div style="display:flex;gap:0.35rem;flex-shrink:0">
+              <button type="button" onclick="window._copyAlertMsg(${gi})"
+                style="display:inline-flex;align-items:center;gap:0.3rem;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.78rem;font-weight:600;cursor:pointer">
+                📋 Copiar
+              </button>
+              <a href="${waLink}" target="_blank" rel="noopener"
+                style="display:inline-flex;align-items:center;gap:0.3rem;background:#25D366;color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;font-weight:600">
+                📱 WhatsApp
+              </a>
+            </div>
           </div>
           ${cardsHtml}
         </div>`;
@@ -4170,6 +4178,23 @@ ${printScript}
            </div>${overdueHtml}`
         : '');
     }
+
+    window._copyAlertMsg = (i) => {
+      const msg = window._alertWaMsgs?.[i];
+      if (!msg) return;
+      const done = () => toast('Mensagem copiada — cole no WhatsApp 📲', 'success');
+      const fail = () => toast('Não foi possível copiar automaticamente.', 'error');
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(msg).then(done).catch(fail);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = msg;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { fail(); }
+        ta.remove();
+      }
+    };
 
     window.renderAlertsScreen    = renderAlertsScreen;
     window.initPdfReportsScreen  = initPdfReportsScreen;
