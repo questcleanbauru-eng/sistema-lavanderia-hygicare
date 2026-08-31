@@ -3618,10 +3618,6 @@ ${printScript}
       const progressEl = document.getElementById('save-progress');
       const logEl      = document.getElementById('save-progress-log');
 
-      // Busca nomes para exibir no log
-      const allMachines  = await dbGetAll_raw('machines');
-      const allProcesses = await dbGetAll_raw('processes');
-
       const logLine = (icon, msg) => {
         const line = document.createElement('div');
         line.textContent = `${icon} ${msg}`;
@@ -3658,41 +3654,29 @@ ${printScript}
             await deleteSheetDB(SHEETS.RECORDS, r.id);
           }
         }
-        let synced = 0;
-        const _savedIds = []; // rastrear IDs para rollback em caso de erro
+        // Grava todas as linhas localmente e envia num único lote ao Sheets
+        const _savedIds = [];      // IDs locais — rollback se o envio falhar
+        const _rowsWithId = [];
         for (const r of rows) {
-          const machine = allMachines.find(m => Number(m.id) === Number(r.machine_id));
-          const process = allProcesses.find(p => Number(p.id) === Number(r.process_id));
-          const label   = `${machine?.name || 'Máq.'} › ${process?.name || 'Proc.'} (exec: ${r.executed}, cancel: ${r.canceled})`;
-
-          logLine('⏳', `Enviando: ${label}`);
-
           const newId   = await dbAdd('records', r);
           const rWithId = { ...r, id: newId };
           await dbPut('records', rWithId);
-
-          const ok = await callGAS('insert', SHEETS.RECORDS, rWithId);
-          if (ok) {
-            _savedIds.push(newId);
-            synced++;
-            logEl.lastChild.textContent = `✅ ${label}`;
-          } else {
-            // Rollback: desfaz registro atual e todos já enviados no lote
-            await dbDelete('records', newId);
-            if (_savedIds.length) {
-              logLine('↩️', `Desfazendo ${_savedIds.length} registro(s) já enviados...`);
-              for (const sid of _savedIds) {
-                await dbDelete('records', sid);
-                await deleteSheetDB(SHEETS.RECORDS, sid);
-              }
-            }
-            logEl.lastChild.textContent = `❌ Falhou: ${label}`;
-            logLine('🛑', 'Envio cancelado e registros desfeitos. Verifique a conexão e tente novamente.');
-            toast('Erro ao enviar — lote desfeito. Tente novamente.', 'error', 7000);
-            return;
-          }
+          _savedIds.push(newId);
+          _rowsWithId.push(rWithId);
         }
 
+        logLine('⏳', `Enviando ${_rowsWithId.length} linha(s) em um único lote...`);
+        const ok = await callGAS('insert', SHEETS.RECORDS, _rowsWithId);
+
+        if (!ok) {
+          // Rollback: envio em lote é tudo-ou-nada, então basta limpar o local
+          for (const sid of _savedIds) await dbDelete('records', sid);
+          logLine('🛑', 'Falha no envio — nada foi salvo. Verifique a conexão e tente novamente.');
+          toast('Erro ao enviar — nada foi salvo. Tente novamente.', 'error', 7000);
+          return;
+        }
+
+        const synced = _rowsWithId.length;
         logLine('🎉', `Concluído! ${synced} linha(s) registradas com sucesso.`);
 
         localStorage.setItem('lastSyncTime', new Date().toISOString());

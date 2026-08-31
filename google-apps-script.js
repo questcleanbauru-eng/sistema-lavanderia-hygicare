@@ -940,17 +940,21 @@ function doPost(e) {
     // ── INSERT ────────────────────────────────────────────
     if (action === 'insert') {
       if (!data) return respondError('Campo "data" obrigatório para insert');
-      const items    = Array.isArray(data) ? data : [data];
-      const inserted = [];
-      items.forEach(item => {
-        if (!item.id)         item.id         = nextId(sheet);
-        if (!item.created_at) item.created_at = new Date().toISOString();
-        sheet.appendRow(objToRow(headers, item));
-        inserted.push(item.id);
+      const items = Array.isArray(data) ? data : [data];
+      if (!items.length) return respond({ inserted: [], count: 0, id: null });
+      // Lote: uma única escrita com setValues() (bem mais rápido que appendRow em loop)
+      let nid = nextId(sheet);
+      const nowIso = new Date().toISOString();
+      const rows2d = items.map(item => {
+        if (!item.id)         item.id         = nid++;
+        if (!item.created_at) item.created_at = nowIso;
+        return objToRow(headers, item);
       });
-      sendNotification('insert', sheetName, Array.isArray(data) ? data : data, actor);
-      // Para compatibilidade com o frontend, quando um único item é inserido,
-      // retornar também `id` no objeto `data` (assim o frontend lê `res.data.id`).
+      const startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, rows2d.length, headers.length).setValues(rows2d);
+      const inserted = items.map(it => it.id);
+      sendNotification('insert', sheetName, data, actor);
+      // Compat: envio de item único também retorna `id` solto (frontend lê res.data.id)
       const singleId = inserted.length === 1 ? inserted[0] : null;
       return respond({ inserted, count: inserted.length, id: singleId });
     }
