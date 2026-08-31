@@ -8098,10 +8098,12 @@ ${recipeSections}
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], _ids: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], _ids: [], totalKg: 0, maxCreatedAt: '', precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
         grouped[key]._ids.push(r.id);
         grouped[key].rows.push({ recordId: r.id, machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0, maintenance: Number(r.maintenance) || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
+        const _rc = r.created_at || r.synced_at || '';
+        if (_rc > grouped[key].maxCreatedAt) grouped[key].maxCreatedAt = _rc;
       }
 
       // Enriquecer cada grupo com linhas zero para processos sem dados no período
@@ -8162,8 +8164,11 @@ ${recipeSections}
         return;
       }
 
-      // Ordenar do mais recente para o mais antigo
-      entries.sort((a, b) => b[1].monthSortKey.localeCompare(a[1].monthSortKey) || b[1].period.localeCompare(a[1].period));
+      // Ordenar: mês mais recente primeiro; dentro do mês, o último lançado no sistema primeiro
+      entries.sort((a, b) =>
+        b[1].monthSortKey.localeCompare(a[1].monthSortKey) ||
+        (b[1].maxCreatedAt || '').localeCompare(a[1].maxCreatedAt || '') ||
+        b[1].dateStartRaw.localeCompare(a[1].dateStartRaw));
 
       // Guardar dados para uso nos botões PDF/Imprimir
       _recordGroups = {};
