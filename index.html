@@ -1515,6 +1515,33 @@
               </div>
             </div>
           </div>
+
+          <!-- Clientes por Vendedor (somente admin) -->
+          <div class="card" style="margin-bottom:1rem" id="pdf-cbs-card">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;user-select:none" onclick="const b=this.nextElementSibling;const c=this.querySelector('.pdf-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';this.parentElement.style.paddingBottom=b.hidden?'0':'';"><div>
+                <h3 style="margin:0 0 0.15rem;font-size:0.95rem;font-weight:700;color:#374151">🧑‍💼 Clientes por Vendedor</h3>
+                <p style="font-size:0.8rem;color:#64748b;margin:0">Lista dos clientes de cada vendedor: cidade, código, tipo e status.</p>
+              </div>
+              <span class="pdf-chev" style="font-size:1.2rem;color:#94a3b8;padding-left:0.5rem;transition:transform 0.2s;flex-shrink:0">▾</span>
+            </div>
+            <div>
+              <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-top:0.75rem">
+                <div class="form-field" style="margin-bottom:0;flex:1;min-width:180px">
+                  <label style="font-size:0.78rem">Vendedor</label>
+                  <select id="pdf-cbs-seller" class="form-input" style="padding:6px 10px;font-size:0.88rem">
+                    <option value="">👥 Todos os vendedores</option>
+                  </select>
+                </div>
+                <label style="font-size:0.82rem;display:flex;align-items:center;gap:0.35rem;margin-bottom:0.45rem;white-space:nowrap">
+                  <input type="checkbox" id="pdf-cbs-active-only" checked> Somente ativos
+                </label>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-top:0.6rem">
+                <button id="btn-pdf-cbs" class="btn-primary" style="font-size:0.88rem">📄 Gerar PDF</button>
+                <button id="btn-csv-cbs" class="btn-secondary" style="font-size:0.88rem">📊 Excel</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- ===== TELA CONFIG PDF ===== -->

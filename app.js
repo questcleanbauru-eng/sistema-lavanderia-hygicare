@@ -4517,6 +4517,22 @@ ${printScript}
       const opCard = document.getElementById('pdf-operator-card');
       if (opCard) opCard.style.display = (currentUser?.role === 'admin' || currentUser?.role === 'gerente') ? '' : 'none';
 
+      // Clientes por Vendedor — somente admin
+      const cbsCard = document.getElementById('pdf-cbs-card');
+      if (cbsCard) {
+        cbsCard.style.display = currentUser?.role === 'admin' ? '' : 'none';
+        const cbsSel = document.getElementById('pdf-cbs-seller');
+        if (cbsSel) {
+          const sellers = [...new Set(clients.map(c => (c.seller || '').trim()).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b));
+          const cur = cbsSel.value;
+          cbsSel.innerHTML = '<option value="">👥 Todos os vendedores</option>' +
+            sellers.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
+          if (cur) cbsSel.value = cur;
+          _makeSearchable(cbsSel);
+        }
+      }
+
       // Preset date buttons (uma única vez por tela)
       if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
         document.getElementById('screen-pdf-reports').dataset.presetsWired = '1';
@@ -4934,6 +4950,65 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;paddi
     });
 
     // =====================================================
+    // PDF CLIENTES POR VENDEDOR (somente admin)
+    // =====================================================
+    document.getElementById('btn-pdf-cbs')?.addEventListener('click', async () => {
+      if (currentUser?.role !== 'admin') return toast('Sem permissão.', 'error');
+      const fSeller    = document.getElementById('pdf-cbs-seller')?.value || '';
+      const activeOnly = !!document.getElementById('pdf-cbs-active-only')?.checked;
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      let clients = await dbGetAll_raw('clients');
+      const isActive = c => c.active !== false && c.active !== 0 && c.active !== 'false';
+      if (activeOnly) clients = clients.filter(isActive);
+      if (fSeller)    clients = clients.filter(c => (c.seller || '').trim() === fSeller);
+
+      const groups = {};
+      for (const c of clients) {
+        const k = (c.seller || '').trim() || '(Sem vendedor)';
+        (groups[k] = groups[k] || []).push(c);
+      }
+      const entries = Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+      const sections = entries.map(([seller, cs]) => {
+        cs.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const rows = cs.map((c, i) => `<tr style="${i % 2 ? 'background:#f8fafc' : ''}">
+          <td style="font-weight:600">${escHtml(c.name || '-')}</td>
+          <td>${escHtml(c.city || '-')}</td>
+          <td style="text-align:center">${escHtml(String(c.cod_financeiro || '-'))}</td>
+          <td style="text-align:center">${c.vazao_only ? '💧 Vazão' : '—'}</td>
+          <td style="text-align:center;font-weight:700;color:${isActive(c) ? '#16a34a' : '#dc2626'}">${isActive(c) ? 'Ativo' : 'Inativo'}</td>
+        </tr>`).join('');
+        return `<div style="margin-bottom:16px;break-inside:avoid">
+          <div style="background:#1a3f5c;color:#fff;padding:6px 10px;border-radius:6px 6px 0 0;font-weight:700;font-size:11px">👨‍💼 ${escHtml(seller)} <span style="opacity:.7;font-weight:400">· ${cs.length} cliente(s)</span></div>
+          <table style="border-radius:0 0 6px 6px;overflow:hidden"><thead><tr><th>Cliente</th><th>Cidade</th><th style="text-align:center">Cód.</th><th style="text-align:center">Tipo</th><th style="text-align:center">Status</th></tr></thead><tbody>${rows}</tbody></table>
+        </div>`;
+      }).join('') || '<p style="color:#94a3b8;text-align:center;padding:14px">Nenhum cliente encontrado.</p>';
+
+      const filtroStr = (fSeller ? `Vendedor: ${fSeller}` : 'Todos os vendedores') + (activeOnly ? ' · somente ativos' : ' · ativos e inativos');
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{background:#1a3f5c;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
+td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Clientes por Vendedor</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <div>${getPdfLogoHtml(true)}</div>
+  <div style="text-align:right"><div style="font-size:14px;font-weight:700;color:#fff">Clientes por Vendedor</div>
+  <div style="font-size:9px;color:rgba(255,255,255,.7);margin-top:2px">${escHtml(filtroStr)} · ${clients.length} cliente(s) · ${entries.length} vendedor(es) · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div></div>
+</div>
+${sections}
+<div class="footer">${getPdfFooterHtml('Clientes por Vendedor')}</div>
+</body></html>`;
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
+    });
+
+    // =====================================================
     // PDF PROCESSOS E MÁQUINAS POR CLIENTE (Item 7)
     // =====================================================
     document.getElementById('btn-pdf-machines')?.addEventListener('click', async () => {
@@ -5346,6 +5421,32 @@ ${opSections}
         rows.push([k, v.clientSet.size, v.count, String(Number(v.kg).toFixed(1)).replace('.',','), String((totalKg > 0 ? v.kg/totalKg*100 : 0).toFixed(1)).replace('.',',')]);
       });
       _downloadCsv(rows, `agrupado-${groupBy}_${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Clientes por Vendedor (somente admin) ---
+    document.getElementById('btn-csv-cbs')?.addEventListener('click', async () => {
+      if (currentUser?.role !== 'admin') return toast('Sem permissão.', 'error');
+      const fSeller    = document.getElementById('pdf-cbs-seller')?.value || '';
+      const activeOnly = !!document.getElementById('pdf-cbs-active-only')?.checked;
+      let clients = await dbGetAll_raw('clients');
+      const isActive = c => c.active !== false && c.active !== 0 && c.active !== 'false';
+      if (activeOnly) clients = clients.filter(isActive);
+      if (fSeller)    clients = clients.filter(c => (c.seller || '').trim() === fSeller);
+      clients.sort((a, b) => ((a.seller || '').localeCompare(b.seller || '')) || (a.name || '').localeCompare(b.name || ''));
+      if (!clients.length) return toast('Nenhum cliente encontrado.', 'warning');
+      const rows = [['Vendedor','Cliente','Cidade','Código Financeiro','Tipo','Status','E-mail','Envia Cliente','Envia Vendedor']];
+      clients.forEach(c => {
+        rows.push([
+          (c.seller || '').trim() || 'Sem vendedor',
+          c.name || '', c.city || '', String(c.cod_financeiro || ''),
+          c.vazao_only ? 'Apenas Vazão' : 'Completo',
+          isActive(c) ? 'Ativo' : 'Inativo',
+          c.email_client || '',
+          c.send_client ? 'Sim' : 'Não',
+          c.send_seller ? 'Sim' : 'Não',
+        ]);
+      });
+      _downloadCsv(rows, `clientes-por-vendedor${fSeller ? '-' + fSeller.replace(/\s+/g,'-') : ''}.csv`);
     });
 
     // --- Excel: Processos e Máquinas ---
