@@ -9660,16 +9660,16 @@ ${inactiveSec}
         list.innerHTML = '<div class="empty-state">👤 Nenhum usuário encontrado.</div>';
         return;
       }
-      const roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', diretor: 'Diretor' };
-      const roleClass = { admin: 'role-admin', gerente: 'role-gerente', vendedor: 'role-vendedor', consultor: 'role-consultor', diretor: 'role-diretor' };
+      const roleLabel = { admin: 'Admin', gerente: 'Gerente', vendedor: 'Vendedor', consultor: 'Consultor', tecnico: 'Técnico', diretor: 'Diretor' };
+      const roleClass = { admin: 'role-admin', gerente: 'role-gerente', vendedor: 'role-vendedor', consultor: 'role-consultor', tecnico: 'role-consultor', diretor: 'role-diretor' };
       list.innerHTML = filtered.map(u => {
         const managedBy = u.role === 'vendedor' && u.manager ? `· 👔 ${u.manager}` : '';
         const managedCount = u.role === 'gerente'
           ? users.filter(x => (x.manager || '').toLowerCase() === (u.sellerName || u.name || '').toLowerCase()).length
           : 0;
         const managerInfo = u.role === 'gerente' && managedCount > 0 ? `· 👥 ${managedCount} vendedor(es)` : '';
-        const consultorInfo = u.role === 'consultor' && u.sellers_access
-          ? `· 👁️ ${u.sellers_access.split(',').filter(Boolean).length} vendedor(es)` : '';
+        const consultorInfo = (u.role === 'consultor' || u.role === 'tecnico') && u.sellers_access
+          ? `· 👁️ ${u.sellers_access.split(',').filter(Boolean).length} acesso(s)` : '';
         return `
         <div class="list-item">
           <div class="list-item-info">
@@ -9710,8 +9710,9 @@ ${inactiveSec}
       if (row) row.style.display = role === 'vendedor' ? '' : 'none';
       const sellersRow = document.getElementById('user-sellers-row');
       if (sellersRow) {
-        sellersRow.style.display = role === 'consultor' ? '' : 'none';
-        if (role === 'consultor') populateSellersCheckboxes();
+        const canScope = role === 'consultor' || role === 'tecnico';
+        sellersRow.style.display = canScope ? '' : 'none';
+        if (canScope) populateSellersCheckboxes();
       }
     }
 
@@ -9770,7 +9771,7 @@ ${inactiveSec}
       document.getElementById('user-password').required = false;
       toggleManagerRow(u.role || 'vendedor');
       await populateManagerSelect(u.manager || '');
-      if (u.role === 'consultor') await populateSellersCheckboxes(u.sellers_access || '');
+      if (u.role === 'consultor' || u.role === 'tecnico') await populateSellersCheckboxes(u.sellers_access || '');
       // Restaurar checkboxes de permissão
       const savedPerms = new Set((u.permissions || '').split(',').map(s => s.trim()).filter(Boolean));
       SCREEN_PERM_KEYS.forEach(k => {
@@ -9820,7 +9821,7 @@ ${inactiveSec}
       const email    = document.getElementById('user-email').value.trim();
       const password = document.getElementById('user-password').value;
       const manager  = role === 'vendedor' ? (document.getElementById('user-manager')?.value || '') : '';
-      const sellers_access = role === 'consultor'
+      const sellers_access = (role === 'consultor' || role === 'tecnico')
         ? Array.from(document.querySelectorAll('input[name="seller_access"]:checked')).map(el => el.value).join(',')
         : '';
       const permissions = role === 'admin' ? '' :
