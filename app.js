@@ -3703,6 +3703,7 @@ ${printScript}
         } else {
           await renderRecordsList();
           toast(`✅ ${synced} registro(s) enviados com sucesso!`, 'success', 5000);
+          show('screen-home');
         }
 
         // Notificação ao vendedor — opt-in via toast (WhatsApp + E-mail)
