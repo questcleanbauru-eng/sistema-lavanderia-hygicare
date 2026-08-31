@@ -4156,10 +4156,10 @@ ${printScript}
 
       window._alertWaMsgs = {};
       const overdueHtml = overdue.length ? Object.entries(bySeller).map(([seller, items], gi) => {
-        const waMsg = `*Hygicare — Aviso de Relatórios Pendentes*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
+        const waMsg = `*Hygicare — Aviso de Relatórios Pendentes - App Lavanderia*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
           items.map(({client, daysSince}) =>
             `• *${client.name}*${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias sem relatório' : 'sem registros'}`
-          ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.';
+          ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.\n\n🔗 https://sistema-lavanderia-hygicare.vercel.app/';
         window._alertWaMsgs[gi] = waMsg;
         const waLink = `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
