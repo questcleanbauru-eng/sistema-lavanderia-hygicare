@@ -3242,6 +3242,8 @@ ${printScript}
 
       const procOrder = _getProcOrder();
       const canEditP  = canDo('edit_process');
+      // Sem busca/filtro: grupos começam recolhidos. Com filtro ativo: abertos.
+      const _startCollapsed = !String(filter || '').trim() && !machineFilter;
       list.innerHTML = Object.entries(byClient).sort((a,b) => a[0].localeCompare(b[0])).map(([clientName, { items }], idx) => {
         const groupId = `proc-group-${idx}`;
         // Agrupar itens por máquina para ordenação por máquina
@@ -3263,10 +3265,10 @@ ${printScript}
             <span>👤 ${clientName}</span>
             <div style="display:flex;align-items:center;gap:0.5rem">
               <span class="badge">${items.length} processo(s)</span>
-              <span class="cg-chevron" style="font-size:0.75rem;transition:transform 0.2s;display:inline-block">▼</span>
+              <span class="cg-chevron" style="font-size:0.75rem;transition:transform 0.2s;display:inline-block${_startCollapsed ? ';transform:rotate(-90deg)' : ''}">▼</span>
             </div>
           </div>
-          <div id="${groupId}">
+          <div id="${groupId}"${_startCollapsed ? ' class="collapsed"' : ''}>
             ${orderedItems.map(({ p, machine }, i) => {
               const isActive = p.active !== false;
               const capStr = p.capacity ? `${p.capacity} kg` : `${machine?.capacity || 0} kg (da máquina)`;
