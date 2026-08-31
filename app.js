@@ -10507,34 +10507,42 @@ ${inactiveSec}
         const month = _finMonthFromRecord(r);
         if (!month) continue;
         const key = String(r.client_id) + '|' + month;
-        if (!prodMap[key]) prodMap[key] = { kg: 0 };
-        prodMap[key].kg += total;
+        prodMap[key] = (prodMap[key] || 0) + total;
       }
 
+      const normFilter = filterMonth ? _normFinMonth(filterMonth) : '';
 
-      // Junta com financeiro — usa cod_financeiro para encontrar client.id exato
-      // e normaliza mês para "YYYY-MM" (GAS pode devolver "2026-06-01T00:00:00")
+      // Agrupa financeiro por CLIENTE. Sem filtro → soma todos os meses.
+      // Com filtro → só o mês selecionado (continua 1 linha por cliente).
       const result = {};
       for (const f of finRows) {
         const finMonth = _normFinMonth(f.month);
         if (!finMonth) continue;
-        if (filterMonth && finMonth !== _normFinMonth(filterMonth)) continue;
-        const key = String(f.cod_financeiro || f.client_id) + '|' + finMonth;
-        if (!result[key]) {
+        if (normFilter && finMonth !== normFilter) continue;
+        const codKey = String(f.cod_financeiro || f.client_id);
+        if (!result[codKey]) {
           const c = clientByCodFin[String(f.cod_financeiro || '').trim()] || clientById[String(f.client_id)] || {};
-          const exactClientId = c.id ? String(c.id) : null;
-          const prodKey = exactClientId ? exactClientId + '|' + finMonth : null;
-          const kg = prodKey ? (prodMap[prodKey]?.kg || 0) : 0;
-          result[key] = {
+          result[codKey] = {
             clientName: c.name || ('Cód. ' + f.cod_financeiro),
-            month: finMonth,
+            _clientId: c.id ? String(c.id) : null,
+            months: new Set(),
             totalVenda: 0,
-            kg,
-            priceKgContract: parseFloat(c.price_kg || 0) || null
+            kg: 0,
+            priceKgContract: parseFloat(c.price_kg || 0) || null,
           };
         }
-        result[key].totalVenda += parseFloat(f.total_venda) || 0;
+        result[codKey].months.add(finMonth);
+        result[codKey].totalVenda += parseFloat(f.total_venda) || 0;
       }
+
+      // Kg lavado = produção do cliente nos mesmos meses que têm financeiro
+      for (const row of Object.values(result)) {
+        row.monthList = [...row.months].sort();
+        if (row._clientId) {
+          row.kg = row.monthList.reduce((s, m) => s + (prodMap[row._clientId + '|' + m] || 0), 0);
+        }
+      }
+
       return Object.values(result).sort((a, b) => b.totalVenda - a.totalVenda);
     }
 
@@ -10565,11 +10573,17 @@ ${inactiveSec}
       const totKg    = rows.reduce((s, r) => s + r.kg, 0);
       const totVenda = rows.reduce((s, r) => s + r.totalVenda, 0);
 
-      // Legenda: cada linha é um cliente em UM mês; faturado e kg referem-se só àquele mês
-      const mesesDistintos = [...new Set(rows.map(r => r.month))].sort();
-      const legenda = filterMonth
-        ? `Mês: <strong style="color:var(--text)">${fmtMes(_normFinMonth(filterMonth))}</strong> · cada linha = 1 cliente nesse mês.`
-        : `Cada linha = 1 cliente em 1 mês. <strong style="color:var(--text)">${rows.length}</strong> linha(s) cobrindo <strong style="color:var(--text)">${mesesDistintos.length}</strong> mês(es): ${mesesDistintos.map(fmtMes).join(' · ')}. Faturado e Kg lavado referem-se apenas ao mês indicado em cada linha.`;
+      // 1 linha por cliente. Sem filtro de mês, Faturado e Kg somam todos os meses.
+      const normFilter = filterMonth ? _normFinMonth(filterMonth) : '';
+      const allMonths  = [...new Set(rows.flatMap(r => r.monthList || []))].sort();
+      const mesCell = r =>
+        normFilter ? fmtMes(normFilter)
+        : (r.monthList && r.monthList.length > 1)
+          ? `<span title="${r.monthList.map(fmtMes).join(' · ')}">${r.monthList.length} meses</span>`
+          : (r.monthList && r.monthList[0] ? fmtMes(r.monthList[0]) : '—');
+      const legenda = normFilter
+        ? `Mês: <strong style="color:var(--text)">${fmtMes(normFilter)}</strong> · 1 linha por cliente, valores desse mês.`
+        : `1 linha por cliente. Faturado e Kg lavado somam <strong style="color:var(--text)">todos os meses importados</strong>${allMonths.length ? ` (${allMonths.length}: ${fmtMes(allMonths[0])} a ${fmtMes(allMonths[allMonths.length - 1])})` : ''}. Use o filtro de mês acima para isolar um mês.`;
       const legendaHtml = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.6rem;line-height:1.4">ℹ️ ${legenda}</div>`;
 
       const isMobile = window.innerWidth < 680;
@@ -10590,7 +10604,7 @@ ${inactiveSec}
           html += `<div style="background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid var(--primary,#2563eb);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.5rem">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.35rem">
               <span style="font-weight:700;font-size:0.82rem;line-height:1.3">${escHtml(r.clientName)}
-                <span style="font-weight:600;font-size:0.72rem;color:var(--muted)">· ${fmtMes(r.month)}</span></span>
+                <span style="font-weight:600;font-size:0.72rem;color:var(--muted)">· ${mesCell(r)}</span></span>
               <span style="font-weight:700;color:var(--primary,#2563eb);white-space:nowrap;font-size:0.85rem">${fmtR(r.totalVenda)}</span>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.2rem 0.75rem;font-size:0.76rem">
@@ -10621,7 +10635,7 @@ ${inactiveSec}
           const diffStyle = diff === null ? '' : diff > 0 ? 'color:#16a34a;font-weight:700' : diff < 0 ? 'color:#dc2626;font-weight:700' : '';
           html += `<tr style="border-bottom:1px solid var(--border)">
             <td style="padding:6px 10px">${escHtml(r.clientName)}</td>
-            <td style="padding:6px 10px;color:var(--muted)">${fmtMes(r.month)}</td>
+            <td style="padding:6px 10px;color:var(--muted)">${mesCell(r)}</td>
             <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtR(r.totalVenda)}</td>
             <td style="padding:6px 10px;text-align:right">${r.kg > 0 ? fmtKg(r.kg) : muted}</td>
             <td style="padding:6px 10px;text-align:right">${efectivo !== null ? fmtR(efectivo) : muted}</td>
