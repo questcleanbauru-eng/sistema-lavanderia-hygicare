@@ -23,7 +23,7 @@
 // a função ensureHeaders() adiciona automaticamente ao final.
 const HEADERS = {
   Clientes:       ['id','name','city','seller','email_client','send_client',
-                   'email_seller','send_seller','price_kg','created_at','vazao_only','active','cod_financeiro'],
+                   'email_seller','send_seller','price_kg','created_at','vazao_only','no_reports','active','cod_financeiro'],
   Financeiro:     ['id','client_id','cod_financeiro','sub_grupo','month','total_venda','created_at'],
   Maquinas:       ['id','name','client_id','capacity','created_at'],
   Processos:      ['id','name','machine_id','capacity','active','created_at'],
@@ -1700,7 +1700,14 @@ function sendMonthlyOperationalEmail(useCurrentMonth) {
     var totalKg  = Object.keys(byClient).reduce(function(s, k) { return s + byClient[k]; }, 0);
     var activeIds = Object.keys(byClient);
 
-    var inactive = clients.filter(function(c) { return activeIds.indexOf(String(c.id)) < 0; });
+    var _truthy2 = function(v) { return v === true || v === 'TRUE' || v === 'true' || v === 1 || v === '1'; };
+    var _isActive2 = function(v) { return !(v === false || v === 'FALSE' || v === 'false' || v === 0 || v === '0'); };
+    var inactive = clients.filter(function(c) {
+      return activeIds.indexOf(String(c.id)) < 0
+        && _isActive2(c.active)
+        && !_truthy2(c.vazao_only)
+        && !_truthy2(c.no_reports);
+    });
     var ranking  = clients
       .filter(function(c) { return activeIds.indexOf(String(c.id)) >= 0; })
       .map(function(c) { return { name: c.name, seller: c.seller || '', kg: byClient[String(c.id)] || 0, email_seller: c.email_seller || '', id: String(c.id) }; })
@@ -1764,7 +1771,14 @@ function sendMissingClientsEmail(useCurrentMonth) {
       if (!lastDate[cid] || d > lastDate[cid]) lastDate[cid] = d;
     });
 
-    var inactive = clients.filter(function(c) { return !hasRec[String(c.id)]; });
+    var _truthy = function(v) { return v === true || v === 'TRUE' || v === 'true' || v === 1 || v === '1'; };
+    var _isActive = function(v) { return !(v === false || v === 'FALSE' || v === 'false' || v === 0 || v === '0'); };
+    var inactive = clients.filter(function(c) {
+      return !hasRec[String(c.id)]
+        && _isActive(c.active)
+        && !_truthy(c.vazao_only)
+        && !_truthy(c.no_reports);
+    });
     if (inactive.length === 0) { Logger.log('sendMissingClientsEmail: todos com registro'); return; }
 
     var sellerMap = {};

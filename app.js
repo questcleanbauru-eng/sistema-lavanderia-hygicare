@@ -2314,6 +2314,7 @@ ${printScript}
       if (typeof n.send_client === 'string') n.send_client = n.send_client === 'TRUE' || n.send_client === 'true';
       if (typeof n.send_seller === 'string') n.send_seller = n.send_seller === 'TRUE' || n.send_seller === 'true';
       if (typeof n.vazao_only  === 'string') n.vazao_only  = n.vazao_only  === 'TRUE' || n.vazao_only  === 'true';
+      if (typeof n.no_reports  === 'string') n.no_reports  = n.no_reports  === 'TRUE' || n.no_reports  === 'true';
       if (n.capacity !== undefined && n.capacity !== '') n.capacity = parseFloat(n.capacity) || 0;
       if (n.executed !== undefined && n.executed !== '')  n.executed = parseFloat(n.executed) || 0;
       if (n.canceled !== undefined && n.canceled !== '')  n.canceled = parseFloat(n.canceled) || 0;
@@ -2506,6 +2507,7 @@ ${printScript}
       data.send_client = !!data.send_client;
       data.send_seller = !!data.send_seller;
       data.vazao_only  = !!data.vazao_only;
+      data.no_reports  = !!data.no_reports;
 
       const editId = editClientIdField.value ? Number(editClientIdField.value) : null;
       const submitBtn = formClient.querySelector('button[type="submit"]');
@@ -2743,6 +2745,7 @@ ${printScript}
       formClient.send_client.checked = !!c.send_client;
       formClient.send_seller.checked = !!c.send_seller;
       formClient.vazao_only.checked  = !!c.vazao_only;
+      formClient.no_reports.checked  = !!c.no_reports;
       formClient.cod_financeiro.value = c.cod_financeiro || '';
       document.getElementById('cod-financeiro-row').classList.toggle('hidden', currentUser?.role !== 'admin');
       formClientCard.classList.remove('hidden');
@@ -2922,14 +2925,16 @@ ${printScript}
     let _clientsGrouped = false;
     function _clientItemHtml(c) {
       const vazaoOnly = !!c.vazao_only;
+      const noReports = !!c.no_reports;
       const isActive  = c.active !== false && c.active !== 0 && c.active !== 'false';
       return `
-        <div class="list-item"${!isActive ? ' style="border-left:3px solid #dc2626;opacity:0.75"' : vazaoOnly ? ' style="border-left:3px solid #0ea5e9;opacity:0.92"' : ''}>
+        <div class="list-item"${!isActive ? ' style="border-left:3px solid #dc2626;opacity:0.75"' : noReports ? ' style="border-left:3px solid #94a3b8;opacity:0.92"' : vazaoOnly ? ' style="border-left:3px solid #0ea5e9;opacity:0.92"' : ''}>
           <div class="list-item-content">
             <div class="list-item-name">
-              ${!isActive ? '🔴' : vazaoOnly ? '💧' : '👤'} ${c.name}
+              ${!isActive ? '🔴' : noReports ? '🚫' : vazaoOnly ? '💧' : '👤'} ${c.name}
               <span class="badge">${c.city || 'Sem cidade'}</span>
               ${!isActive ? '<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.7em">Inativo</span>' : ''}
+              ${isActive && noReports ? '<span class="badge" style="background:#f1f5f9;color:#475569;font-size:0.7em">🚫 Sem relatório/vazão</span>' : ''}
               ${isActive && vazaoOnly ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.7em">Apenas Vazão</span>' : ''}
             </div>
             <div class="list-item-details">
@@ -3996,7 +4001,9 @@ ${printScript}
       const thresholdStr = threshold.toISOString().split('T')[0];
       const overdue = [];
       for (const c of clients) {
-        if (c.vazao_only) continue;
+        if (c.vazao_only || c.no_reports) continue;
+        const isActiveClient = c.active !== false && c.active !== 0 && c.active !== 'false';
+        if (!isActiveClient) continue;
         const last = lastDate[Number(c.id)] || null;
         if (!last || last < thresholdStr) {
           const daysSince = last ? Math.floor((today.getTime() - new Date(last).getTime()) / 86400000) : null;
@@ -5002,7 +5009,7 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;paddi
           <td style="font-weight:600">${escHtml(c.name || '-')}</td>
           <td>${escHtml(c.city || '-')}</td>
           <td style="text-align:center">${escHtml(String(c.cod_financeiro || '-'))}</td>
-          <td style="text-align:center">${c.vazao_only ? '💧 Vazão' : '—'}</td>
+          <td style="text-align:center">${c.no_reports ? '🚫 Sem rel./vazão' : c.vazao_only ? '💧 Vazão' : '—'}</td>
           <td style="text-align:center;font-weight:700;color:${isActive(c) ? '#16a34a' : '#dc2626'}">${isActive(c) ? 'Ativo' : 'Inativo'}</td>
         </tr>`).join('');
         return `<div style="margin-bottom:16px;break-inside:avoid">
@@ -5464,7 +5471,7 @@ ${opSections}
         rows.push([
           (c.seller || '').trim() || 'Sem vendedor',
           c.name || '', c.city || '', String(c.cod_financeiro || ''),
-          c.vazao_only ? 'Apenas Vazão' : 'Completo',
+          c.no_reports ? 'Não emite relatório nem vazão' : c.vazao_only ? 'Apenas Vazão' : 'Completo',
           isActive(c) ? 'Ativo' : 'Inativo',
           c.email_client || '',
           c.send_client ? 'Sim' : 'Não',
