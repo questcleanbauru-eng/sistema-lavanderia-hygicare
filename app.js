@@ -4593,6 +4593,17 @@ ${printScript}
         }
       }
 
+      // Inicia com todos os cards recolhidos — usuário abre o que quiser
+      document.querySelectorAll('#screen-pdf-reports .card').forEach(card => {
+        const header = card.firstElementChild;
+        const body   = header?.nextElementSibling;
+        const chev   = card.querySelector('.pdf-chev');
+        if (!body || !chev) return;
+        body.hidden = true;
+        chev.style.transform = 'rotate(-90deg)';
+        card.style.paddingBottom = '0';
+      });
+
       // Preset date buttons (uma única vez por tela)
       if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
         document.getElementById('screen-pdf-reports').dataset.presetsWired = '1';
@@ -7413,13 +7424,13 @@ ${opSections}
           <div style="border:1px solid #bfdbfe;border-radius:12px;margin-bottom:0.75rem;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
             <div style="background:#eff6ff;padding:0.55rem 0.9rem;display:flex;align-items:center;gap:0.6rem;cursor:pointer;user-select:none;border-bottom:1px solid #bfdbfe"
                  onclick="(function(h){const b=document.getElementById('${cBodyId}');const open=b.style.display!=='none';b.style.display=open?'none':'block';h.querySelector('.carr').textContent=open?'▶':'▼';})(this)">
-              <span class="carr" style="font-size:0.65rem;color:#93c5fd;min-width:10px">▼</span>
+              <span class="carr" style="font-size:0.65rem;color:#93c5fd;min-width:10px">▶</span>
               <span style="font-size:0.95rem">👥</span>
               <span style="font-weight:700;font-size:0.92rem;color:var(--primary-dark)">${c?.name||'?'}</span>
               <span style="font-size:0.72rem;background:#dbeafe;color:var(--primary);padding:2px 9px;border-radius:999px;font-weight:600;margin-left:auto">${recs.length} receita${recs.length>1?'s':''}</span>
               <button onclick="event.stopPropagation();window._shareClientRecipesPdf('${cKey}')" style="flex-shrink:0;padding:2px 10px;border:1.5px solid #93c5fd;border-radius:6px;background:#fff;color:#1d4ed8;font-size:0.72rem;font-weight:700;cursor:pointer;white-space:nowrap">📄 PDF</button>
             </div>
-            <div id="${cBodyId}" style="padding:0.6rem 0.75rem;background:#fff">
+            <div id="${cBodyId}" style="padding:0.6rem 0.75rem;background:#fff;display:none">
               ${recs.map(r => recipeCardHtml(r)).join('')}
             </div>
           </div>`;
@@ -8173,7 +8184,7 @@ ${recipeSections}
       // Ordenar meses do mais recente para o mais antigo
       const monthEntries = Object.entries(byMonth).sort((a, b) => b[1].sortKey.localeCompare(a[1].sortKey));
 
-      list.innerHTML = monthEntries.map(([month, { items }]) => {
+      list.innerHTML = monthEntries.map(([month, { items }], mi) => {
         const groupsHtml = items.map(([key, g]) => {
           const safeKey = btoa(unescape(encodeURIComponent(key))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
           _recordGroups[safeKey] = g;
@@ -8251,11 +8262,16 @@ ${recipeSections}
         `;
         }).join('');
 
+        const mId = 'rmonth-' + mi;
+        const mCollapsed = mi > 0; // mês mais recente aberto; demais recolhidos
         return `
-          <div class="month-separator">
-            <span>📅 ${month}</span>
+          <div class="month-separator" style="cursor:pointer;user-select:none"
+               onclick="(function(h){var b=document.getElementById('${mId}');var open=b.style.display!=='none';b.style.display=open?'none':'';var a=h.querySelector('.rmonth-arr');if(a)a.textContent=open?'▶':'▼';})(this)">
+            <span><span class="rmonth-arr" style="font-size:0.8em">${mCollapsed ? '▶' : '▼'}</span> 📅 ${month} <span style="opacity:0.7;font-weight:600">· ${items.length}</span></span>
           </div>
-          ${groupsHtml}
+          <div id="${mId}"${mCollapsed ? ' style="display:none"' : ''}>
+            ${groupsHtml}
+          </div>
         `;
       }).join('');
 
