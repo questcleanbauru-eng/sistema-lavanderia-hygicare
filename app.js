@@ -10559,16 +10559,24 @@ ${inactiveSec}
 
       const fmtR  = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       const fmtKg = v => (v||0).toFixed(1).replace('.', ',') + ' kg';
+      const fmtMes = m => { const [y, mo] = String(m).split('-'); return new Date(+y, +mo - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }); };
       const muted = `<span style="color:var(--muted)">—</span>`;
 
       const totKg    = rows.reduce((s, r) => s + r.kg, 0);
       const totVenda = rows.reduce((s, r) => s + r.totalVenda, 0);
 
+      // Legenda: cada linha é um cliente em UM mês; faturado e kg referem-se só àquele mês
+      const mesesDistintos = [...new Set(rows.map(r => r.month))].sort();
+      const legenda = filterMonth
+        ? `Mês: <strong style="color:var(--text)">${fmtMes(_normFinMonth(filterMonth))}</strong> · cada linha = 1 cliente nesse mês.`
+        : `Cada linha = 1 cliente em 1 mês. <strong style="color:var(--text)">${rows.length}</strong> linha(s) cobrindo <strong style="color:var(--text)">${mesesDistintos.length}</strong> mês(es): ${mesesDistintos.map(fmtMes).join(' · ')}. Faturado e Kg lavado referem-se apenas ao mês indicado em cada linha.`;
+      const legendaHtml = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.6rem;line-height:1.4">ℹ️ ${legenda}</div>`;
+
       const isMobile = window.innerWidth < 680;
 
       if (isMobile) {
         // Layout em cards: uma linha por cliente, info empilhada
-        let html = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem">
+        let html = legendaHtml + `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem">
           Total: <strong style="color:var(--text)">${fmtR(totVenda)}</strong>
           ${totKg > 0 ? ' · ' + fmtKg(totKg) + ' · ' + fmtR(totVenda/totKg) + '/kg médio' : ''}
         </div>`;
@@ -10581,7 +10589,8 @@ ${inactiveSec}
 
           html += `<div style="background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid var(--primary,#2563eb);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.5rem">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.35rem">
-              <span style="font-weight:700;font-size:0.82rem;line-height:1.3">${escHtml(r.clientName)}</span>
+              <span style="font-weight:700;font-size:0.82rem;line-height:1.3">${escHtml(r.clientName)}
+                <span style="font-weight:600;font-size:0.72rem;color:var(--muted)">· ${fmtMes(r.month)}</span></span>
               <span style="font-weight:700;color:var(--primary,#2563eb);white-space:nowrap;font-size:0.85rem">${fmtR(r.totalVenda)}</span>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.2rem 0.75rem;font-size:0.76rem">
@@ -10595,9 +10604,10 @@ ${inactiveSec}
         container.innerHTML = html;
       } else {
         // Layout em tabela para desktop
-        let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        let html = legendaHtml + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem">
           <thead><tr style="background:var(--primary,#2563eb);color:#fff">
             <th style="padding:7px 10px;text-align:left">Cliente</th>
+            <th style="padding:7px 10px;text-align:left">Mês</th>
             <th style="padding:7px 10px;text-align:right">Faturado</th>
             <th style="padding:7px 10px;text-align:right">Kg lavado</th>
             <th style="padding:7px 10px;text-align:right">Preço efetivo/kg</th>
@@ -10611,6 +10621,7 @@ ${inactiveSec}
           const diffStyle = diff === null ? '' : diff > 0 ? 'color:#16a34a;font-weight:700' : diff < 0 ? 'color:#dc2626;font-weight:700' : '';
           html += `<tr style="border-bottom:1px solid var(--border)">
             <td style="padding:6px 10px">${escHtml(r.clientName)}</td>
+            <td style="padding:6px 10px;color:var(--muted)">${fmtMes(r.month)}</td>
             <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtR(r.totalVenda)}</td>
             <td style="padding:6px 10px;text-align:right">${r.kg > 0 ? fmtKg(r.kg) : muted}</td>
             <td style="padding:6px 10px;text-align:right">${efectivo !== null ? fmtR(efectivo) : muted}</td>
@@ -10620,7 +10631,7 @@ ${inactiveSec}
         }
 
         html += `</tbody><tfoot><tr style="background:var(--hover,#f1f5f9);font-weight:700">
-          <td style="padding:7px 10px">Total</td>
+          <td style="padding:7px 10px" colspan="2">Total</td>
           <td style="padding:7px 10px;text-align:right">${fmtR(totVenda)}</td>
           <td style="padding:7px 10px;text-align:right">${fmtKg(totKg)}</td>
           <td colspan="3" style="padding:7px 10px;text-align:right">${totKg > 0 ? fmtR(totVenda/totKg) + '/kg médio' : '—'}</td>
@@ -10656,7 +10667,14 @@ ${inactiveSec}
 
       const months = Object.keys(byMonth).sort();
       const container = document.getElementById('fin-evol-view');
-      if (!months.length) { container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado encontrado.</p>'; return; }
+      const chartWrap = document.getElementById('fin-evol-chart-wrap');
+      if (!months.length) {
+        container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Nenhum dado encontrado.</p>';
+        if (chartWrap) chartWrap.style.display = 'none';
+        if (_charts.finEvol) { try { _charts.finEvol.destroy(); } catch(e){} delete _charts.finEvol; }
+        return;
+      }
+      if (chartWrap) chartWrap.style.display = '';
 
       const fmtR = v => 'R$ ' + (v||0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       const maxVal = Math.max(...months.map(m => byMonth[m]));
@@ -10688,6 +10706,55 @@ ${inactiveSec}
       }
       html += '</div>';
       container.innerHTML = html;
+
+      // ── Gráfico: faturamento mensal vs média ──────────────────
+      const canvas = document.getElementById('chart-fin-evol');
+      if (canvas && typeof Chart !== 'undefined') {
+        const media  = months.reduce((s, m) => s + byMonth[m], 0) / months.length;
+        const labels = months.map(m => {
+          const [y, mo] = m.split('-');
+          return new Date(+y, +mo - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+        });
+        const vals = months.map(m => +byMonth[m].toFixed(2));
+        const brl  = v => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        try { (_charts.finEvol || Chart.getChart?.(canvas))?.destroy(); } catch(e){}
+        _charts.finEvol = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Faturamento',
+                data: vals,
+                backgroundColor: vals.map(v => v >= media ? 'rgba(37,99,235,0.85)' : 'rgba(148,163,184,0.75)'),
+                borderRadius: 4,
+                order: 2,
+              },
+              {
+                type: 'line',
+                label: `Média (${brl(media)})`,
+                data: months.map(() => +media.toFixed(2)),
+                borderColor: '#f59e0b',
+                borderDash: [6, 3],
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false,
+                order: 1,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { labels: { font: { size: 11 } } },
+              tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${brl(ctx.parsed.y)}` } },
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { callback: v => 'R$ ' + Number(v).toLocaleString('pt-BR') } },
+            },
+          },
+        });
+      }
     }
 
     async function renderFinanceiroRanking() {
@@ -10780,13 +10847,13 @@ ${inactiveSec}
       Object.entries(byClient).sort((a, b) => b[1].total - a[1].total).forEach(([clientName, data], idx) => {
         const sortedMonths = Object.keys(data.months).sort(); // cronológico asc
         const cid = 'fv-c' + idx;
-        html += `<div class="list-item" id="${cid}" style="display:block;margin-bottom:0.5rem;padding:0.55rem 0.85rem">
+        html += `<div class="list-item fin-collapsed" id="${cid}" style="display:block;margin-bottom:0.5rem;padding:0.55rem 0.85rem">
           <div data-collapse-target="${cid}"
                style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:0.05rem 0;margin-bottom:0.2rem;-webkit-tap-highlight-color:transparent;gap:0.4rem">
             <strong style="font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">👤 ${escHtml(clientName)}</strong>
             <div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0">
               <span style="font-weight:700;color:var(--primary,#2563eb);font-size:0.82rem">${fmtBR(data.total)}</span>
-              <span class="fv-arrow" style="color:var(--muted);font-size:0.7rem;min-width:9px">▼</span>
+              <span class="fv-arrow" style="color:var(--muted);font-size:0.7rem;min-width:9px">▶</span>
             </div>
           </div>
           <div class="fv-detail">`;
