@@ -232,6 +232,16 @@ body {
   font-size: 0.9rem;
   text-align: left;
 }
+.input-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18) !important;
+  animation: input-error-shake 0.3s;
+}
+@keyframes input-error-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
 
 /* =========== HEADER =========== */
 header {

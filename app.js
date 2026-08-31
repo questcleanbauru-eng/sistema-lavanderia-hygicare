@@ -3529,9 +3529,17 @@ ${printScript}
       const isEditMode = !!_editingRecord;
       const editGroup  = _editingRecord;
       const periodoOn  = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
-      let dateStart = document.getElementById('prod-date-start').value;
+      const _dateStartEl = document.getElementById('prod-date-start');
+      let dateStart = _dateStartEl.value;
       let dateEnd   = (periodoOn || isEditMode) ? (document.getElementById('prod-date-end').value || dateStart) : dateStart;
-      if (!dateStart) return toast('Preencha a data', 'warning');
+      if (!dateStart) {
+        _dateStartEl.classList.add('input-error');
+        _dateStartEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        _dateStartEl.focus();
+        try { _dateStartEl.showPicker?.(); } catch (e) {}
+        setTimeout(() => _dateStartEl.classList.remove('input-error'), 3000);
+        return toast('⚠️ Preencha a Data Início antes de salvar.', 'warning');
+      }
 
       // Auto-corrigir sobreposição apenas em modo criação
       if (!isEditMode) {
