@@ -10709,6 +10709,7 @@ ${inactiveSec}
 
       // ── Gráfico: faturamento mensal vs média ──────────────────
       const canvas = document.getElementById('chart-fin-evol');
+      if (canvas) { try { await loadChartJs(); } catch (e) { console.error('Chart.js:', e); } }
       if (canvas && typeof Chart !== 'undefined') {
         const media  = months.reduce((s, m) => s + byMonth[m], 0) / months.length;
         const labels = months.map(m => {
