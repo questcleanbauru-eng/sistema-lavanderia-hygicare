@@ -6904,11 +6904,13 @@ ${opSections}
           const dateClr = stale ? '#dc2626' : 'var(--muted)';
           return `
             <button type="button" onclick="window._vazaoPickClient(${r.cid})"
-              style="text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid #0ea5e9;border-radius:9px;padding:0.6rem 0.75rem;cursor:pointer;display:flex;flex-direction:column;gap:0.25rem">
-              <span style="font-weight:700;font-size:0.85rem;color:var(--text);line-height:1.25">${escHtml(r.name)}</span>
-              ${r.city ? `<span style="font-size:0.72rem;color:var(--muted)">📍 ${escHtml(r.city)}</span>` : ''}
-              <span style="font-size:0.74rem;color:var(--muted)">💧 ${r.count} leitura(s) · ⚙️ ${r.machs.size} máq.</span>
-              <span style="font-size:0.74rem;color:${dateClr};font-weight:${stale ? '700' : '400'}">📅 Última: ${r.lastDate ? fmtDate(r.lastDate) : '—'}${dias !== null ? ` (${dias}d)` : ''}</span>
+              style="text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid #0ea5e9;border-radius:9px;padding:0.55rem 0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.35rem 0.9rem;width:100%">
+              <span style="min-width:0;flex:1">
+                <span style="font-weight:700;font-size:0.85rem;color:var(--text)">${escHtml(r.name)}</span>
+                ${r.city ? `<span style="font-size:0.72rem;color:var(--muted)"> · 📍 ${escHtml(r.city)}</span>` : ''}
+              </span>
+              <span style="font-size:0.74rem;color:var(--muted);white-space:nowrap">💧 ${r.count} · ⚙️ ${r.machs.size}</span>
+              <span style="font-size:0.74rem;color:${dateClr};font-weight:${stale ? '700' : '400'};white-space:nowrap">📅 ${r.lastDate ? fmtDate(r.lastDate) : '—'}${dias !== null ? ` (${dias}d)` : ''}</span>
             </button>`;
         }).join('');
       }

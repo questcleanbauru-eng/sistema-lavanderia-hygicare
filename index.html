@@ -1133,8 +1133,8 @@
             </div>
 
             <button type="button" id="vazao-clear-client" onclick="window._vazaoPickClient('')"
-              style="display:none;margin-bottom:0.75rem;background:none;border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.8rem;font-size:0.83rem;font-weight:600;color:var(--text);cursor:pointer">
-              ← Ver todos os clientes
+              style="display:none;margin:0.25rem 0 1rem;background:#0ea5e9;border:none;border-radius:9px;padding:0.6rem 1.1rem;font-size:0.9rem;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(14,165,233,0.35);align-items:center;gap:0.4rem">
+              ← Ver todos os clientes com vazão
             </button>
 
             <!-- Máquinas e leituras expandidas (preenchidas dinamicamente) -->
@@ -1152,7 +1152,7 @@
               <h3 style="font-size:0.95rem;font-weight:700;margin:0;color:var(--text)">💧 Clientes com vazão registrada</h3>
               <span id="vazao-clients-count" style="font-size:0.78rem;color:var(--muted)"></span>
             </div>
-            <div id="vazao-clients-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.6rem"></div>
+            <div id="vazao-clients-grid" style="display:flex;flex-direction:column;gap:0.4rem;max-height:60vh;overflow-y:auto"></div>
           </div>
 
           <!-- Evolução de vazão do cliente -->
