@@ -6048,6 +6048,9 @@ ${opSections}
       area.style.display = 'none';
       area.innerHTML = '';
 
+      const _backBtn = document.getElementById('vazao-clear-client');
+      if (_backBtn) _backBtn.style.display = clientId ? '' : 'none';
+
       renderVazaoClientsOverview().catch(() => {});
 
       if (!clientId) {
@@ -6894,7 +6897,9 @@ ${opSections}
       } else {
         const now = Date.now();
         grid.innerHTML = rows.map(r => {
-          const dias = r.lastDate ? Math.floor((now - new Date(r.lastDate + 'T00:00:00').getTime()) / 86400000) : null;
+          const _ld = (r.lastDate || '').slice(0, 10);
+          const _t  = _ld ? new Date(_ld + 'T00:00:00').getTime() : NaN;
+          const dias = isNaN(_t) ? null : Math.floor((now - _t) / 86400000);
           const stale = dias !== null && dias > 45;
           const dateClr = stale ? '#dc2626' : 'var(--muted)';
           return `
