@@ -659,16 +659,6 @@
             </div>
           </div>
 
-          <!-- Seção Vazão -->
-          <div class="card chart-card" style="margin-top:1rem">
-            <h3 class="chart-title">💧 Evolução de Vazão</h3>
-            <canvas id="chart-vazao-evolucao" height="180"></canvas>
-          </div>
-
-          <div class="card" style="margin-top:0.75rem">
-            <h3 style="font-size:0.95rem;font-weight:700;margin:0 0 0.75rem;color:var(--text)">📜 Histórico de Leituras</h3>
-            <div id="vazao-history-list" class="items-list" style="max-height:420px;overflow-y:auto"></div>
-          </div>
         </section>
 
         <!-- FINANCEIRO (somente admin) -->
@@ -1149,6 +1139,21 @@
               Selecione um cliente para ver as máquinas e registrar leituras de vazão.<br>
               <span style="font-size:0.82rem">Para consultar o histórico de leituras, selecione o cliente acima.</span>
             </div>
+          </div>
+
+          <!-- Clientes com vazão registrada (visível quando nenhum cliente selecionado) -->
+          <div class="card" id="vazao-clients-overview" style="margin-bottom:1rem;display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
+              <h3 style="font-size:0.95rem;font-weight:700;margin:0;color:var(--text)">💧 Clientes com vazão registrada</h3>
+              <span id="vazao-clients-count" style="font-size:0.78rem;color:var(--muted)"></span>
+            </div>
+            <div id="vazao-clients-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.6rem"></div>
+          </div>
+
+          <!-- Evolução de vazão do cliente -->
+          <div class="card" id="vazao-chart-card" style="display:none;margin-bottom:1rem">
+            <h3 style="font-size:0.92rem;font-weight:700;margin:0 0 0.75rem;color:var(--text)">💧 Evolução de Vazão</h3>
+            <canvas id="chart-vazao-evolucao" height="180"></canvas>
           </div>
 
           <!-- Histórico de leituras -->

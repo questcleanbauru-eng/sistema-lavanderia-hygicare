@@ -6037,6 +6037,7 @@ ${opSections}
         fillClients();
         const _cId = Number(document.getElementById('vazao-client')?.value || 0);
         if (_cId) await renderVazaoLocalHistory(_cId);
+        await renderVazaoClientsOverview();
       }).catch(() => {});
     }
 
@@ -6046,6 +6047,8 @@ ${opSections}
 
       area.style.display = 'none';
       area.innerHTML = '';
+
+      renderVazaoClientsOverview().catch(() => {});
 
       if (!clientId) {
         emptyMsg.innerHTML = 'Selecione um cliente para ver as máquinas e registrar leituras de vazão.<br><span style="font-size:0.82rem">Para consultar o histórico de leituras, selecione o cliente acima.</span>';
@@ -6408,7 +6411,11 @@ ${opSections}
       const listEl = document.getElementById('vazao-local-history');
       if (!card || !listEl) return;
 
-      if (!clientId) { card.style.display = 'none'; return; }
+      if (!clientId) {
+        card.style.display = 'none';
+        await renderVazaoChart([]);
+        return;
+      }
       card.style.display = '';
 
       // Popular filtro de máquinas do cliente
@@ -6435,6 +6442,9 @@ ${opSections}
         const cutoffStr = cutoff.toISOString().slice(0, 10);
         records = records.filter(r => (r.date || '') >= cutoffStr);
       }
+
+      // Gráfico de evolução acompanha os mesmos filtros do histórico
+      await renderVazaoChart(records);
 
       if (!records.length) {
         listEl.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;text-align:center;padding:1rem">Nenhuma leitura no período selecionado.</div>';
@@ -6770,19 +6780,26 @@ ${opSections}
       });
     };
 
-    async function renderVazaoChart() {
-      const { records } = await _getFilteredVazaoRecords();
+    // Desenha o gráfico de evolução de vazão na tela de Vazão, a partir de
+    // registros já filtrados (por cliente/máquina/período).
+    async function renderVazaoChart(records) {
+      const card = document.getElementById('vazao-chart-card');
+      const old  = document.getElementById('chart-vazao-evolucao');
+      if (!old) return;
+      if (_charts['chart-vazao-evolucao']) { try { _charts['chart-vazao-evolucao'].destroy(); } catch(e){} delete _charts['chart-vazao-evolucao']; }
+
+      records = (records || []).filter(r => r.vazao_name && r.vazao_name !== '__manutencao__');
+      if (!records.length) { if (card) card.style.display = 'none'; return; }
+      if (card) card.style.display = '';
+
+      try { await loadChartJs(); } catch (e) { console.error('Chart.js:', e); }
+      if (typeof Chart === 'undefined') return;
 
       // Rebuild canvas para destruir chart anterior
-      const old = document.getElementById('chart-vazao-evolucao');
-      if (!old) return;
       const nc = document.createElement('canvas');
       nc.id = 'chart-vazao-evolucao';
       nc.height = 180;
       old.replaceWith(nc);
-      if (_charts['chart-vazao-evolucao']) { try { _charts['chart-vazao-evolucao'].destroy(); } catch(e){} delete _charts['chart-vazao-evolucao']; }
-
-      if (!records.length) return;
 
       const dates      = [...new Set(records.map(r => r.date))].sort();
       const vazaoNames = [...new Set(records.map(r => r.vazao_name).filter(Boolean))].sort();
@@ -6818,8 +6835,79 @@ ${opSections}
           }
         }
       });
+    }
 
-      await renderVazaoHistory();
+    // Seleciona um cliente na tela de Vazão (usado pelos cards da visão geral)
+    window._vazaoPickClient = function(id) {
+      const sel = document.getElementById('vazao-client');
+      if (!sel) return;
+      sel.value = String(id);
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('screen-vazao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    // Visão geral: quais clientes já têm leituras de vazão
+    async function renderVazaoClientsOverview() {
+      const wrap = document.getElementById('vazao-clients-overview');
+      const grid = document.getElementById('vazao-clients-grid');
+      const cnt  = document.getElementById('vazao-clients-count');
+      if (!wrap || !grid) return;
+
+      // Esconde quando um cliente está selecionado
+      const selected = Number(document.getElementById('vazao-client')?.value || 0);
+      if (selected) { wrap.style.display = 'none'; return; }
+
+      const [clients, machines, recordsAll] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('machines'), dbGetAll_raw('vazao_records'),
+      ]);
+
+      // Filtro por papel (mesma lógica das demais telas de vazão)
+      let records = recordsAll;
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor' || currentUser.role === 'tecnico')) {
+        const managed = getManagedSellerNames();
+        const ids = new Set(clients.filter(c => managed.has((c.seller || '').toLowerCase())).map(c => Number(c.id)));
+        records = records.filter(r => ids.has(Number(r.client_id)));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sn = (currentUser.sellerName || '').toLowerCase();
+        const ids = new Set(clients.filter(c => (c.seller || '').toLowerCase() === sn).map(c => Number(c.id)));
+        records = records.filter(r => ids.has(Number(r.client_id)));
+      }
+      records = records.filter(r => r.vazao_name !== '__manutencao__');
+
+      const byClient = {};
+      for (const r of records) {
+        const cid = Number(r.client_id);
+        if (!byClient[cid]) byClient[cid] = { count: 0, machs: new Set(), lastDate: '' };
+        byClient[cid].count++;
+        if (r.machine_id) byClient[cid].machs.add(Number(r.machine_id));
+        if ((r.date || '') > byClient[cid].lastDate) byClient[cid].lastDate = r.date || '';
+      }
+
+      const rows = Object.entries(byClient).map(([cid, d]) => {
+        const c = clients.find(cl => Number(cl.id) === Number(cid));
+        return { cid: Number(cid), name: c?.name || `#${cid}`, city: c?.city || '', ...d };
+      }).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || '') || a.name.localeCompare(b.name));
+
+      cnt.textContent = rows.length ? `${rows.length} cliente(s)` : '';
+      if (!rows.length) {
+        grid.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;padding:0.5rem">Nenhuma leitura de vazão registrada ainda.</div>';
+      } else {
+        const now = Date.now();
+        grid.innerHTML = rows.map(r => {
+          const dias = r.lastDate ? Math.floor((now - new Date(r.lastDate + 'T00:00:00').getTime()) / 86400000) : null;
+          const stale = dias !== null && dias > 45;
+          const dateClr = stale ? '#dc2626' : 'var(--muted)';
+          return `
+            <button type="button" onclick="window._vazaoPickClient(${r.cid})"
+              style="text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid #0ea5e9;border-radius:9px;padding:0.6rem 0.75rem;cursor:pointer;display:flex;flex-direction:column;gap:0.25rem">
+              <span style="font-weight:700;font-size:0.85rem;color:var(--text);line-height:1.25">${escHtml(r.name)}</span>
+              ${r.city ? `<span style="font-size:0.72rem;color:var(--muted)">📍 ${escHtml(r.city)}</span>` : ''}
+              <span style="font-size:0.74rem;color:var(--muted)">💧 ${r.count} leitura(s) · ⚙️ ${r.machs.size} máq.</span>
+              <span style="font-size:0.74rem;color:${dateClr};font-weight:${stale ? '700' : '400'}">📅 Última: ${r.lastDate ? fmtDate(r.lastDate) : '—'}${dias !== null ? ` (${dias}d)` : ''}</span>
+            </button>`;
+        }).join('');
+      }
+      wrap.style.display = '';
     }
 
     // =====================================================
@@ -8862,9 +8950,6 @@ ${recipeSections}
           if (el) el.insertAdjacentHTML('afterend',
             `<p style="text-align:center;color:#94a3b8;padding:2rem 0;margin:0;font-size:0.85rem">📭 Sem dados para este período</p>`);
         });
-        // Renderiza vazão mesmo sem registros de produção (ex: cliente apenas-vazão)
-        await renderVazaoChart();
-        await renderVazaoHistory();
         return;
       }
 
@@ -9095,11 +9180,6 @@ ${recipeSections}
           scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => v.toLocaleString('pt-BR') } } } }
       });
 
-      // Gráfico de Vazão
-      await renderVazaoChart();
-
-      // Histórico de Leituras
-      await renderVazaoHistory();
     }
 
     // Preset buttons — aplicam o período e preenchem os inputs de data
