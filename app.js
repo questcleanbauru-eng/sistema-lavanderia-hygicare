@@ -564,6 +564,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (hint) hint.style.display = 'none';
   });
 
+  // Atualizar o app pela própria tela de login (limpa cache + reinstala SW)
+  if ('caches' in window) {
+    caches.keys().then(ks => {
+      const k = ks.find(x => x.startsWith('lavanderia-cache-'));
+      const v = k ? k.replace('lavanderia-cache-', '') : '';
+      const el = document.getElementById('login-app-version');
+      if (el && v) el.textContent = '· ' + v;
+    }).catch(() => {});
+  }
+  document.getElementById('login-update-app')?.addEventListener('click', async () => {
+    const b = document.getElementById('login-update-app');
+    if (b) { b.disabled = true; b.textContent = '⏳ Atualizando…'; }
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) { await reg.update(); if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' }); }
+      }
+    } catch (e) { /* ignora */ }
+    window.location.reload();
+  });
+
   function _applyCustomLogo() {
     const b64 = localStorage.getItem('hygicare_logo_b64');
     if (!b64) return;
