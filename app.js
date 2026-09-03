@@ -295,8 +295,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // ---- PIN em caixas separadas (estilo OTP) ----
+  function _wirePinBoxes(container, onComplete) {
+    if (!container || container.dataset.wired) return;
+    container.dataset.wired = '1';
+    const boxes = [...container.querySelectorAll('.pin-box')];
+    const fireComplete = () => { if (boxes.every(b => b.value) && onComplete) onComplete(boxes.map(b => b.value).join('')); };
+    boxes.forEach((box, i) => {
+      box.addEventListener('input', () => {
+        box.value = box.value.replace(/\D/g, '').slice(0, 1);
+        if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+        fireComplete();
+      });
+      box.addEventListener('keydown', ev => {
+        if (ev.key === 'Backspace' && !box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ''; ev.preventDefault(); }
+        else if (ev.key === 'ArrowLeft'  && i > 0) boxes[i - 1].focus();
+        else if (ev.key === 'ArrowRight' && i < boxes.length - 1) boxes[i + 1].focus();
+      });
+      box.addEventListener('paste', ev => {
+        ev.preventDefault();
+        const digits = ((ev.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, boxes.length).split('');
+        digits.forEach((d, j) => { if (boxes[j]) boxes[j].value = d; });
+        boxes[Math.min(digits.length, boxes.length - 1)]?.focus();
+        fireComplete();
+      });
+      box.addEventListener('focus', () => box.select());
+    });
+  }
+  const _readPinBoxes  = c => { const v = [...(c?.querySelectorAll('.pin-box') || [])].map(b => b.value).join(''); return /^\d{4}$/.test(v) ? v : ''; };
+  const _clearPinBoxes = c => c?.querySelectorAll('.pin-box').forEach(b => (b.value = ''));
+  const _focusPinBoxes = c => c?.querySelector('.pin-box')?.focus();
+
   // Alternar entre login por Senha e por PIN
   let _loginMode = 'password';
+  const _loginPinBoxes = document.getElementById('login-pin-boxes');
+  _wirePinBoxes(_loginPinBoxes, () => {
+    if (formLogin.username.value.trim()) formLogin.requestSubmit();
+  });
   document.querySelectorAll('#login-tabs [data-login-mode]').forEach(tab => {
     tab.addEventListener('click', () => {
       _loginMode = tab.dataset.loginMode;
@@ -305,18 +340,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('login-pw-group').style.display  = isPin ? 'none' : '';
       document.getElementById('login-pin-group').style.display = isPin ? '' : 'none';
       loginError.classList.add('hidden');
-      document.getElementById(isPin ? 'login-pin' : 'login-password').focus();
+      if (isPin) { _clearPinBoxes(_loginPinBoxes); _focusPinBoxes(_loginPinBoxes); }
+      else document.getElementById('login-password').focus();
     });
-  });
-  document.getElementById('login-pin')?.addEventListener('input', e => {
-    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
   });
 
   formLogin.addEventListener('submit', async e => {
     e.preventDefault();
     const username = formLogin.username.value.trim();
     const password = formLogin.password.value;
-    const pin      = (document.getElementById('login-pin')?.value || '').trim();
+    const pin      = _readPinBoxes(_loginPinBoxes);
     const btn = document.getElementById('btn-login');
 
     if (_loginMode === 'pin' && !/^\d{4}$/.test(pin)) {
@@ -387,9 +420,61 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('hygicare_users', JSON.stringify(users));
       localStorage.setItem('_autoSync', '1');
       showApp();
+      // Primeiro login sem PIN → oferecer cadastro
+      if (_loginMode === 'password' && !_pin4(user.pin)
+          && localStorage.getItem('hygicare_pin_skip_' + user.username) !== '1') {
+        setTimeout(() => _openPinSetup(user.username), 700);
+      }
     } else {
+      _clearPinBoxes(_loginPinBoxes);
+      _focusPinBoxes(_loginPinBoxes);
       loginError.textContent = _loginMode === 'pin' ? '❌ Usuário ou PIN incorretos' : '❌ Usuário ou senha incorretos';
       loginError.classList.remove('hidden');
+    }
+  });
+
+  // ---- Modal: cadastrar PIN no primeiro login ----
+  const _pinSetupBoxes = document.getElementById('pin-setup-boxes');
+  _wirePinBoxes(_pinSetupBoxes);
+  function _openPinSetup(username) {
+    const modal = document.getElementById('modal-pin-setup');
+    if (!modal) return;
+    modal.dataset.username = username;
+    _clearPinBoxes(_pinSetupBoxes);
+    document.getElementById('pin-setup-error').style.display = 'none';
+    modal.classList.remove('hidden');
+    setTimeout(() => _focusPinBoxes(_pinSetupBoxes), 50);
+  }
+  document.getElementById('pin-setup-skip')?.addEventListener('click', () => {
+    const modal = document.getElementById('modal-pin-setup');
+    if (modal.dataset.username) localStorage.setItem('hygicare_pin_skip_' + modal.dataset.username, '1');
+    modal.classList.add('hidden');
+  });
+  document.getElementById('pin-setup-save')?.addEventListener('click', async () => {
+    const modal  = document.getElementById('modal-pin-setup');
+    const errEl  = document.getElementById('pin-setup-error');
+    const btn    = document.getElementById('pin-setup-save');
+    const username = modal.dataset.username || '';
+    const pin = _readPinBoxes(_pinSetupBoxes);
+    const showErr = m => { errEl.textContent = m; errEl.style.display = ''; };
+    if (!/^\d{4}$/.test(pin)) return showErr('Digite os 4 dígitos.');
+    btn.disabled = true; btn.textContent = '⏳';
+    try {
+      const allUsers = await dbGetAll_raw('users');
+      const me = allUsers.find(u => (u.username || '').toLowerCase() === username.toLowerCase());
+      if (!me) { showErr('Não foi possível salvar agora. Configure o PIN pela tela Usuários.'); return; }
+      const dupe = allUsers.find(u => String(u.pin || '') === pin && Number(u.id) !== Number(me.id));
+      if (dupe) { showErr('Esse PIN já está em uso. Escolha outro.'); return; }
+      const updated = { ...me, pin };
+      await dbPut('users', updated);
+      await patchSheetDB(SHEETS.USERS, updated.id, updated);
+      localStorage.removeItem('hygicare_pin_skip_' + username);
+      modal.classList.add('hidden');
+      toast('✅ PIN cadastrado! Da próxima vez você pode entrar pela aba PIN.', 'success', 6000);
+    } catch (err) {
+      showErr('Erro: ' + err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Salvar PIN';
     }
   });
 

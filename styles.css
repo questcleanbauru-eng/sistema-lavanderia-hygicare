@@ -188,6 +188,38 @@ body {
   color: var(--primary);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
 }
+
+.pin-boxes {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  margin: 0.7rem 0 0.2rem;
+}
+.pin-box {
+  width: 56px;
+  height: 64px;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: #f9fafb;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  -moz-appearance: textfield;
+}
+.pin-box::-webkit-outer-spin-button,
+.pin-box::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pin-box:focus {
+  border-color: var(--primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+@media (max-width: 380px) {
+  .pin-box { width: 48px; height: 56px; font-size: 1.4rem; }
+  .pin-boxes { gap: 0.45rem; }
+}
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
