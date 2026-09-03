@@ -498,6 +498,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (e) { synced = false; }
       }
       localStorage.removeItem('hygicare_pin_skip_' + username);
+      // reflete o novo PIN na lista em cache (pra próxima tela de login já abrir na aba PIN)
+      try {
+        const cached = JSON.parse(localStorage.getItem('hygicare_users') || '[]');
+        const ci = cached.findIndex(u => (u.username || '').toLowerCase() === username.toLowerCase());
+        if (ci >= 0) { cached[ci].pin = pin; localStorage.setItem('hygicare_users', JSON.stringify(cached)); }
+      } catch (e) {}
       modal.classList.add('hidden');
       toast(synced
         ? '✅ PIN cadastrado! Da próxima vez você pode entrar pela aba PIN.'
@@ -531,17 +537,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const uEl  = document.getElementById('login-username');
     const hint = document.getElementById('login-remembered');
     const saved = localStorage.getItem('hygicare_last_username') || '';
-    if (uEl && saved) {
-      uEl.value = saved;
-      if (hint) hint.style.display = '';
-      // usuário já preenchido → foca o campo seguinte
-      setTimeout(() => {
-        const pinVisible = document.getElementById('login-pin-group')?.style.display !== 'none';
-        if (pinVisible) document.querySelector('#login-pin-boxes .pin-box')?.focus();
-        else document.getElementById('login-password')?.focus();
-      }, 60);
-    } else if (hint) {
-      hint.style.display = 'none';
+    if (!(uEl && saved)) { if (hint) hint.style.display = 'none'; return; }
+    uEl.value = saved;
+    if (hint) hint.style.display = '';
+
+    // Esse usuário já tem PIN cadastrado neste dispositivo? → abre direto na aba PIN
+    let hasPin = false;
+    try {
+      const list = JSON.parse(localStorage.getItem('hygicare_users') || '[]');
+      const me = list.find(u => (u.username || '').toLowerCase() === saved.toLowerCase());
+      const d  = String(me && me.pin != null ? me.pin : '').replace(/\D/g, '');
+      hasPin = /^\d{1,4}$/.test(d);
+    } catch (e) {}
+
+    if (hasPin) {
+      document.querySelector('#login-tabs [data-login-mode="pin"]')?.click();
+    } else {
+      setTimeout(() => document.getElementById('login-password')?.focus(), 60);
     }
   }
   document.getElementById('login-forget-user')?.addEventListener('click', () => {
