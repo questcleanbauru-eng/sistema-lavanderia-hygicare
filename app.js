@@ -469,12 +469,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (dupe) { showErr('Esse PIN já está em uso. Escolha outro.'); return; }
       const updated = { ...me, pin };
       await dbPut('users', updated);
-      // callGAS é function declaration (hoistada) — patchSheetDB é const e pode
-      // ainda não estar inicializada logo após o login
-      await callGAS('update', SHEETS.USERS, updated, updated.id);
+      // callGAS/patchSheetDB vivem num escopo interno não acessível aqui →
+      // envia a atualização direto pela API do Apps Script
+      let synced = false;
+      if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        try {
+          const r = await fetch(gasApiUrl(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ payload: JSON.stringify({ action: 'update', sheet: SHEETS.USERS, id: updated.id, data: updated }) }),
+          });
+          synced = r.ok && ((await r.json()).status === 'ok');
+        } catch (e) { synced = false; }
+      }
       localStorage.removeItem('hygicare_pin_skip_' + username);
       modal.classList.add('hidden');
-      toast('✅ PIN cadastrado! Da próxima vez você pode entrar pela aba PIN.', 'success', 6000);
+      toast(synced
+        ? '✅ PIN cadastrado! Da próxima vez você pode entrar pela aba PIN.'
+        : '✅ PIN salvo neste aparelho. Vai sincronizar quando houver conexão.', 'success', 6000);
     } catch (err) {
       showErr('Erro: ' + err.message);
     } finally {
