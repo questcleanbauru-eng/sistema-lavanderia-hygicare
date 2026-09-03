@@ -422,6 +422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         permissions: user.permissions || '', sellers_access: user.sellers_access || '',
         expiresAt: Date.now() + 8 * 60 * 60 * 1000 };
       localStorage.setItem('lavanderia_session', JSON.stringify(currentUser));
+      localStorage.setItem('hygicare_last_username', currentUser.username);
       // Salvar lista de usuários para o select de vendedor
       localStorage.setItem('hygicare_users', JSON.stringify(users));
       localStorage.setItem('_autoSync', '1');
@@ -522,7 +523,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (el) el.style.display = 'none';
     _applyCustomLogo();
     loginScreen.style.display = '';
+    _prefillLoginUser();
   }
+
+  // Preenche o usuário lembrado e mostra o aviso na tela de login
+  function _prefillLoginUser() {
+    const uEl  = document.getElementById('login-username');
+    const hint = document.getElementById('login-remembered');
+    const saved = localStorage.getItem('hygicare_last_username') || '';
+    if (uEl && saved) {
+      uEl.value = saved;
+      if (hint) hint.style.display = '';
+      // usuário já preenchido → foca o campo seguinte
+      setTimeout(() => {
+        const pinVisible = document.getElementById('login-pin-group')?.style.display !== 'none';
+        if (pinVisible) document.querySelector('#login-pin-boxes .pin-box')?.focus();
+        else document.getElementById('login-password')?.focus();
+      }, 60);
+    } else if (hint) {
+      hint.style.display = 'none';
+    }
+  }
+  document.getElementById('login-forget-user')?.addEventListener('click', () => {
+    localStorage.removeItem('hygicare_last_username');
+    const uEl = document.getElementById('login-username');
+    if (uEl) { uEl.value = ''; uEl.focus(); }
+    const hint = document.getElementById('login-remembered');
+    if (hint) hint.style.display = 'none';
+  });
 
   function _applyCustomLogo() {
     const b64 = localStorage.getItem('hygicare_logo_b64');

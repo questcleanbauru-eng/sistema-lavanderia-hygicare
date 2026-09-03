@@ -294,6 +294,10 @@
 
         <form id="form-login">
           <div class="input-group"><span class="input-icon">👤</span><input type="text" name="username" id="login-username" placeholder="Usuário" required autofocus autocomplete="username" aria-label="Nome de usuário" /></div>
+          <p id="login-remembered" style="display:none;font-size:0.78rem;color:var(--muted);margin:-0.15rem 0 0.1rem;text-align:left">
+            Usuário lembrado neste dispositivo ·
+            <button type="button" id="login-forget-user" style="background:none;border:none;color:var(--primary);font-weight:700;font-size:0.78rem;cursor:pointer;padding:0">trocar</button>
+          </p>
           <div class="input-group" id="login-pw-group"><span class="input-icon">🔒</span><input type="password" name="password" id="login-password" placeholder="Senha" /><button type="button" id="btn-toggle-pw" style="background:none;border:none;cursor:pointer;padding:0 0.8rem;font-size:1.1rem;color:#94a3b8" title="Mostrar/ocultar senha">👁️</button></div>
           <div id="login-pin-group" style="display:none">
             <p style="font-size:0.82rem;color:var(--muted);margin:0.2rem 0 0">Digite seu PIN de 4 dígitos</p>
