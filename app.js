@@ -386,7 +386,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           })).filter(u => u.active !== false);
           sheetUsers.forEach(su => {
             const idx = users.findIndex(u => u.username === su.username);
-            if (idx >= 0) users[idx] = su; else users.push(su);
+            if (idx >= 0) { if (!_pin4(su.pin) && _pin4(users[idx].pin)) su.pin = users[idx].pin; users[idx] = su; }
+            else users.push(su);
           });
           const _suMe = sheetUsers.find(su => su.username === username);
           _sheetHasPin = _suMe ? !!_pin4(_suMe.pin) : false;
@@ -400,7 +401,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       dbUsers.forEach(du => {
         if (du.username && du.password) {
           const idx = users.findIndex(u => u.username === du.username);
-          const mapped = { username: du.username, password: du.password, pin: du.pin,
+          // não deixa um registro local sem PIN apagar um PIN já conhecido
+          const keepPin = _pin4(du.pin) ? du.pin : (idx >= 0 ? users[idx].pin : du.pin);
+          const mapped = { username: du.username, password: du.password, pin: keepPin,
             role: du.role || 'vendedor', name: du.name, sellerName: du.name, id: du.id, manager: du.manager || '' };
           if (idx >= 0) users[idx] = mapped; else users.push(mapped);
         }
@@ -433,8 +436,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     } else {
-      _clearPinBoxes(_loginPinBoxes);
-      _focusPinBoxes(_loginPinBoxes);
+      if (_loginMode === 'pin') {
+        const cand = users.find(u => u.username === username);
+        console.warn('[PIN] falha login', { username, pinDigitado: pin,
+          usuarioEncontrado: !!cand, pinDoUsuario: cand ? _pin4(cand.pin) : '(n/a)',
+          totalUsuarios: users.length });
+        _clearPinBoxes(_loginPinBoxes);
+        _focusPinBoxes(_loginPinBoxes);
+      }
       loginError.textContent = _loginMode === 'pin' ? '❌ Usuário ou PIN incorretos' : '❌ Usuário ou senha incorretos';
       loginError.classList.remove('hidden');
     }
