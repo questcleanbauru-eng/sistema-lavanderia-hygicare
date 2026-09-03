@@ -420,10 +420,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('hygicare_users', JSON.stringify(users));
       localStorage.setItem('_autoSync', '1');
       showApp();
-      // Primeiro login sem PIN → oferecer cadastro
-      if (_loginMode === 'password' && !_pin4(user.pin)
-          && localStorage.getItem('hygicare_pin_skip_' + user.username) !== '1') {
-        setTimeout(() => _openPinSetup(user.username), 700);
+      // Login por senha sem PIN → oferecer cadastro (a menos que tenha adiado nos últimos 7 dias)
+      if (_loginMode === 'password' && !_pin4(user.pin)) {
+        const skipTs = parseInt(localStorage.getItem('hygicare_pin_skip_' + user.username) || '0', 10);
+        if (!skipTs || (Date.now() - skipTs) > 7 * 864e5) {
+          setTimeout(() => _openPinSetup(user.username), 700);
+        }
       }
     } else {
       _clearPinBoxes(_loginPinBoxes);
@@ -447,7 +449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   document.getElementById('pin-setup-skip')?.addEventListener('click', () => {
     const modal = document.getElementById('modal-pin-setup');
-    if (modal.dataset.username) localStorage.setItem('hygicare_pin_skip_' + modal.dataset.username, '1');
+    if (modal.dataset.username) localStorage.setItem('hygicare_pin_skip_' + modal.dataset.username, String(Date.now()));
     modal.classList.add('hidden');
   });
   document.getElementById('pin-setup-save')?.addEventListener('click', async () => {
@@ -1015,6 +1017,10 @@ ${printScript}
     });
     document.getElementById('drawer-sw-update')?.addEventListener('click', () => {
       document.getElementById('btn-force-sw-update')?.click();
+    });
+    document.getElementById('drawer-pin')?.addEventListener('click', () => {
+      closeDrawer();
+      if (currentUser?.username) _openPinSetup(currentUser.username);
     });
 
     // Estado compartilhado entre funções (sem poluir window)
