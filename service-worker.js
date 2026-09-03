@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v399';
+const CACHE = 'lavanderia-cache-v400';
 const ASSETS = [
   '/',
   '/index.html',
@@ -48,8 +48,11 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          if (res && res.status === 200)
-            caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          if (res && res.status === 200) {
+            // clona ANTES de devolver res ao browser (senão o body já foi lido)
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, copy));
+          }
           return res;
         })
         .catch(() => caches.match(e.request).then(r => r || caches.match('/index.html')))
