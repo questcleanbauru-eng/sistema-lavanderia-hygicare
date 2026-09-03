@@ -30,7 +30,7 @@ const HEADERS = {
   Registros:      ['id','client_id','machine_id','process_id','executed',
                    'canceled','capacity','total','date_start','date_end',
                    'price_kg','created_at','synced_at','maintenance'],
-  Usuarios:       ['id','name','username','password','role','email',
+  Usuarios:       ['id','name','username','password','pin','role','email',
                    'active','sellerName','manager','permissions','sellers_access','created_at'],
   Vazoes:         ['id','machine_id','name','unit','created_at'],
   VazaoRegistros:  ['id','date','client_id','machine_id','vazao_id',

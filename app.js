@@ -295,11 +295,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Alternar entre login por Senha e por PIN
+  let _loginMode = 'password';
+  document.querySelectorAll('#login-tabs [data-login-mode]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      _loginMode = tab.dataset.loginMode;
+      document.querySelectorAll('#login-tabs .login-tab').forEach(t => t.classList.toggle('active', t === tab));
+      const isPin = _loginMode === 'pin';
+      document.getElementById('login-pw-group').style.display  = isPin ? 'none' : '';
+      document.getElementById('login-pin-group').style.display = isPin ? '' : 'none';
+      loginError.classList.add('hidden');
+      document.getElementById(isPin ? 'login-pin' : 'login-password').focus();
+    });
+  });
+  document.getElementById('login-pin')?.addEventListener('input', e => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
+  });
+
   formLogin.addEventListener('submit', async e => {
     e.preventDefault();
     const username = formLogin.username.value.trim();
     const password = formLogin.password.value;
+    const pin      = (document.getElementById('login-pin')?.value || '').trim();
     const btn = document.getElementById('btn-login');
+
+    if (_loginMode === 'pin' && !/^\d{4}$/.test(pin)) {
+      loginError.textContent = '❌ Digite um PIN de 4 dígitos';
+      loginError.classList.remove('hidden');
+      return;
+    }
+    if (_loginMode === 'password' && !password) {
+      loginError.textContent = '❌ Digite a senha';
+      loginError.classList.remove('hidden');
+      return;
+    }
 
     loginError.classList.add('hidden');
     btn.textContent = '⏳ Verificando...';
@@ -314,7 +343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const res = await r.json();
           const data = res.data || [];
           const sheetUsers = data.map(u => ({
-            username: u.username, password: u.password,
+            username: u.username, password: u.password, pin: u.pin,
             role: u.role || 'vendedor', name: u.name, sellerName: u.sellerName || u.name,
             manager: u.manager || '',
             active: String(u.active || '').toUpperCase() !== 'FALSE'
@@ -333,14 +362,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       dbUsers.forEach(du => {
         if (du.username && du.password) {
           const idx = users.findIndex(u => u.username === du.username);
-          const mapped = { username: du.username, password: du.password,
+          const mapped = { username: du.username, password: du.password, pin: du.pin,
             role: du.role || 'vendedor', name: du.name, sellerName: du.name, id: du.id, manager: du.manager || '' };
           if (idx >= 0) users[idx] = mapped; else users.push(mapped);
         }
       });
     } catch(e) { console.warn('IndexedDB users fallback', e); }
 
-    const user = users.find(u => u.username === username && String(u.password) === String(password));
+    // PIN pode vir do Sheets como número (ex.: "0451" → 451); normaliza para 4 dígitos
+    const _pin4 = v => { const s = String(v == null ? '' : v).replace(/\D/g, ''); return /^\d{1,4}$/.test(s) ? s.padStart(4, '0') : ''; };
+    const user = _loginMode === 'pin'
+      ? users.find(u => u.username === username && _pin4(u.pin) && _pin4(u.pin) === pin)
+      : users.find(u => u.username === username && String(u.password) === String(password));
     btn.textContent = 'Entrar';
     btn.disabled = false;
 
@@ -355,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('_autoSync', '1');
       showApp();
     } else {
-      loginError.textContent = '❌ Usuário ou senha incorretos';
+      loginError.textContent = _loginMode === 'pin' ? '❌ Usuário ou PIN incorretos' : '❌ Usuário ou senha incorretos';
       loginError.classList.remove('hidden');
     }
   });
@@ -9869,6 +9902,7 @@ ${inactiveSec}
       document.getElementById('user-email').value    = u.email || '';
       document.getElementById('user-password').value = '';
       document.getElementById('user-password').required = false;
+      document.getElementById('user-pin').value = u.pin || '';
       toggleManagerRow(u.role || 'vendedor');
       await populateManagerSelect(u.manager || '');
       if (u.role === 'consultor' || u.role === 'tecnico') await populateSellersCheckboxes(u.sellers_access || '');
@@ -9920,6 +9954,7 @@ ${inactiveSec}
       const role     = document.getElementById('user-role').value;
       const email    = document.getElementById('user-email').value.trim();
       const password = document.getElementById('user-password').value;
+      const pin      = (document.getElementById('user-pin').value || '').trim();
       const manager  = role === 'vendedor' ? (document.getElementById('user-manager')?.value || '') : '';
       const sellers_access = (role === 'consultor' || role === 'tecnico')
         ? Array.from(document.querySelectorAll('input[name="seller_access"]:checked')).map(el => el.value).join(',')
@@ -9928,25 +9963,30 @@ ${inactiveSec}
         [...SCREEN_PERM_KEYS, ...ACTION_KEYS].filter(k => document.querySelector(`input[name="perm_${k}"]`)?.checked).join(',');
 
       if (!name || !username) return toast('Preencha nome e usuário', 'warning');
+      if (pin && !/^\d{4}$/.test(pin)) return toast('O PIN deve ter exatamente 4 dígitos.', 'warning');
 
       // Verificar duplicata de username
       const allUsers = await dbGetAll_raw('users');
       const dup = allUsers.find(u => u.username === username && Number(u.id) !== Number(editId));
       if (dup) return toast(`Usuário "${username}" já existe`, 'error');
+      if (pin) {
+        const pinDup = allUsers.find(u => String(u.pin || '') === pin && Number(u.id) !== Number(editId));
+        if (pinDup) return toast(`O PIN ${pin} já está em uso por "${pinDup.username}".`, 'error');
+      }
 
       const submitBtnUser = document.getElementById('form-user')?.querySelector('button[type="submit"]');
       setSaving(true, submitBtnUser);
       try {
         if (editId) {
           const existing = allUsers.find(u => Number(u.id) === Number(editId));
-          const updated = { ...existing, name, username, role, email, sellerName: name, manager, permissions, sellers_access };
+          const updated = { ...existing, name, username, role, email, sellerName: name, manager, permissions, sellers_access, pin };
           if (password) updated.password = password;
           await dbPut('users', updated);
           const ok = await patchSheetDB(SHEETS.USERS, updated.id, updated);
           toast(ok ? 'Usuário atualizado e sincronizado!' : 'Usuário atualizado localmente', ok ? 'success' : 'warning');
         } else {
           if (!password) { setSaving(false, submitBtnUser); return toast('Informe uma senha', 'warning'); }
-          const data = { name, username, password, role, email, active: 'TRUE', sellerName: name, manager, permissions, sellers_access, created_at: new Date().toISOString() };
+          const data = { name, username, password, pin, role, email, active: 'TRUE', sellerName: name, manager, permissions, sellers_access, created_at: new Date().toISOString() };
           const id = await dbAdd('users', data);
           data.id = id;
           await postToSheetDB(SHEETS.USERS, data);

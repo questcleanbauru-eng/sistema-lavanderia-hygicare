@@ -113,6 +113,12 @@
               <input id="user-password" name="password" type="password" placeholder="Mínimo 4 caracteres" autocomplete="new-password" />
             </div>
             <div class="form-field">
+              <label>🔢 PIN (4 dígitos)</label>
+              <input id="user-pin" name="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Opcional — login rápido" autocomplete="off" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
               <label>E-mail</label>
               <input id="user-email" name="email" type="email" placeholder="usuario@hygicare.com.br" />
             </div>
@@ -260,10 +266,17 @@
           <img id="login-logo-img" src="/icon-192.png" alt="Hygicare" style="width:88px;height:88px;border-radius:18px;object-fit:contain;display:block;margin:0 auto">
         </div>
         <h1>Hygicare</h1>
-        <p class="login-subtitle">Sistema de Gestao de Lavanderia</p>
+        <p class="login-subtitle">Sistema de Gestão de Lavanderia</p>
+
+        <div class="login-tabs" id="login-tabs">
+          <button type="button" class="login-tab active" data-login-mode="password">🔒 Senha</button>
+          <button type="button" class="login-tab" data-login-mode="pin">🔢 PIN</button>
+        </div>
+
         <form id="form-login">
-          <div class="input-group"><span class="input-icon">👤</span><input type="text" name="username" placeholder="Usuario" required autofocus autocomplete="username" aria-label="Nome de usuário" /></div>
-          <div class="input-group"><span class="input-icon">🔒</span><input type="password" name="password" id="login-password" placeholder="Senha" required /><button type="button" id="btn-toggle-pw" style="background:none;border:none;cursor:pointer;padding:0 0.8rem;font-size:1.1rem;color:#94a3b8" title="Mostrar/ocultar senha">👁️</button></div>
+          <div class="input-group"><span class="input-icon">👤</span><input type="text" name="username" id="login-username" placeholder="Usuário" required autofocus autocomplete="username" aria-label="Nome de usuário" /></div>
+          <div class="input-group" id="login-pw-group"><span class="input-icon">🔒</span><input type="password" name="password" id="login-password" placeholder="Senha" /><button type="button" id="btn-toggle-pw" style="background:none;border:none;cursor:pointer;padding:0 0.8rem;font-size:1.1rem;color:#94a3b8" title="Mostrar/ocultar senha">👁️</button></div>
+          <div class="input-group" id="login-pin-group" style="display:none"><span class="input-icon">🔢</span><input type="text" name="pin" id="login-pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="PIN de 4 dígitos" autocomplete="off" aria-label="PIN" style="letter-spacing:0.6rem;text-align:center;font-weight:700;font-size:1.25rem" /></div>
           <button type="submit" id="btn-login">Entrar</button>
         </form>
         <div id="login-error" class="error-msg hidden"></div>
