@@ -368,6 +368,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.disabled = true;
 
     let users = [...(window.USERS || [])];
+    // PIN pode vir do Sheets como número (ex.: "0451" → 451); normaliza para 4 dígitos
+    const _pin4 = v => { const s = String(v == null ? '' : v).replace(/\D/g, ''); return /^\d{1,4}$/.test(s) ? s.padStart(4, '0') : ''; };
+    let _sheetHasPin = null; // null = não deu pra checar a planilha
 
     if (CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
       try {
@@ -385,6 +388,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const idx = users.findIndex(u => u.username === su.username);
             if (idx >= 0) users[idx] = su; else users.push(su);
           });
+          const _suMe = sheetUsers.find(su => su.username === username);
+          _sheetHasPin = _suMe ? !!_pin4(_suMe.pin) : false;
         }
       } catch (e) { console.warn('Fallback para usuários locais'); }
     }
@@ -402,8 +407,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch(e) { console.warn('IndexedDB users fallback', e); }
 
-    // PIN pode vir do Sheets como número (ex.: "0451" → 451); normaliza para 4 dígitos
-    const _pin4 = v => { const s = String(v == null ? '' : v).replace(/\D/g, ''); return /^\d{1,4}$/.test(s) ? s.padStart(4, '0') : ''; };
     const user = _loginMode === 'pin'
       ? users.find(u => u.username === username && _pin4(u.pin) && _pin4(u.pin) === pin)
       : users.find(u => u.username === username && String(u.password) === String(password));
@@ -420,8 +423,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('hygicare_users', JSON.stringify(users));
       localStorage.setItem('_autoSync', '1');
       showApp();
-      // Login por senha sem PIN → oferecer cadastro (a menos que tenha adiado nos últimos 7 dias)
-      if (_loginMode === 'password' && !_pin4(user.pin)) {
+      // Login por senha e PIN ainda não está na planilha → oferecer cadastro
+      // (a menos que tenha adiado nos últimos 7 dias)
+      const _needsPin = !_pin4(user.pin) || _sheetHasPin === false;
+      if (_loginMode === 'password' && _needsPin) {
         const skipTs = parseInt(localStorage.getItem('hygicare_pin_skip_' + user.username) || '0', 10);
         if (!skipTs || (Date.now() - skipTs) > 7 * 864e5) {
           setTimeout(() => _openPinSetup(user.username), 700);
