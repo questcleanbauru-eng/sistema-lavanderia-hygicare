@@ -467,7 +467,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (dupe) { showErr('Esse PIN já está em uso. Escolha outro.'); return; }
       const updated = { ...me, pin };
       await dbPut('users', updated);
-      await patchSheetDB(SHEETS.USERS, updated.id, updated);
+      // callGAS é function declaration (hoistada) — patchSheetDB é const e pode
+      // ainda não estar inicializada logo após o login
+      await callGAS('update', SHEETS.USERS, updated, updated.id);
       localStorage.removeItem('hygicare_pin_skip_' + username);
       modal.classList.add('hidden');
       toast('✅ PIN cadastrado! Da próxima vez você pode entrar pela aba PIN.', 'success', 6000);
