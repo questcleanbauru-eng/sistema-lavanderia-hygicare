@@ -726,6 +726,11 @@
             <div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">
               <button id="btn-fin-email" class="btn-secondary btn-sm">📧 Enviar relatório por e-mail</button>
             </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;padding:0.75rem 0.85rem;background:#fef2f2;border:1px solid #fecaca;border-radius:10px">
+              <span style="font-size:0.83rem;color:#991b1b;font-weight:600">🗑️ Limpar mês antes de reimportar:</span>
+              <select id="fin-del-month" class="filter-select" style="min-width:150px;font-size:0.85rem"><option value="">Selecione o mês…</option></select>
+              <button id="btn-fin-del-month" class="btn-sm" disabled style="background:#dc2626;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.9rem;font-size:0.83rem;font-weight:700;cursor:pointer;opacity:0.5">Excluir mês</button>
+            </div>
             <div id="fin-drop-zone" style="border:2px dashed var(--border);border-radius:12px;padding:2.5rem 1rem;text-align:center;cursor:pointer;transition:background 0.2s;margin-bottom:1rem">
               <div style="font-size:2.5rem;margin-bottom:0.5rem">📊</div>
               <p style="font-weight:600;margin:0 0 0.25rem">Clique ou arraste o arquivo Excel</p>

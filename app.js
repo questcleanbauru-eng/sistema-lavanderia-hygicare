@@ -10651,10 +10651,63 @@ ${inactiveSec}
       return String(r.cod_financeiro || '') + '|' + (r.month || '') + '|' + String(r.sub_grupo || '').trim().toUpperCase();
     }
 
+    // Popula o seletor "Limpar mês" com os meses presentes no financeiro
+    function _refreshFinDelMonth(rows) {
+      const sel = document.getElementById('fin-del-month');
+      const btn = document.getElementById('btn-fin-del-month');
+      if (!sel) return;
+      const months = [...new Set((rows || []).map(r => _normFinMonth(r.month)).filter(Boolean))].sort().reverse();
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Selecione o mês…</option>' + months.map(m => {
+        const [y, mo] = m.split('-');
+        const lbl = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        return `<option value="${m}"${m === cur ? ' selected' : ''}>${lbl}</option>`;
+      }).join('');
+      const on = !!sel.value && months.includes(sel.value);
+      if (btn) { btn.disabled = !on; btn.style.opacity = on ? '1' : '0.5'; }
+    }
+
+    document.getElementById('fin-del-month')?.addEventListener('change', e => {
+      const btn = document.getElementById('btn-fin-del-month');
+      const on = !!e.target.value;
+      if (btn) { btn.disabled = !on; btn.style.opacity = on ? '1' : '0.5'; }
+    });
+    document.getElementById('btn-fin-del-month')?.addEventListener('click', () => {
+      const ym = document.getElementById('fin-del-month')?.value;
+      if (ym) _deleteFinMonth(ym);
+    });
+
+    async function _deleteFinMonth(ym) {
+      const all = await dbGetAll_raw('financeiro');
+      const victims = all.filter(r => _normFinMonth(r.month) === ym);
+      const [y, mo] = ym.split('-');
+      const label = new Date(+y, +mo - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+      if (!victims.length) return toast('Nenhum registro em ' + label + '.', 'warning');
+      const totalR = victims.reduce((s, r) => s + (parseFloat(r.total_venda) || 0), 0);
+      const fmtBR = v => 'R$ ' + (v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const ok = await confirmAction(
+        `Excluir ${victims.length} registro(s) de ${label} (${fmtBR(totalR)})?\n\nUse isto para reimportar a planilha desse mês do zero.`,
+        '🗑️ Excluir mês', true);
+      if (!ok) return;
+      showOverlay('Excluindo ' + label + '…');
+      let sheetOk = 0;
+      for (const r of victims) {
+        await dbDelete('financeiro', r.id);
+        if (await deleteSheetDB(SHEETS.FINANCEIRO, r.id)) sheetOk++;
+      }
+      hideOverlay();
+      toast(`${victims.length} registro(s) de ${label} removidos` +
+        (sheetOk === victims.length ? ' (local + planilha).' : ` — ${sheetOk}/${victims.length} na planilha.`),
+        sheetOk === victims.length ? 'success' : 'warning', 6000);
+      await refreshFinanceiroFilters();
+      await _updateFinSyncStatus();
+    }
+
     async function _updateFinSyncStatus() {
       const el = document.getElementById('fin-sync-status');
       if (!el) return;
       const rows = await dbGetAll_raw('financeiro');
+      _refreshFinDelMonth(rows);
       if (!rows.length) { el.classList.add('hidden'); return; }
       const total   = rows.length;
       // gas_synced=false → aguardando; undefined/true → sincronizado (registros antigos sem flag = OK)
