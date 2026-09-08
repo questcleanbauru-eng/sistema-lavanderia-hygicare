@@ -983,6 +983,26 @@ function doPost(e) {
       return respond({ deleted: id });
     }
 
+    // ── DELETE POR MÊS (usado no Financeiro para reimportar) ──
+    // Apaga todas as linhas cuja coluna "month" (normalizada p/ YYYY-MM) bate.
+    // Robusto contra ids longos que o Sheets arredonda.
+    if (action === 'deleteByMonth') {
+      const targetMonth = String(data && data.month || '').slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(targetMonth)) return respondError('Campo data.month (YYYY-MM) obrigatório');
+      const all = sheet.getDataRange().getValues();
+      const hdr = all.length ? all[0].map(String) : [];
+      const mIdx = hdr.indexOf('month');
+      if (mIdx < 0) return respondError('Aba ' + sheetName + ' não tem coluna "month"');
+      const toDel = [];
+      for (let i = 1; i < all.length; i++) {
+        let v = all[i][mIdx];
+        if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM');
+        if (String(v).slice(0, 7) === targetMonth) toDel.push(i + 1);
+      }
+      for (let d = toDel.length - 1; d >= 0; d--) sheet.deleteRow(toDel[d]);
+      return respond({ deleted: toDel.length, month: targetMonth });
+    }
+
     // ── UPSERT ────────────────────────────────────────────
     if (action === 'upsert') {
       if (!data) return respondError('Campo "data" obrigatório para upsert');

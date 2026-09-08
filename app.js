@@ -10690,15 +10690,20 @@ ${inactiveSec}
         '🗑️ Excluir mês', true);
       if (!ok) return;
       showOverlay('Excluindo ' + label + '…');
-      let sheetOk = 0;
-      for (const r of victims) {
-        await dbDelete('financeiro', r.id);
-        if (await deleteSheetDB(SHEETS.FINANCEIRO, r.id)) sheetOk++;
+      // 1. local
+      for (const r of victims) await dbDelete('financeiro', r.id);
+      // 2. planilha — apaga pelo mês (não pelo id: ids longos são arredondados no Sheets)
+      let sheetRes = null;
+      if (navigator.onLine) {
+        try { sheetRes = await callGAS('deleteByMonth', SHEETS.FINANCEIRO, { month: ym }); }
+        catch (e) { sheetRes = null; }
       }
       hideOverlay();
-      toast(`${victims.length} registro(s) de ${label} removidos` +
-        (sheetOk === victims.length ? ' (local + planilha).' : ` — ${sheetOk}/${victims.length} na planilha.`),
-        sheetOk === victims.length ? 'success' : 'warning', 6000);
+      const sheetMsg = sheetRes && typeof sheetRes === 'object' && 'deleted' in sheetRes
+        ? ` e ${sheetRes.deleted} na planilha.`
+        : ' (planilha não confirmou — rode Atualizar depois de conferir).';
+      toast(`${victims.length} registro(s) de ${label} removidos localmente${sheetMsg}`,
+        sheetRes ? 'success' : 'warning', 7000);
       await refreshFinanceiroFilters();
       await _updateFinSyncStatus();
     }
