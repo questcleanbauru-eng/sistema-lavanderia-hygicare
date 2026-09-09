@@ -2715,30 +2715,36 @@ ${printScript}
     // Re-renderiza a tela aberta que depende do store recém-sincronizado,
     // para o app "atualizar sozinho" após salvar / editar / excluir.
     const _visible = id => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
+    // não re-renderizar por baixo do usuário enquanto ele digita numa tela
+    const _screenHasFocus = id => {
+      const s = document.getElementById(id), a = document.activeElement;
+      return !!(s && a && s.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+    };
     async function _rerenderVisibleForStore(store) {
       if (_saving) return;                       // não mexer durante um salvamento em curso
       if (document.getElementById('_report-overlay')) return;
+      const ok = id => _visible(id) && !_screenHasFocus(id);
       try {
         switch (store) {
           case 'clients':
-            if (_visible('screen-clients')) { await renderClientsList(); await refreshSellerSelect(); }
+            if (ok('screen-clients')) { await renderClientsList(); await refreshSellerSelect(); }
             break;
           case 'machines':
-            if (_visible('screen-machines')) await renderMachinesList();
+            if (ok('screen-machines')) await renderMachinesList();
             break;
           case 'processes':
-            if (_visible('screen-processes')) await renderProcessesList();
+            if (ok('screen-processes')) await renderProcessesList();
             break;
           case 'records':
-            if (_visible('screen-reports')) await renderRecordsList();
-            if (_visible('screen-charts'))  await renderCharts();
+            if (ok('screen-reports')) await renderRecordsList();
+            if (ok('screen-charts'))  await renderCharts();
             break;
           case 'users':
-            if (_visible('screen-users')) await renderUsersList();
+            if (ok('screen-users')) await renderUsersList();
             break;
           case 'vazoes':
           case 'vazao_records':
-            if (_visible('screen-vazao')) {
+            if (ok('screen-vazao')) {
               await renderVazaoHistory();
               const cid = Number(document.getElementById('vazao-client')?.value || 0);
               if (cid) await renderVazaoLocalHistory(cid);
@@ -2746,16 +2752,16 @@ ${printScript}
             break;
           case 'recipes':
           case 'recipe_products':
-            if (_visible('screen-recipes')) { await renderRecipesList(); await updateRecipeBadge(); }
+            if (ok('screen-recipes')) { await renderRecipesList(); await updateRecipeBadge(); }
             break;
           case 'client_notes':
-            if (_visible('screen-client-notes')) await renderClientNotesList();
+            if (ok('screen-client-notes')) await renderClientNotesList();
             break;
           case 'visits':
-            if (_visible('screen-client-notes')) await renderVisitsList();
+            if (ok('screen-client-notes')) await renderVisitsList();
             break;
           case 'financeiro':
-            if (_visible('screen-financeiro')) await renderFinanceiroView();
+            if (ok('screen-financeiro')) await renderFinanceiroView();
             break;
         }
       } catch (e) { /* re-render best-effort */ }
@@ -5126,6 +5132,23 @@ ${printScript}
     async function renderVisitsList() {
       const list = document.getElementById('visits-list');
       if (!list) return;
+      // preserva o que o usuário já tem na tela (cards abertos, rascunho não salvo, checkboxes)
+      const _openBodies = new Set([...list.querySelectorAll('.visit-body')].filter(b => !b.hidden).map(b => b.id));
+      const _fieldVals = {};
+      list.querySelectorAll('textarea[id^="vobs-"], input[id^="vnext-"]').forEach(el => { _fieldVals[el.id] = el.value; });
+      const _ckVals = {};
+      list.querySelectorAll('[id^="vck-"]').forEach(g => { _ckVals[g.id] = {}; g.querySelectorAll('input[data-vck]').forEach(cb => { _ckVals[g.id][cb.dataset.vck] = cb.checked; }); });
+      const _scrollY = window.scrollY;
+      const _restoreVisitUi = () => {
+        _openBodies.forEach(id => {
+          const b = document.getElementById(id); if (!b) return;
+          b.hidden = false;
+          const arr = b.closest('.visit-card')?.querySelector('.v-arr'); if (arr) arr.textContent = '▼';
+        });
+        Object.entries(_fieldVals).forEach(([id, val]) => { const el = document.getElementById(id); if (el && val != null && el.value !== val) el.value = val; });
+        Object.entries(_ckVals).forEach(([gid, m]) => { const g = document.getElementById(gid); if (g) g.querySelectorAll('input[data-vck]').forEach(cb => { if (cb.dataset.vck in m) cb.checked = m[cb.dataset.vck]; }); });
+        if (Math.abs(window.scrollY - _scrollY) > 4) window.scrollTo(0, _scrollY);
+      };
       await _dedupAllVisits();
       const fClient = document.getElementById('visit-filter-client')?.value || '';
       const fStatus = document.getElementById('visit-filter-status')?.value || '';
@@ -5231,6 +5254,7 @@ ${printScript}
         </div>`;
       }));
       list.innerHTML = rows.join('');
+      _restoreVisitUi();
     }
 
     function _visitDayDataHtml(d) {
