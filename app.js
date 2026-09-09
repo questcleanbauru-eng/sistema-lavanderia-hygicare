@@ -4900,13 +4900,49 @@ ${printScript}
       return visit;
     }
 
-    // Garante que existe uma visita (rascunho) para o cliente naquele dia
+    // Garante que existe UMA visita para o cliente naquele dia (sem duplicar)
+    const _ensureVisitLocks = new Map();
     async function _ensureVisit(clientId, ymd) {
       if (!clientId) return null;
-      ymd = ymd || _todayYMD();
-      const all = await dbGetAll_raw('visits');
-      const found = all.find(v => Number(v.client_id) === Number(clientId) && String(v.date).slice(0,10) === ymd);
-      if (found) return found;
+      ymd = (ymd || _todayYMD()).slice(0, 10);
+      const key = clientId + '|' + ymd;
+      // trava anti-corrida: espera uma criação em andamento p/ o mesmo cliente+dia
+      while (_ensureVisitLocks.get(key)) { try { await _ensureVisitLocks.get(key); } catch (e) {} }
+      let _resolveLock;
+      _ensureVisitLocks.set(key, new Promise(r => { _resolveLock = r; }));
+      try {
+        const all = await dbGetAll_raw('visits');
+        const same = all.filter(v => Number(v.client_id) === Number(clientId) && String(v.date).slice(0, 10) === ymd);
+        if (same.length) {
+          // se por algum motivo já houver mais de uma, remove as extras
+          if (same.length > 1) { for (const extra of _pickVisitDupes(same)) await _removeVisit(extra); }
+          return same[0];
+        }
+        return await _createVisit(clientId, ymd);
+      } finally {
+        _resolveLock(); _ensureVisitLocks.delete(key);
+      }
+    }
+
+    // ranking: mantém a "melhor" e devolve as que devem ser apagadas
+    function _pickVisitDupes(list) {
+      const score = v => (v.status === 'concluido' ? 1000 : 0)
+        + (v.snapshot ? 50 : 0) + ((v.obs || '').length ? 40 : 0)
+        + (_visitPhotos(v).length ? 30 : 0)
+        + ((() => { try { return JSON.parse(v.checklist || '[]').length ? 20 : 0; } catch (e) { return 0; } })())
+        + (String(v.id).startsWith('tmp_') ? 0 : 5);
+      const sorted = [...list].sort((a, b) => score(b) - score(a) ||
+        String(a.created_at || '').localeCompare(String(b.created_at || '')));
+      return sorted.slice(1); // todas menos a melhor
+    }
+    async function _removeVisit(v) {
+      try {
+        await dbDelete('visits', v.id);
+        if (!String(v.id).startsWith('tmp_')) await callGAS('delete', SHEETS.VISITS, null, v.id);
+      } catch (e) { console.warn('remove visita dup', e); }
+    }
+
+    async function _createVisit(clientId, ymd) {
       const now = new Date().toISOString();
       const visit = {
         id: 'tmp_' + Date.now() + Math.floor(Math.random()*1000),
@@ -4983,9 +5019,23 @@ ${printScript}
       return { vz, prod, prodTotal, notes: dayNotes };
     }
 
+    // Remove visitas duplicadas (mesmo cliente + mesma data), mantendo a mais completa
+    async function _dedupAllVisits() {
+      const all = await dbGetAll_raw('visits');
+      const groups = {};
+      for (const v of all) (groups[Number(v.client_id) + '|' + String(v.date).slice(0, 10)] ||= []).push(v);
+      let removed = 0;
+      for (const g of Object.values(groups)) {
+        if (g.length < 2) continue;
+        for (const dup of _pickVisitDupes(g)) { await _removeVisit(dup); removed++; }
+      }
+      return removed;
+    }
+
     async function renderVisitsList() {
       const list = document.getElementById('visits-list');
       if (!list) return;
+      await _dedupAllVisits();
       const fClient = document.getElementById('visit-filter-client')?.value || '';
       const fStatus = document.getElementById('visit-filter-status')?.value || '';
       let [visits, clients] = await Promise.all([dbGetAll_raw('visits'), dbGetAll_raw('clients')]);
