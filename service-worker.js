@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v413';
+const CACHE = 'lavanderia-cache-v414';
 const ASSETS = [
   '/',
   '/index.html',
@@ -41,6 +41,7 @@ self.addEventListener('fetch', e => {
   if (url.includes('script.google.com')) return;
   if (url.includes('googleusercontent.com')) return;
   if (url.includes('googleapis.com')) return;
+  if (url.includes('drive.google.com')) return;
   if (url.includes('/api/')) return;
 
   // Network-first para navegação (HTML) — garante que o app sempre carrega a versão mais nova

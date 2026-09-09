@@ -931,7 +931,11 @@ function doPost(e) {
 
     // ── UPLOAD DE FOTOS DE EQUIPAMENTO PARA O DRIVE ──────
     if (action === 'uploadEquipPhotos') {
-      return respondUploadEquipPhotos(data || []);
+      return respondUploadEquipPhotos(data || [], body.folder);
+    }
+    // ── UPLOAD DE FOTOS DE VISITA ─────────────────────────
+    if (action === 'uploadVisitPhotos') {
+      return respondUploadEquipPhotos(data || [], 'Hygicare Visitas');
     }
 
     // ── DELETAR FOTOS DE EQUIPAMENTO DO DRIVE ─────────────
@@ -1364,11 +1368,12 @@ function respondSendEmailWithPdf(body) {
 // ============================================================
 // data: [{base64, filename}]  (base64 pode incluir o prefixo data:image/...)
 // Retorna: { ok, results: [{ok, fileId, url}] }
-function respondUploadEquipPhotos(photos) {
+function respondUploadEquipPhotos(photos, folderName) {
   if (!Array.isArray(photos) || !photos.length) return respondError('Nenhuma foto enviada.');
+  folderName = folderName || 'Hygicare Equipamentos';
   try {
-    var folders = DriveApp.getFoldersByName('Hygicare Equipamentos');
-    var folder  = folders.hasNext() ? folders.next() : DriveApp.createFolder('Hygicare Equipamentos');
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder  = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
 
     var results = photos.map(function(p) {
       try {

@@ -2676,7 +2676,8 @@ ${printScript}
             n.signed = n.signed === true || n.signed === 'TRUE' || n.signed === 'true' || n.signed === 1 || n.signed === '1';
             const old = localById.get(String(n.id));
             if (old) {
-              if (old.photos && !n.photos)                   n.photos = old.photos;
+              // mantém fotos locais se houver base64 ainda não enviado ao Drive, ou se a planilha veio sem fotos
+              if ((/"data:/.test(old.photos || '') || (old.photos && !n.photos))) n.photos = old.photos;
               if (old.tech_signature_img && !n.tech_signature_img) n.tech_signature_img = old.tech_signature_img;
               if (old.signature_img && !n.signature_img)     n.signature_img = old.signature_img;
             }
@@ -4876,8 +4877,12 @@ ${printScript}
       if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return visit;
       try {
         const isNew = String(visit.id).startsWith('tmp_');
-        // photos ficam só no dispositivo (base64 estoura o limite de célula do Sheets)
-        const _stripPhotos = p => { const q = { ...p }; delete q.gas_synced; delete q.photos; return q; };
+        // photos: manda pro Sheets só quando são URLs (pequeno); base64 pendente fica local
+        const _stripPhotos = p => {
+          const q = { ...p }; delete q.gas_synced;
+          if (/"data:/.test(q.photos || '') || (q.photos || '').length > 40000) q.photos = '';
+          return q;
+        };
         if (isNew) {
           const payload = _stripPhotos(visit); delete payload.id;
           const res = await callGAS('insert', SHEETS.VISITS, payload);
@@ -5120,6 +5125,27 @@ ${printScript}
         .filter(c => c.checked).map(c => c.dataset.vck);
     }
 
+    const _isDataUri = s => typeof s === 'string' && s.startsWith('data:');
+
+    // Envia ao Drive (Hygicare Visitas) as fotos ainda em base64; troca por URL
+    async function _flushVisitPhotos(v) {
+      if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return v;
+      let arr = _visitPhotos(v);
+      const pend = arr.map((s, i) => ({ s, i })).filter(x => _isDataUri(x.s));
+      if (!pend.length) return v;
+      try {
+        const res = await callGAS('uploadVisitPhotos', null,
+          pend.map(x => ({ base64: x.s, filename: 'visita_' + v.id + '_' + x.i + '.jpg' })));
+        const results = res && res.results;
+        if (Array.isArray(results)) {
+          results.forEach((r, k) => { if (r && r.ok && r.url) arr[pend[k].i] = r.url; });
+          v.photos = JSON.stringify(arr);
+          await _saveVisit(v);
+        }
+      } catch (e) { console.warn('upload fotos visita', e); }
+      return v;
+    }
+
     window._visitAddPhotos = async function(id, input) {
       const files = [...(input.files || [])];
       input.value = '';
@@ -5127,7 +5153,7 @@ ${printScript}
       const v = await _getVisit(id); if (!v) return;
       const arr = _visitPhotos(v);
       if (arr.length + files.length > 8) return toast('Máximo de 8 fotos por visita.', 'warning');
-      showOverlay('Processando foto(s)…');
+      showOverlay('Enviando foto(s)…');
       try {
         for (const f of files) {
           if (!f.type.startsWith('image/')) continue;
@@ -5135,6 +5161,7 @@ ${printScript}
         }
         v.photos = JSON.stringify(arr);
         await _saveVisit(v);
+        await _flushVisitPhotos(v);      // sobe pro Drive e troca base64 por URL
       } catch (e) { toast('Erro ao processar foto.', 'error'); }
       finally { hideOverlay(); }
       await renderVisitsList();
@@ -5160,6 +5187,7 @@ ${printScript}
       v.next_visit = document.getElementById('vnext-' + id)?.value || '';
       v.checklist = JSON.stringify(_readVisitChecklist(id));
       await _saveVisit(v);
+      await _flushVisitPhotos(v);
       if (v.next_visit) await _scheduleNextVisitNote(v);
       toast('Rascunho salvo.', 'success');
       await renderVisitsList();
@@ -5179,6 +5207,7 @@ ${printScript}
         v.concluded_at = new Date().toISOString();
         v.concluded_by = currentUser?.name || currentUser?.username || '';
         await _saveVisit(v);
+        await _flushVisitPhotos(v);
         if (v.next_visit) await _scheduleNextVisitNote(v);
         toast('✅ Visita concluída! PDF liberado.', 'success', 5000);
         await renderVisitsList();

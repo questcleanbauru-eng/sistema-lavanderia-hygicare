@@ -251,13 +251,14 @@
       <div class="modal-box" style="max-width:440px;max-height:90vh;overflow-y:auto">
         <h3 style="margin:0 0 0.75rem;font-size:1rem;color:var(--text)">✍️ Assinaturas da visita</h3>
 
-        <div style="border:1px solid var(--border);border-radius:10px;padding:0.7rem;margin-bottom:0.8rem">
-          <div style="font-size:0.82rem;font-weight:700;margin-bottom:0.4rem">👷 Técnico</div>
-          <input type="text" id="vs-tech-name" class="form-input" placeholder="Nome do técnico" style="margin-bottom:0.4rem;border-radius:8px" />
-          <div style="border:1.5px dashed var(--border);border-radius:8px;background:#fff;touch-action:none">
+        <div style="border:1px solid var(--border);border-radius:12px;padding:0.85rem;margin-bottom:0.8rem;background:var(--surface,#fcfcfd)">
+          <div style="font-size:0.85rem;font-weight:800;margin-bottom:0.55rem">👷 Técnico</div>
+          <label class="vs-lbl">Nome do técnico</label>
+          <input type="text" id="vs-tech-name" class="vs-name-input" placeholder="Ex: Bruno Rodrigues" autocomplete="name" />
+          <div style="border:1.5px dashed var(--border);border-radius:10px;background:#fff;touch-action:none;margin-top:0.6rem">
             <canvas id="vs-tech-canvas" width="400" height="120" style="width:100%;height:120px;display:block"></canvas>
           </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.35rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.4rem;gap:0.5rem;flex-wrap:wrap">
             <button class="btn-secondary btn-sm" id="vs-tech-clear">🧹 Limpar</button>
             <label style="font-size:0.76rem;color:var(--muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
               <input type="checkbox" id="vs-tech-remember" checked> Lembrar minha assinatura
@@ -265,15 +266,16 @@
           </div>
         </div>
 
-        <div style="border:1px solid var(--border);border-radius:10px;padding:0.7rem">
-          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;font-weight:700;margin-bottom:0.4rem">
-            <input type="checkbox" id="vs-signed" checked> 🤝 Cliente assinou
+        <div style="border:1px solid var(--border);border-radius:12px;padding:0.85rem;background:var(--surface,#fcfcfd)">
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;font-weight:800;margin-bottom:0.55rem">
+            <input type="checkbox" id="vs-signed" checked style="width:17px;height:17px"> 🤝 Cliente assinou
           </label>
-          <input type="text" id="vs-name" class="form-input" placeholder="Nome de quem assinou" style="margin-bottom:0.4rem;border-radius:8px" />
-          <div style="border:1.5px dashed var(--border);border-radius:8px;background:#fff;touch-action:none">
+          <label class="vs-lbl">Nome de quem assinou pelo cliente</label>
+          <input type="text" id="vs-name" class="vs-name-input" placeholder="Ex: João — encarregado" autocomplete="off" />
+          <div style="border:1.5px dashed var(--border);border-radius:10px;background:#fff;touch-action:none;margin-top:0.6rem">
             <canvas id="vs-canvas" width="400" height="120" style="width:100%;height:120px;display:block"></canvas>
           </div>
-          <button class="btn-secondary btn-sm" id="vs-clear" style="margin-top:0.35rem">🧹 Limpar</button>
+          <button class="btn-secondary btn-sm" id="vs-clear" style="margin-top:0.4rem">🧹 Limpar</button>
         </div>
 
         <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
