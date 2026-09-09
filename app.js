@@ -5066,8 +5066,7 @@ ${printScript}
               ${photosPanel}
               <div class="visit-conclmeta">Concluído por <strong>${escHtml(v.concluded_by||v.tech||'')}</strong> em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'} · ${v.signed ? '✍️ cliente assinou' : 'cliente não assinou'}${v.tech_signature_img ? ' · 👷 técnico assinou' : ''}</div>
               <div class="visit-actions">
-                <button class="btn-primary btn-sm" onclick="window._visitShare('${v.id}')">📲 Compartilhar</button>
-                <button class="btn-secondary btn-sm" onclick="window._visitPdf('${v.id}')">📄 PDF</button>
+                <button class="btn-primary btn-sm" onclick="window._visitPdf('${v.id}')">📄 PDF</button>
                 <button class="btn-secondary btn-sm" onclick="window._visitSign('${v.id}')">✍️ Assinatura</button>
                 ${admBtns}
               </div>
@@ -6683,8 +6682,8 @@ ${opSections}
           return allowed.has(item.perm);
         });
         shortcutsEl.innerHTML = visible.map(item =>
-          `<button class="home-action-btn" data-screen="${item.screen}">
-            <span style="font-size:1.6rem;line-height:1">${item.icon}</span>
+          `<button class="home-action-btn" data-screen="${item.screen}"${item.screen === 'screen-client-notes' ? ' style="position:relative"' : ''}>
+            <span style="font-size:1.6rem;line-height:1;position:relative">${item.icon}${item.screen === 'screen-client-notes' ? '<span id="home-visits-badge" style="display:none;position:absolute;top:-4px;right:-8px;background:#f59e0b;color:#fff;font-size:0.55rem;font-weight:700;border-radius:10px;padding:1px 4px;line-height:1.4;min-width:14px;text-align:center"></span>' : ''}</span>
             <span>${item.label}</span>
           </button>`
         ).join('');
@@ -6693,6 +6692,20 @@ ${opSections}
           if (!item) return;
           btn.addEventListener('click', async () => { show(item.screen); if (item.fn) await item.fn(); });
         });
+
+        // Badge de rascunhos de visita no atalho "Visitas"
+        (async () => {
+          try {
+            let visits = await dbGetAll_raw('visits');
+            if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'diretor') {
+              const allowed = new Set((await window.getAll('clients')).map(c => Number(c.id)));
+              visits = visits.filter(v => allowed.has(Number(v.client_id)));
+            }
+            const n = visits.filter(v => (v.status || 'rascunho') === 'rascunho').length;
+            const b = document.getElementById('home-visits-badge');
+            if (b) { b.textContent = n; b.style.display = n > 0 ? '' : 'none'; }
+          } catch (e) {}
+        })();
 
         // Botão Novidades na home (visível em mobile onde o sino do header fica oculto)
         const novBtn = document.createElement('button');
