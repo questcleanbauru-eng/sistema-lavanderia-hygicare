@@ -8161,10 +8161,11 @@ ${opSections}
         const ids = new Set(clients.filter(c => (c.seller || '').toLowerCase() === sn).map(c => Number(c.id)));
         records = records.filter(r => ids.has(Number(r.client_id)));
       }
-      records = records.filter(r => r.vazao_name !== '__manutencao__');
+      const realRecs  = records.filter(r => r.vazao_name !== '__manutencao__');
+      const maintRecs = records.filter(r => r.vazao_name === '__manutencao__');
 
       const byClient = {};
-      for (const r of records) {
+      for (const r of realRecs) {
         const cid = Number(r.client_id);
         if (!byClient[cid]) byClient[cid] = { count: 0, machs: new Set(), lastDate: '' };
         byClient[cid].count++;
@@ -8172,7 +8173,17 @@ ${opSections}
         if ((r.date || '') > byClient[cid].lastDate) byClient[cid].lastDate = r.date || '';
       }
 
-      const rows = Object.entries(byClient).map(([cid, d]) => {
+      // clientes que só têm marcação de manutenção (sem leitura) — para não ficarem invisíveis
+      const maintOnly = {};
+      for (const r of maintRecs) {
+        const cid = Number(r.client_id);
+        if (byClient[cid]) continue;
+        if (!maintOnly[cid]) maintOnly[cid] = { count: 0, machs: new Set(), lastDate: '', maintOnly: true };
+        if (r.machine_id) maintOnly[cid].machs.add(Number(r.machine_id));
+        if ((r.date || '') > maintOnly[cid].lastDate) maintOnly[cid].lastDate = r.date || '';
+      }
+
+      const rows = Object.entries({ ...byClient, ...maintOnly }).map(([cid, d]) => {
         const c = clients.find(cl => Number(cl.id) === Number(cid));
         return { cid: Number(cid), name: c?.name || `#${cid}`, city: c?.city || '', ...d };
       }).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || '') || a.name.localeCompare(b.name));
@@ -8189,18 +8200,22 @@ ${opSections}
           const dias = isNaN(_t) ? null : Math.floor((now - _t) / 86400000);
           const stale = dias !== null && dias > 45;
           const dateClr = stale ? '#dc2626' : 'var(--muted)';
+          const barClr = r.maintOnly ? '#d97706' : '#0ea5e9';
+          const stat = r.maintOnly
+            ? `<span style="font-size:0.74rem;color:#b45309;font-weight:700;white-space:nowrap">🔧 só manutenção · ⚙️ ${r.machs.size}</span>`
+            : `<span style="font-size:0.74rem;color:var(--muted);white-space:nowrap">💧 ${r.count} · ⚙️ ${r.machs.size}</span>`;
           return `
             <div style="display:flex;gap:0.4rem;align-items:stretch">
               <button type="button" onclick="window._vazaoPickClient(${r.cid})"
-                style="flex:1;text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid #0ea5e9;border-radius:9px;padding:0.55rem 0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.35rem 0.9rem;min-width:0">
+                style="flex:1;text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid ${barClr};border-radius:9px;padding:0.55rem 0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.35rem 0.9rem;min-width:0">
                 <span style="min-width:0;flex:1">
                   <span style="font-weight:700;font-size:0.85rem;color:var(--text)">${escHtml(r.name)}</span>
                   ${r.city ? `<span style="font-size:0.72rem;color:var(--muted)"> · 📍 ${escHtml(r.city)}</span>` : ''}
                 </span>
-                <span style="font-size:0.74rem;color:var(--muted);white-space:nowrap">💧 ${r.count} · ⚙️ ${r.machs.size}</span>
+                ${stat}
                 <span style="font-size:0.74rem;color:${dateClr};font-weight:${stale ? '700' : '400'};white-space:nowrap">📅 ${r.lastDate ? fmtDate(r.lastDate) : '—'}${dias !== null ? ` (${dias}d)` : ''}</span>
               </button>
-              ${canDel ? `<button type="button" title="Excluir todas as vazões deste cliente"
+              ${canDel ? `<button type="button" title="${r.maintOnly ? 'Excluir as marcações de manutenção deste cliente' : 'Excluir todas as vazões deste cliente'}"
                 onclick="window._deleteClientVazoes(${r.cid}, ${r.count})"
                 style="flex-shrink:0;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:9px;padding:0 0.7rem;font-size:0.95rem;cursor:pointer">🗑️</button>` : ''}
             </div>`;
@@ -8216,8 +8231,11 @@ ${opSections}
       const all = await dbGetAll_raw('vazao_records');
       const victims = all.filter(r => Number(r.client_id) === Number(clientId));
       if (!victims.length) return toast('Nenhuma leitura para este cliente.', 'warning');
+      const _real = victims.filter(r => r.vazao_name !== '__manutencao__').length;
+      const _mnt  = victims.length - _real;
+      const _desc = [_real ? `${_real} leitura(s)` : '', _mnt ? `${_mnt} marcação(ões) de manutenção` : ''].filter(Boolean).join(' + ');
       if (!await confirmAction(
-        `Excluir TODAS as ${victims.length} leitura(s) de vazão de\n"${name}"?\n\nEsta ação não pode ser desfeita.`,
+        `Excluir de "${name}":\n${_desc}?\n\nEsta ação não pode ser desfeita.`,
         '🗑️ Excluir vazões', true)) return;
       showOverlay('Excluindo…');
       try {
