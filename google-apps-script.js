@@ -1016,6 +1016,24 @@ function doPost(e) {
       return respond({ deleted: toDel.length, month: targetMonth });
     }
 
+    // ── DELETE POR CAMPO — apaga todas as linhas onde coluna == valor ──
+    // Robusto contra ids longos arredondados pelo Sheets.
+    if (action === 'deleteByField') {
+      const field = String(data && data.field || '');
+      const value = String(data && data.value != null ? data.value : '');
+      if (!field || value === '') return respondError('Campos data.field e data.value obrigatórios');
+      const all = sheet.getDataRange().getValues();
+      const hdr = all.length ? all[0].map(String) : [];
+      const cIdx = hdr.indexOf(field);
+      if (cIdx < 0) return respondError('Aba ' + sheetName + ' não tem coluna "' + field + '"');
+      const toDel = [];
+      for (let i = 1; i < all.length; i++) {
+        if (String(all[i][cIdx]) === value) toDel.push(i + 1);
+      }
+      for (let d = toDel.length - 1; d >= 0; d--) sheet.deleteRow(toDel[d]);
+      return respond({ deleted: toDel.length, field: field, value: value });
+    }
+
     // ── UPSERT ────────────────────────────────────────────
     if (action === 'upsert') {
       if (!data) return respondError('Campo "data" obrigatório para upsert');

@@ -8066,6 +8066,7 @@ ${opSections}
         grid.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;padding:0.5rem">Nenhuma leitura de vazão registrada ainda.</div>';
       } else {
         const now = Date.now();
+        const canDel = currentUser?.role === 'admin';
         grid.innerHTML = rows.map(r => {
           const _ld = (r.lastDate || '').slice(0, 10);
           const _t  = _ld ? new Date(_ld + 'T00:00:00').getTime() : NaN;
@@ -8073,19 +8074,52 @@ ${opSections}
           const stale = dias !== null && dias > 45;
           const dateClr = stale ? '#dc2626' : 'var(--muted)';
           return `
-            <button type="button" onclick="window._vazaoPickClient(${r.cid})"
-              style="text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid #0ea5e9;border-radius:9px;padding:0.55rem 0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.35rem 0.9rem;width:100%">
-              <span style="min-width:0;flex:1">
-                <span style="font-weight:700;font-size:0.85rem;color:var(--text)">${escHtml(r.name)}</span>
-                ${r.city ? `<span style="font-size:0.72rem;color:var(--muted)"> · 📍 ${escHtml(r.city)}</span>` : ''}
-              </span>
-              <span style="font-size:0.74rem;color:var(--muted);white-space:nowrap">💧 ${r.count} · ⚙️ ${r.machs.size}</span>
-              <span style="font-size:0.74rem;color:${dateClr};font-weight:${stale ? '700' : '400'};white-space:nowrap">📅 ${r.lastDate ? fmtDate(r.lastDate) : '—'}${dias !== null ? ` (${dias}d)` : ''}</span>
-            </button>`;
+            <div style="display:flex;gap:0.4rem;align-items:stretch">
+              <button type="button" onclick="window._vazaoPickClient(${r.cid})"
+                style="flex:1;text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid #0ea5e9;border-radius:9px;padding:0.55rem 0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.35rem 0.9rem;min-width:0">
+                <span style="min-width:0;flex:1">
+                  <span style="font-weight:700;font-size:0.85rem;color:var(--text)">${escHtml(r.name)}</span>
+                  ${r.city ? `<span style="font-size:0.72rem;color:var(--muted)"> · 📍 ${escHtml(r.city)}</span>` : ''}
+                </span>
+                <span style="font-size:0.74rem;color:var(--muted);white-space:nowrap">💧 ${r.count} · ⚙️ ${r.machs.size}</span>
+                <span style="font-size:0.74rem;color:${dateClr};font-weight:${stale ? '700' : '400'};white-space:nowrap">📅 ${r.lastDate ? fmtDate(r.lastDate) : '—'}${dias !== null ? ` (${dias}d)` : ''}</span>
+              </button>
+              ${canDel ? `<button type="button" title="Excluir todas as vazões deste cliente"
+                onclick="window._deleteClientVazoes(${r.cid}, ${r.count})"
+                style="flex-shrink:0;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:9px;padding:0 0.7rem;font-size:0.95rem;cursor:pointer">🗑️</button>` : ''}
+            </div>`;
         }).join('');
       }
       wrap.style.display = '';
     }
+
+    window._deleteClientVazoes = async function(clientId, count) {
+      if (currentUser?.role !== 'admin') return toast('Apenas administradores.', 'error');
+      const clients = await dbGetAll_raw('clients');
+      const name = clients.find(c => Number(c.id) === Number(clientId))?.name || ('#' + clientId);
+      const all = await dbGetAll_raw('vazao_records');
+      const victims = all.filter(r => Number(r.client_id) === Number(clientId));
+      if (!victims.length) return toast('Nenhuma leitura para este cliente.', 'warning');
+      if (!await confirmAction(
+        `Excluir TODAS as ${victims.length} leitura(s) de vazão de\n"${name}"?\n\nEsta ação não pode ser desfeita.`,
+        '🗑️ Excluir vazões', true)) return;
+      showOverlay('Excluindo…');
+      try {
+        for (const r of victims) await dbDelete('vazao_records', r.id);
+        let sheetRes = null;
+        if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+          try { sheetRes = await callGAS('deleteByField', SHEETS.VAZAO_RECORDS, { field: 'client_id', value: String(clientId) }); }
+          catch (e) { sheetRes = null; }
+        }
+        hideOverlay();
+        toast(`${victims.length} leitura(s) removidas` +
+          (sheetRes && 'deleted' in sheetRes ? ` (local + ${sheetRes.deleted} na planilha).` : ' localmente (rode Atualizar depois de conferir a planilha).'),
+          sheetRes ? 'success' : 'warning', 6000);
+      } finally { hideOverlay(); }
+      await renderVazaoClientsOverview();
+      const cur = Number(document.getElementById('vazao-client')?.value || 0);
+      if (cur === Number(clientId)) await renderVazaoLocalHistory(cur);
+    };
 
     // =====================================================
     // GERENCIAR VAZÕES POR MÁQUINA (painel inline)
