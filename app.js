@@ -4932,8 +4932,15 @@ ${printScript}
       return visit;
     }
 
-    // Fotos da visita (base64 comprimido) — ficam só no IndexedDB, não vão pra planilha
+    // Fotos da visita
     function _visitPhotos(v) { try { return JSON.parse(v.photos || '[]'); } catch (e) { return []; } }
+    // Normaliza URL do Drive para uma que funciona em <img> (uc?export=view não funciona mais)
+    function _photoSrc(u) {
+      if (typeof u !== 'string') return '';
+      const m = u.match(/drive\.google\.com\/(?:uc\?[^]*?id=|file\/d\/)([-\w]{20,})/);
+      if (m) return 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1600';
+      return u;
+    }
     function _compressPhotoJpeg(file, maxDim = 1100, quality = 0.6) {
       return new Promise((resolve, reject) => {
         const rd = new FileReader();
@@ -5030,7 +5037,7 @@ ${printScript}
         const photos = _visitPhotos(v);
         const photoThumbs = photos.map((src, pi) => `
           <div class="visit-photo">
-            <img src="${src}" onclick="window._visitViewPhoto(this.src)">
+            <img src="${_photoSrc(src)}" loading="lazy" onclick="window._visitViewPhoto(this.src)">
             ${concl ? '' : `<button class="visit-photo-x" onclick="window._visitRemovePhoto('${v.id}',${pi})" title="Remover">✕</button>`}
           </div>`).join('');
         const photosPanel = (photos.length || !concl) ? `
@@ -5275,7 +5282,7 @@ ${printScript}
 
       const photos = _visitPhotos(v);
       const photosHtml = photos.length
-        ? `<div class="photos">${photos.map(src => `<img src="${src}">`).join('')}</div>`
+        ? `<div class="photos">${photos.map(src => `<img src="${_photoSrc(src)}">`).join('')}</div>`
         : '';
 
       const sigCol = (title, name, img, when) => `

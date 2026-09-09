@@ -1385,7 +1385,8 @@ function respondUploadEquipPhotos(photos, folderName) {
         return {
           ok:     true,
           fileId: file.getId(),
-          url:    'https://drive.google.com/uc?export=view&id=' + file.getId()
+          // 'thumbnail' funciona bem em <img> sem login; sz alto ~ full-res
+          url:    'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1600'
         };
       } catch(err) {
         Logger.log('uploadEquipPhotos item error: ' + err.message);
