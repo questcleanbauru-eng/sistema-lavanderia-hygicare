@@ -5449,8 +5449,13 @@ ${printScript}
         : '';
 
       const photos = _visitPhotos(v);
-      const photosHtml = photos.length
-        ? `<div class="photos">${photos.map(src => `<img src="${_photoSrc(src)}">`).join('')}</div>`
+      // fotos vão para a página 2 quando há mais de 2 fotos OU a observação é longa;
+      // caso contrário entram no rodapé da página 1
+      const _obs = v.obs || '';
+      const bigObs = _obs.length > 260 || _obs.split('\n').length > 4;
+      const photosPage2 = photos.length > 2 || bigObs;
+      const photosSection = photos.length
+        ? `<div class="photoblock${photosPage2 ? ' photopage' : ''}"><h2>📷 Registro Fotográfico</h2><div class="photos">${photos.map(src => `<img src="${_photoSrc(src)}">`).join('')}</div></div>`
         : '';
 
       const sigCol = (title, name, img, when) => `
@@ -5480,10 +5485,13 @@ td{padding:5px 8px;border-bottom:1px solid #eef2f7}
 .muted{color:#94a3b8;font-size:10.5px;padding:5px 2px}
 .obs{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:11px 13px;font-size:11px;line-height:1.6}
 ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
+.photoblock{page-break-inside:avoid}
 .photopage{page-break-before:always}
 .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .photos img{width:48%;max-height:340px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;background:#f8fafc}
-.sigs{margin-top:26px;page-break-inside:avoid}
+.photoblock:not(.photopage){margin-top:14px}
+.photoblock:not(.photopage) .photos img{max-height:150px}
+.sigs{margin-top:22px;page-break-inside:avoid}
 .sigs table{border:none}.sigcell{width:50%;padding:0 14px;vertical-align:bottom;border:none}
 .sigline{height:70px;border-bottom:1.5px solid #111;display:flex;align-items:flex-end}
 .sigline img{max-height:66px;max-width:100%}
@@ -5514,9 +5522,10 @@ ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
 <h2>3 · ✅ Checklist Realizado</h2>${ckHtml}
 ${v.obs ? `<h2>4 · 📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
 ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
+${photosPage2 ? '' : photosSection}
 <div class="sigs"><table><tr>${sigRow}</tr></table></div>
 <div class="footer">${getPdfFooterHtml('Relatório de Visita')}</div>
-${photosHtml ? `<div class="photopage"><h2>📷 Registro Fotográfico</h2>${photosHtml}</div>` : ''}
+${photosPage2 ? photosSection : ''}
 </body></html>`;
     }
 
