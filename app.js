@@ -5266,8 +5266,11 @@ ${printScript}
       let h = sub(1, '💧 Vazão');
       if (maint.length) h += `<div class="visit-maint">🔧 Máquina(s) em manutenção: ${maint.map(x => escHtml(x.machine)).join(', ')}</div>`;
       if (pumps.length) {
-        h += `<table><thead><tr><th>Máquina</th><th>Bomba</th><th style="text-align:right">Leitura</th></tr></thead>
-          <tbody>${pumps.map(x => `<tr><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}</td><td style="text-align:right;font-weight:600">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table>`;
+        const pm = [...new Set(pumps.map(x => x.machine))];
+        h += `<div style="font-size:0.82rem">✔️ Aferição de vazão realizada — ${pumps.length} leitura(s) em ${pm.length} máquina(s)${pm.length ? ': ' + pm.map(escHtml).join(', ') : ''}.</div>
+          <details style="margin-top:0.3rem"><summary style="font-size:0.75rem;color:var(--primary,#2563eb);cursor:pointer">ver leituras</summary>
+          <table><thead><tr><th>Máquina</th><th>Bomba</th><th style="text-align:right">Leitura</th></tr></thead>
+          <tbody>${pumps.map(x => `<tr><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}</td><td style="text-align:right;font-weight:600">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table></details>`;
       } else if (!maint.length) {
         h += '<div class="visit-empty">Sem leituras de vazão neste dia.</div>';
       }
