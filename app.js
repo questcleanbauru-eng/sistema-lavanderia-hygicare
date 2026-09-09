@@ -2675,8 +2675,10 @@ ${printScript}
             const n = normalizeItem(item);
             n.signed = n.signed === true || n.signed === 'TRUE' || n.signed === 'true' || n.signed === 1 || n.signed === '1';
             const old = localById.get(String(n.id));
-            if (old) {
-              // mantém fotos locais se houver base64 ainda não enviado ao Drive, ou se a planilha veio sem fotos
+            // só herda campos locais se for REALMENTE a mesma visita (mesmo cliente + data)
+            const sameVisit = old && Number(old.client_id) === Number(n.client_id) &&
+              String(old.date).slice(0,10) === String(n.date).slice(0,10);
+            if (sameVisit) {
               if ((/"data:/.test(old.photos || '') || (old.photos && !n.photos))) n.photos = old.photos;
               if (old.tech_signature_img && !n.tech_signature_img) n.tech_signature_img = old.tech_signature_img;
               if (old.signature_img && !n.signature_img)     n.signature_img = old.signature_img;
@@ -4870,8 +4872,16 @@ ${printScript}
       ];
     }
 
+    // Serializa os saves de visita p/ evitar corrida no nextId do Apps Script
+    let _visitSaveChain = Promise.resolve();
+    function _saveVisit(visit) {
+      const run = () => _saveVisitInner(visit);
+      _visitSaveChain = _visitSaveChain.then(run, run);
+      return _visitSaveChain;
+    }
+
     // Grava a visita: local + GAS (insert na 1ª vez pega o id do GAS)
-    async function _saveVisit(visit) {
+    async function _saveVisitInner(visit) {
       visit.gas_synced = false;
       await dbPut('visits', visit);
       if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return visit;
@@ -4888,9 +4898,17 @@ ${printScript}
           const res = await callGAS('insert', SHEETS.VISITS, payload);
           const newId = res && (res.id || (Array.isArray(res.inserted) && res.inserted[0]));
           if (newId) {
-            await dbDelete('visits', visit.id);
-            visit.id = newId; visit.gas_synced = true;
-            await dbPut('visits', visit);
+            // se o id que o GAS deu já pertence a OUTRA visita local, é colisão — não sobrescreve
+            const clash = (await dbGetAll_raw('visits')).find(x =>
+              String(x.id) === String(newId) && String(x.id) !== String(visit.id) &&
+              (Number(x.client_id) !== Number(visit.client_id) || String(x.date).slice(0,10) !== String(visit.date).slice(0,10)));
+            if (!clash) {
+              await dbDelete('visits', visit.id);
+              visit.id = newId; visit.gas_synced = true;
+              await dbPut('visits', visit);
+            } else {
+              console.warn('colisão de id de visita evitada', newId);
+            }
           }
         } else {
           const ok = await callGAS('update', SHEETS.VISITS, _stripPhotos(visit), visit.id);
@@ -4945,7 +4963,7 @@ ${printScript}
     async function _createVisit(clientId, ymd) {
       const now = new Date().toISOString();
       const visit = {
-        id: 'tmp_' + Date.now() + Math.floor(Math.random()*1000),
+        id: 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10),
         client_id: Number(clientId),
         date: ymd,
         status: 'rascunho',
