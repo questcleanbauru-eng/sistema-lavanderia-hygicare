@@ -5032,9 +5032,13 @@ ${printScript}
         ((r.date_end || r.date_start || r.created_at || '').slice(0,10) === ymd) && !r.maintenance);
       const prod = recs.map(r => ({ machine: mName(r.machine_id), proc: pName(r.process_id), exec: r.executed||0, canc: r.canceled||0, total: parseFloat(r.total)||0 }));
       const prodTotal = prod.reduce((s,p) => s + p.total, 0);
+      // resumo por máquina (o detalhe por processo fica de fora do relatório de visita)
+      const _pm = {};
+      for (const p of prod) { if (!_pm[p.machine]) _pm[p.machine] = { machine: p.machine, kg: 0, lines: 0 }; _pm[p.machine].kg += p.total; _pm[p.machine].lines++; }
+      const prodByMachine = Object.values(_pm).sort((a,b) => b.kg - a.kg);
       const dayNotes = notes.filter(n => Number(n.client_id) === Number(clientId) && (n.date || n.created_at || '').slice(0,10) === ymd)
         .map(n => ({ type: n.type || 'Nota', title: n.title || '', content: n.content || '' }));
-      return { vz, prod, prodTotal, notes: dayNotes };
+      return { vz, prod, prodByMachine, prodTotal, notes: dayNotes };
     }
 
     // Remove visitas duplicadas (mesmo cliente + mesma data), mantendo a mais completa
@@ -5176,9 +5180,13 @@ ${printScript}
       }
 
       h += sub(2, '📋 Fechamento dos dados da Lavanderia');
-      if (d.prod.length) {
-        h += `<table><tbody>${d.prod.map(p => `<tr><td>${escHtml(p.machine)} › ${escHtml(p.proc)}</td><td style="text-align:right;font-weight:600;color:#16a34a">${fmtN(p.total)} kg</td></tr>`).join('')}
-          <tr style="border-top:2px solid var(--border)"><td style="font-weight:800">Total processado</td><td style="text-align:right;font-weight:800;color:#16a34a">${fmtN(d.prodTotal)} kg</td></tr></tbody></table>`;
+      const pbm = d.prodByMachine || (d.prod && d.prod.length ? (() => {
+        const m = {}; d.prod.forEach(p => { (m[p.machine] ||= { machine: p.machine, kg: 0 }).kg += p.total; });
+        return Object.values(m).sort((a, b) => b.kg - a.kg);
+      })() : []);
+      if (pbm.length) {
+        h += `<div style="font-size:0.82rem;font-weight:800;color:#16a34a;margin-bottom:0.25rem">Total processado: ${fmtN(d.prodTotal)} kg</div>
+          <table><tbody>${pbm.map(m => `<tr><td>${escHtml(m.machine)}</td><td style="text-align:right;font-weight:600">${fmtN(m.kg)} kg</td></tr>`).join('')}</tbody></table>`;
       } else {
         h += '<div class="visit-empty">Sem fechamento de produção neste dia.</div>';
       }
@@ -5343,10 +5351,16 @@ ${printScript}
       if (!vzHtml) vzHtml = '<p class="muted">Sem leituras de vazão neste dia.</p>';
 
       let prodHtml = '';
-      if (d.prod.length) {
-        prodHtml = `<table><thead><tr><th>Máquina › Processo</th><th style="text-align:center">Exec.</th><th style="text-align:right">Total</th></tr></thead><tbody>${
-          d.prod.map((p,i) => `<tr style="${i%2?'background:#f8fafc':''}"><td>${escHtml(p.machine)} › ${escHtml(p.proc)}</td><td style="text-align:center">${p.exec||0}</td><td style="text-align:right;font-weight:700;color:#16a34a">${fmtN(p.total)} kg</td></tr>`).join('')
-        }</tbody><tfoot><tr style="background:#f3f4f6;font-weight:800"><td>TOTAL PROCESSADO</td><td></td><td style="text-align:right">${fmtN(d.prodTotal)} kg</td></tr></tfoot></table>`;
+      const pbm = d.prodByMachine || (d.prod && d.prod.length ? (() => {
+        const m = {}; d.prod.forEach(p => { (m[p.machine] ||= { machine: p.machine, kg: 0 }).kg += p.total; });
+        return Object.values(m).sort((a, b) => b.kg - a.kg);
+      })() : []);
+      if (pbm.length) {
+        prodHtml = `<p style="font-size:11px;font-weight:800;color:#16a34a;margin:2px 0 5px">Total processado no dia: ${fmtN(d.prodTotal)} kg</p>
+          <table><thead><tr><th>Máquina</th><th style="text-align:right">Total processado</th></tr></thead><tbody>${
+          pbm.map((m,i) => `<tr style="${i%2?'background:#f8fafc':''}"><td>${escHtml(m.machine)}</td><td style="text-align:right;font-weight:700;color:#16a34a">${fmtN(m.kg)} kg</td></tr>`).join('')
+        }</tbody></table>
+        <p class="muted" style="font-size:9px">O detalhamento por processo consta no relatório de produção do período.</p>`;
       } else prodHtml = '<p class="muted">Não houve fechamento de produção neste dia.</p>';
 
       const ckHtml = ck.length
