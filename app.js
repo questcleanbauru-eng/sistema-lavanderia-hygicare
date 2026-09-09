@@ -4999,10 +4999,12 @@ ${printScript}
             ${_visitDayDataHtml(d)}
             ${concl ? `
               ${ckViewHtml}
-              <div style="font-size:0.78rem;color:var(--muted);margin:0.5rem 0">Concluído por ${escHtml(v.concluded_by||v.tech||'')} em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'}.</div>
+              <div style="font-size:0.78rem;color:var(--muted);margin:0.5rem 0">Concluído por ${escHtml(v.concluded_by||v.tech||'')} em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'}${v.signed ? ' · ✍️ assinado por ' + escHtml(v.signature_name||'cliente') : ' · sem assinatura'}.</div>
               ${v.obs ? `<div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.5rem">${escHtml(v.obs)}</div>` : ''}
               <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
-                <button class="btn-secondary btn-sm" onclick="window._visitPdfStub()">📄 PDF</button>
+                <button class="btn-primary btn-sm" onclick="window._visitShare('${v.id}')">📲 Compartilhar</button>
+                <button class="btn-secondary btn-sm" onclick="window._visitPdf('${v.id}')">📄 PDF</button>
+                <button class="btn-secondary btn-sm" onclick="window._visitSign('${v.id}')">✍️ Assinatura</button>
                 ${currentUser?.role === 'admin' ? `<button class="btn-secondary btn-sm" onclick="window._reopenVisit('${v.id}')">↩️ Reabrir</button>` : ''}
                 ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
               </div>
@@ -5088,6 +5090,8 @@ ${printScript}
         toast('✅ Visita concluída! PDF liberado.', 'success', 5000);
         await renderVisitsList();
       } finally { hideOverlay(); }
+      // Oferece a coleta de assinatura logo após concluir
+      setTimeout(() => window._visitSign(id), 300);
     };
 
     window._reopenVisit = async function(id) {
@@ -5110,7 +5114,186 @@ ${printScript}
       await renderVisitsList();
     };
 
-    window._visitPdfStub = () => toast('PDF da visita chega na próxima atualização.', 'info');
+    // ---- PDF do relatório de visita ----
+    async function _visitReportHtml(v) {
+      const clients = await dbGetAll_raw('clients');
+      const c = clients.find(x => Number(x.id) === Number(v.client_id)) || {};
+      let d = { vz: [], prod: [], prodTotal: 0, notes: [] };
+      if (v.snapshot) { try { d = { ...d, ...JSON.parse(v.snapshot) }; } catch (e) {} }
+      else d = await _visitDayData(v.client_id, String(v.date).slice(0, 10));
+      let ck = []; try { ck = JSON.parse(v.checklist || '[]'); } catch (e) {}
+      const fmtN = n => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+      const C = getPdfColor();
+
+      const pumps = d.vz.filter(x => !x.maint);
+      const maint = d.vz.filter(x => x.maint);
+      let vzHtml = '';
+      if (pumps.length) {
+        vzHtml = `<table><thead><tr><th>Máquina</th><th>Bomba / sensor</th><th style="text-align:right">Leitura</th></tr></thead><tbody>${
+          pumps.map((x,i) => `<tr style="${i%2?'background:#f8fafc':''}"><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}</td><td style="text-align:right;font-weight:700">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')
+        }</tbody></table>`;
+      }
+      if (maint.length) vzHtml += `<p style="color:#b45309;font-size:11px;margin-top:6px">🔧 Máquina(s) em manutenção no dia: ${maint.map(x=>escHtml(x.machine)).join(', ')}</p>`;
+      if (!vzHtml) vzHtml = '<p class="muted">Sem leituras de vazão neste dia.</p>';
+
+      let prodHtml = '';
+      if (d.prod.length) {
+        prodHtml = `<table><thead><tr><th>Máquina › Processo</th><th style="text-align:center">Exec.</th><th style="text-align:right">Total</th></tr></thead><tbody>${
+          d.prod.map((p,i) => `<tr style="${i%2?'background:#f8fafc':''}"><td>${escHtml(p.machine)} › ${escHtml(p.proc)}</td><td style="text-align:center">${p.exec||0}</td><td style="text-align:right;font-weight:700;color:#16a34a">${fmtN(p.total)} kg</td></tr>`).join('')
+        }</tbody><tfoot><tr style="background:#f3f4f6;font-weight:800"><td>TOTAL PROCESSADO</td><td></td><td style="text-align:right">${fmtN(d.prodTotal)} kg</td></tr></tfoot></table>`;
+      } else prodHtml = '<p class="muted">Não houve fechamento de produção neste dia.</p>';
+
+      const ckHtml = ck.length
+        ? `<ul style="margin:4px 0 0;padding-left:18px">${ck.map(i => `<li style="margin:2px 0">${escHtml(i)}</li>`).join('')}</ul>`
+        : '<p class="muted">Nenhum item marcado.</p>';
+
+      const notesHtml = d.notes.length
+        ? d.notes.map(n => `<p style="margin:3px 0"><strong>${escHtml(n.type)}${n.title?' — '+escHtml(n.title):''}:</strong> ${escHtml(n.content)}</p>`).join('')
+        : '';
+
+      const signHtml = v.signed
+        ? `<div style="margin-top:26px;page-break-inside:avoid">
+             <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Assinatura do cliente</div>
+             ${v.signature_img ? `<img src="${v.signature_img}" style="max-height:90px;max-width:280px;display:block;border-bottom:1px solid #111">` : '<div style="border-bottom:1px solid #111;height:60px"></div>'}
+             <div style="font-size:11px;margin-top:4px">${escHtml(v.signature_name || '')}</div>
+             <div style="font-size:9px;color:#9ca3af">Assinado em ${v.concluded_at ? new Date(v.concluded_at).toLocaleDateString('pt-BR') : fmtDate(v.date)}</div>
+           </div>`
+        : '';
+
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:${C};color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{background:${C};color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+h2{font-size:13px;color:${C};border-bottom:2px solid ${C};padding-bottom:3px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:0.5px}
+table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px}th{background:${C};color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
+td{padding:5px 8px;border-bottom:1px solid #f1f5f9}.muted{color:#94a3b8;font-size:11px;padding:4px 0}
+.obs{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.6}
+.footer{margin-top:20px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+
+      return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Visita — ${escHtml(c.name||'')}</title><style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr">
+  <div>${getPdfLogoHtml(true)}</div>
+  <div style="text-align:right">
+    <div style="font-size:15px;font-weight:800;color:#fff">Relatório de Visita</div>
+    <div style="font-size:10px;color:rgba(255,255,255,.8);margin-top:2px">${escHtml(c.name||'Cliente')}${c.city?' · '+escHtml(c.city):''}</div>
+    <div style="font-size:10px;color:rgba(255,255,255,.8)">Data: ${fmtDate(v.date)}${v.tech?' · Técnico: '+escHtml(v.tech):''}</div>
+  </div>
+</div>
+<p style="font-size:11px;color:#475569">Este documento resume o que foi realizado na visita técnica ao cliente na data acima.</p>
+<h2>💧 Leituras de Vazão</h2>${vzHtml}
+<h2>📋 Fechamento de Produção</h2>${prodHtml}
+<h2>✅ Checklist Realizado</h2>${ckHtml}
+${v.obs ? `<h2>📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
+${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
+${signHtml}
+<div class="footer">${getPdfFooterHtml('Relatório de Visita')}</div>
+</body></html>`;
+    }
+
+    window._visitPdf = async function(id) {
+      const v = await _getVisit(id); if (!v) return;
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando…</p></body></html>');
+      const html = await _visitReportHtml(v);
+      w.document.open(); w.document.write(html); w.document.close();
+    };
+
+    window._visitShare = async function(id) {
+      const v = await _getVisit(id); if (!v) return;
+      const clients = await dbGetAll_raw('clients');
+      const c = clients.find(x => Number(x.id) === Number(v.client_id)) || {};
+      let d = { vz: [], prod: [], prodTotal: 0 }; try { d = { ...d, ...JSON.parse(v.snapshot || '{}') }; } catch (e) {}
+      let ck = []; try { ck = JSON.parse(v.checklist || '[]'); } catch (e) {}
+      const linhas = [
+        `*Hygicare — Relatório de Visita*`, ``,
+        `👥 Cliente: ${c.name || ''}`,
+        `📅 Data: ${fmtDate(v.date)}`,
+        v.tech ? `👷 Técnico: ${v.tech}` : '',
+        ``,
+        d.vz.filter(x=>!x.maint).length ? `💧 ${d.vz.filter(x=>!x.maint).length} leitura(s) de vazão` : '',
+        d.prod.length ? `📋 Fechamento: ${Number(d.prodTotal).toLocaleString('pt-BR',{maximumFractionDigits:0})} kg` : '',
+        ck.length ? `✅ Checklist: ${ck.join(', ')}` : '',
+        v.obs ? `📝 ${v.obs}` : '',
+      ].filter(Boolean);
+
+      let link = '';
+      if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        showOverlay('Gerando PDF…');
+        try {
+          const html = await _visitReportHtml(v);
+          const name = 'Visita_' + (c.name||'cliente').replace(/[^a-zA-Z0-9]/g,'_') + '_' + String(v.date).slice(0,10);
+          const res = await callGAS('savePdfHtml', null, { html, name });
+          if (res && (res.viewUrl || res.downloadUrl)) link = res.viewUrl || res.downloadUrl;
+        } catch (e) {}
+        hideOverlay();
+      }
+      if (link) linhas.push('', `📄 PDF: ${link}`);
+      const msg = linhas.join('\n');
+      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+      if (!link) toast('Abra o PDF e use "Salvar PDF" para anexar manualmente.', 'info', 5000);
+    };
+
+    // ---- Assinatura ----
+    let _vsCtx = null, _vsDrawing = false, _vsHasInk = false;
+    function _vsSetup() {
+      const cv = document.getElementById('vs-canvas');
+      if (!cv || cv.dataset.wired) return;
+      cv.dataset.wired = '1';
+      const ctx = cv.getContext('2d');
+      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#111';
+      const pos = e => {
+        const r = cv.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left) * (cv.width / r.width), y: (t.clientY - r.top) * (cv.height / r.height) };
+      };
+      const down = e => { e.preventDefault(); _vsDrawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+      const move = e => { if (!_vsDrawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); _vsHasInk = true; };
+      const up = () => { _vsDrawing = false; };
+      cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      cv.addEventListener('touchstart', down, { passive: false });
+      cv.addEventListener('touchmove', move, { passive: false });
+      cv.addEventListener('touchend', up);
+    }
+    function _vsClear() {
+      const cv = document.getElementById('vs-canvas'); if (!cv) return;
+      cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); _vsHasInk = false;
+    }
+    window._visitSign = async function(id) {
+      const v = await _getVisit(id); if (!v) return;
+      _vsCtx = { id };
+      _vsSetup(); _vsClear();
+      document.getElementById('vs-signed').checked = v.signed !== false;
+      document.getElementById('vs-name').value = v.signature_name || '';
+      document.getElementById('modal-visit-sign').classList.remove('hidden');
+    };
+    document.getElementById('vs-clear')?.addEventListener('click', _vsClear);
+    document.getElementById('vs-cancel')?.addEventListener('click', () =>
+      document.getElementById('modal-visit-sign').classList.add('hidden'));
+    document.getElementById('vs-confirm')?.addEventListener('click', async () => {
+      if (!_vsCtx) return;
+      const v = await _getVisit(_vsCtx.id); if (!v) return;
+      const signed = document.getElementById('vs-signed').checked;
+      const name = document.getElementById('vs-name').value.trim();
+      if (signed) {
+        if (!name) return toast('Informe o nome de quem assinou.', 'warning');
+        if (!_vsHasInk) return toast('Peça a assinatura no quadro, ou desmarque "Cliente assinou".', 'warning');
+        v.signed = true;
+        v.signature_name = name;
+        v.signature_img = document.getElementById('vs-canvas').toDataURL('image/png');
+      } else {
+        v.signed = false;
+        v.signature_name = name;
+        v.signature_img = '';
+      }
+      await _saveVisit(v);
+      document.getElementById('modal-visit-sign').classList.add('hidden');
+      toast(signed ? '✍️ Assinatura salva.' : 'Marcado como sem assinatura.', 'success');
+      await renderVisitsList();
+    });
 
     // Cria/atualiza uma nota de agendamento (mantém o alerta de "agendamento pendente")
     async function _scheduleNextVisitNote(v) {

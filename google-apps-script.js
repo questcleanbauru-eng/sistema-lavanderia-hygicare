@@ -888,6 +888,11 @@ function doPost(e) {
       return respondSavePdfToDrive(body);
     }
 
+    // ── SALVAR PDF A PARTIR DE HTML BRUTO (relatório de visita, etc.) ──
+    if (action === 'savePdfHtml') {
+      return respondSavePdfHtml(body);
+    }
+
     // -- ENVIAR E-MAIL COM PDF JA SALVO NO DRIVE --------
     if (action === 'sendEmailWithPdf') {
       return respondSendEmailWithPdf(body);
@@ -1274,6 +1279,37 @@ function respondSavePdfToDrive(body) {
 
   var downloadUrl = 'https://drive.google.com/uc?export=download&id=' + fileId;
   return respond({ ok: true, fileId: fileId, fileUrl: fileUrl, downloadUrl: downloadUrl, name: safeName + '.pdf' });
+}
+
+// ============================================================
+// SALVAR PDF A PARTIR DE HTML BRUTO
+// Payload: { action:'savePdfHtml', html, name }
+// Retorna: { ok, fileId, fileUrl, downloadUrl, viewUrl, name }
+// ============================================================
+function respondSavePdfHtml(body) {
+  var html = String(body.html || '');
+  if (!html) return respondError('html vazio');
+  var safe = String(body.name || 'documento').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 80) || 'documento';
+
+  var folders = DriveApp.getFoldersByName('Hygicare Relatorios');
+  var folder  = folders.hasNext() ? folders.next() : DriveApp.createFolder('Hygicare Relatorios');
+  try {
+    var tempHtml = DriveApp.createFile(safe + '_tmp.html', html, MimeType.HTML);
+    var pdfBlob  = tempHtml.getAs(MimeType.PDF);
+    pdfBlob.setName(safe + '.pdf');
+    var pdfFile  = folder.createFile(pdfBlob);
+    tempHtml.setTrashed(true);
+    pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var id = pdfFile.getId();
+    return respond({
+      ok: true, fileId: id, name: safe + '.pdf',
+      fileUrl: pdfFile.getUrl(),
+      viewUrl: 'https://drive.google.com/file/d/' + id + '/view',
+      downloadUrl: 'https://drive.google.com/uc?export=download&id=' + id,
+    });
+  } catch (err) {
+    return respondError('Falha ao gerar PDF: ' + err.message);
+  }
 }
 
 // ============================================================
