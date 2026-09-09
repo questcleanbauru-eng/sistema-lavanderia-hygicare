@@ -5191,8 +5191,11 @@ ${printScript}
       _saveVisit(v);   // sincroniza em segundo plano
     };
     window._visitViewPhoto = function(src) {
-      const w = window.open('', '_blank');
-      if (w) w.document.write(`<body style="margin:0;background:#111"><img src="${src}" style="max-width:100%;display:block;margin:auto"></body>`);
+      const o = document.createElement('div');
+      o.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:12px';
+      o.innerHTML = `<img src="${src}" style="max-width:100%;max-height:100%;object-fit:contain">`;
+      o.onclick = () => o.remove();
+      document.body.appendChild(o);
     };
 
     window._saveVisitDraft = async function(id) {
@@ -5357,13 +5360,38 @@ ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
 </body></html>`;
     }
 
+    // Overlay em tela cheia com o relatório num <iframe> — não depende de pop-up (mobile)
+    function _openReportOverlay(html, filename) {
+      document.getElementById('_report-overlay')?.remove();
+      const wrap = document.createElement('div');
+      wrap.id = '_report-overlay';
+      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#fff;display:flex;flex-direction:column';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;gap:8px;padding:8px 10px;background:#0f172a;flex-shrink:0';
+      bar.innerHTML = `<button id="_ro-print" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;font-size:14px;cursor:pointer">🖨️ Salvar / Imprimir PDF</button>
+        <button id="_ro-close" style="padding:10px 18px;border:none;border-radius:8px;background:#374151;color:#fff;font-weight:700;font-size:14px;cursor:pointer">✕ Fechar</button>`;
+      const frame = document.createElement('iframe');
+      frame.style.cssText = 'flex:1;width:100%;border:none;background:#fff';
+      frame.setAttribute('title', filename || 'Relatório');
+      wrap.appendChild(bar); wrap.appendChild(frame);
+      document.body.appendChild(wrap);
+      frame.srcdoc = html.replace(/<div class="abar">[\s\S]*?<\/div>/, ''); // remove a barra interna
+      wrap.querySelector('#_ro-close').onclick = () => wrap.remove();
+      wrap.querySelector('#_ro-print').onclick = () => {
+        try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+        catch (e) { window.print(); }
+      };
+    }
+
     window._visitPdf = async function(id) {
-      const v = await _getVisit(id); if (!v) return;
+      // abre a janela ANTES do await pra não perder o gesto do usuário (mobile bloqueia)
       const w = window.open('', '_blank');
-      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
-      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando…</p></body></html>');
+      if (w) w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando…</p></body></html>');
+      const v = await _getVisit(id);
+      if (!v) { if (w) w.close(); return; }
       const html = await _visitReportHtml(v);
-      w.document.open(); w.document.write(html); w.document.close();
+      if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); }
+      else _openReportOverlay(html, 'Relatorio_Visita');   // pop-up bloqueado → mostra na própria tela
     };
 
     window._visitShare = async function(id) {
@@ -5397,8 +5425,17 @@ ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
       }
       if (link) linhas.push('', `📄 PDF: ${link}`);
       const msg = linhas.join('\n');
-      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
-      if (!link) toast('Abra o PDF e use "Salvar PDF" para anexar manualmente.', 'info', 5000);
+      if (navigator.share) {
+        try { await navigator.share({ title: 'Relatório de Visita', text: msg }); return; } catch (e) {}
+      }
+      const w = window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+      if (!w) {
+        try { await navigator.clipboard.writeText(msg); toast('Mensagem copiada — cole no WhatsApp.', 'success', 5000); }
+        catch (e) { toast('Não foi possível abrir o WhatsApp.', 'warning'); }
+      }
+      if (!link) {
+        try { _openReportOverlay(await _visitReportHtml(v), 'Relatorio_Visita'); } catch (e) {}
+      }
     };
 
     // ---- Assinaturas (técnico + cliente) ----
