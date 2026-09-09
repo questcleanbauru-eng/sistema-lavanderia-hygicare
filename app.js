@@ -4941,7 +4941,7 @@ ${printScript}
       if (m) return 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1600';
       return u;
     }
-    function _compressPhotoJpeg(file, maxDim = 1100, quality = 0.6) {
+    function _compressPhotoJpeg(file, maxDim = 1000, quality = 0.58) {
       return new Promise((resolve, reject) => {
         const rd = new FileReader();
         rd.onerror = reject;
@@ -5134,54 +5134,61 @@ ${printScript}
 
     const _isDataUri = s => typeof s === 'string' && s.startsWith('data:');
 
-    // Envia ao Drive (Hygicare Visitas) as fotos ainda em base64; troca por URL
+    // Sobe pro Drive (em segundo plano) as fotos ainda em base64; troca por URL
+    let _flushingPhotos = new Set();
     async function _flushVisitPhotos(v) {
       if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return v;
-      let arr = _visitPhotos(v);
+      if (_flushingPhotos.has(String(v.id))) return v;
+      const cur = await _getVisit(v.id); if (!cur) return v;
+      let arr = _visitPhotos(cur);
       const pend = arr.map((s, i) => ({ s, i })).filter(x => _isDataUri(x.s));
-      if (!pend.length) return v;
+      if (!pend.length) return cur;
+      _flushingPhotos.add(String(v.id));
       try {
         const res = await callGAS('uploadVisitPhotos', null,
           pend.map(x => ({ base64: x.s, filename: 'visita_' + v.id + '_' + x.i + '.jpg' })));
         const results = res && res.results;
         if (Array.isArray(results)) {
-          results.forEach((r, k) => { if (r && r.ok && r.url) arr[pend[k].i] = r.url; });
-          v.photos = JSON.stringify(arr);
-          await _saveVisit(v);
+          const latest = await _getVisit(v.id) || cur;
+          const lArr = _visitPhotos(latest);
+          results.forEach((r, k) => { const i = pend[k].i; if (r && r.ok && r.url && lArr[i] === pend[k].s) lArr[i] = r.url; });
+          latest.photos = JSON.stringify(lArr);
+          await _saveVisit(latest);
+          if (!document.getElementById('screen-client-notes')?.classList.contains('hidden')) renderVisitsList();
         }
       } catch (e) { console.warn('upload fotos visita', e); }
+      finally { _flushingPhotos.delete(String(v.id)); }
       return v;
     }
 
     window._visitAddPhotos = async function(id, input) {
-      const files = [...(input.files || [])];
+      const files = [...(input.files || [])].filter(f => f.type.startsWith('image/'));
       input.value = '';
       if (!files.length) return;
       const v = await _getVisit(id); if (!v) return;
       const arr = _visitPhotos(v);
       if (arr.length + files.length > 8) return toast('Máximo de 8 fotos por visita.', 'warning');
-      showOverlay('Enviando foto(s)…');
+      showOverlay('Processando foto(s)…');
       try {
-        for (const f of files) {
-          if (!f.type.startsWith('image/')) continue;
-          arr.push(await _compressPhotoJpeg(f));
-        }
+        const compressed = await Promise.all(files.map(f => _compressPhotoJpeg(f).catch(() => null)));
+        compressed.forEach(c => { if (c) arr.push(c); });
         v.photos = JSON.stringify(arr);
-        await _saveVisit(v);
-        await _flushVisitPhotos(v);      // sobe pro Drive e troca base64 por URL
+        await dbPut('visits', v);          // grava local na hora, sem esperar rede
       } catch (e) { toast('Erro ao processar foto.', 'error'); }
       finally { hideOverlay(); }
       await renderVisitsList();
       document.getElementById('vbody-' + id)?.removeAttribute('hidden');
+      _flushVisitPhotos(v);               // sobe pro Drive em segundo plano
     };
     window._visitRemovePhoto = async function(id, idx) {
       const v = await _getVisit(id); if (!v) return;
       const arr = _visitPhotos(v);
       arr.splice(idx, 1);
       v.photos = JSON.stringify(arr);
-      await _saveVisit(v);
+      await dbPut('visits', v);
       await renderVisitsList();
       document.getElementById('vbody-' + id)?.removeAttribute('hidden');
+      _saveVisit(v);   // sincroniza em segundo plano
     };
     window._visitViewPhoto = function(src) {
       const w = window.open('', '_blank');
