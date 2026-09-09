@@ -2224,6 +2224,7 @@ ${printScript}
       recipes:         { sheet: SHEETS.RECIPES,         store: 'recipes',         label: 'receitas'         },
       recipe_products: { sheet: SHEETS.RECIPE_PRODUCTS, store: 'recipe_products', label: 'produtos receita' },
       client_notes:    { sheet: SHEETS.CLIENT_NOTES,    store: 'client_notes',    label: 'histórico clientes' },
+      visits:          { sheet: SHEETS.VISITS,          store: 'visits',          label: 'visitas'            },
       financeiro:      { sheet: SHEETS.FINANCEIRO,      store: 'financeiro',      label: 'financeiro'         },
       // equipamentos NÃO entra no SHEET_MAP: a planilha recebe apenas resumo/backup,
       // o IDB é a fonte de verdade (guarda array de items + fotos base64).
@@ -2253,7 +2254,7 @@ ${printScript}
         for (const r of results) {
           if (r.status !== 'fulfilled') continue;
           const { store, items } = r.value;
-          if (store === 'users' || store === 'client_notes' || items.length > 0) {
+          if (store === 'users' || store === 'client_notes' || store === 'visits' || items.length > 0) {
             await saveToStore(store, items);
           }
         }
@@ -2608,6 +2609,24 @@ ${printScript}
           if (local?.price_kg && !n.price_kg) n.price_kg = local.price_kg;
           try { await dbPut('records', n); saved++; }
           catch (err) { console.warn('⚠️ Erro ao salvar record:', err, n); }
+        }
+        return saved;
+      }
+
+      // Para visits: preservar rascunhos locais ainda não enviados ao GAS
+      if (storeName === 'visits') {
+        const existing = await _originalGetAll('visits');
+        const gasIds = new Set(items.map(i => String(i.id)));
+        await clearStore('visits');
+        let saved = 0;
+        for (const item of items) {
+          try { await dbPut('visits', normalizeItem(item)); saved++; }
+          catch (err) { console.warn('⚠️ Erro ao salvar visit:', err, item); }
+        }
+        for (const local of existing) {
+          if (!gasIds.has(String(local.id)) && local.gas_synced === false) {
+            try { await dbPut('visits', local); saved++; } catch (_) {}
+          }
         }
         return saved;
       }
@@ -3914,6 +3933,8 @@ ${printScript}
         } else {
           await renderRecordsList();
           toast(`✅ ${synced} registro(s) enviados com sucesso!`, 'success', 5000);
+          // Abre (se necessário) o relatório de visita deste cliente/dia
+          try { await _ensureVisit(clientId, String(dateEnd || dateStart).slice(0, 10)); } catch (e) {}
           show('screen-home');
         }
 
@@ -4740,8 +4761,332 @@ ${printScript}
           .forEach(c => { sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`; });
         if (cur) sel.value = cur;
       }
+      // filtro de cliente da lista de Visitas
+      const vSel = document.getElementById('visit-filter-client');
+      if (vSel) {
+        const cur = vSel.value;
+        vSel.innerHTML = '<option value="">👤 Todos os clientes</option>' +
+          [...clients].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+            .map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+        if (cur) vSel.value = cur;
+        _makeSearchable(vSel);
+      }
+      // pull visitas em background
+      if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+        (async () => {
+          try {
+            const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.VISITS}`);
+            if (r.ok) { await saveToStore('visits', (await r.json()).data || []); await renderVisitsList(); }
+          } catch (e) {}
+        })();
+      }
+      await renderVisitsList();
       await renderClientNotesList();
     }
+
+    // =====================================================
+    // VISITAS
+    // =====================================================
+    function _todayYMD() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function _visitIsConcluded(v) { return v && v.status === 'concluido'; }
+    function _visitDefaultChecklist() {
+      try {
+        const raw = localStorage.getItem('hygicare_visit_checklist');
+        const arr = raw ? JSON.parse(raw) : null;
+        if (Array.isArray(arr) && arr.length) return arr;
+      } catch (e) {}
+      return [
+        'Conferência de dosagem',
+        'Verificação de bombas / vazão',
+        'Inspeção das máquinas',
+        'Orientação ao operador',
+        'Ajustes de programa',
+        'Coleta de amostras',
+      ];
+    }
+
+    // Grava a visita: local + GAS (insert na 1ª vez pega o id do GAS)
+    async function _saveVisit(visit) {
+      visit.gas_synced = false;
+      await dbPut('visits', visit);
+      if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return visit;
+      try {
+        const isNew = String(visit.id).startsWith('tmp_');
+        if (isNew) {
+          const payload = { ...visit }; delete payload.id; delete payload.gas_synced;
+          const res = await callGAS('insert', SHEETS.VISITS, payload);
+          const newId = res && (res.id || (Array.isArray(res.inserted) && res.inserted[0]));
+          if (newId) {
+            await dbDelete('visits', visit.id);
+            visit.id = newId; visit.gas_synced = true;
+            await dbPut('visits', visit);
+          }
+        } else {
+          const payload = { ...visit }; delete payload.gas_synced;
+          const ok = await callGAS('update', SHEETS.VISITS, payload, visit.id);
+          if (ok) { visit.gas_synced = true; await dbPut('visits', visit); }
+        }
+      } catch (e) { console.warn('visita sync falhou', e); }
+      return visit;
+    }
+
+    // Garante que existe uma visita (rascunho) para o cliente naquele dia
+    async function _ensureVisit(clientId, ymd) {
+      if (!clientId) return null;
+      ymd = ymd || _todayYMD();
+      const all = await dbGetAll_raw('visits');
+      const found = all.find(v => Number(v.client_id) === Number(clientId) && String(v.date).slice(0,10) === ymd);
+      if (found) return found;
+      const now = new Date().toISOString();
+      const visit = {
+        id: 'tmp_' + Date.now() + Math.floor(Math.random()*1000),
+        client_id: Number(clientId),
+        date: ymd,
+        status: 'rascunho',
+        tech: currentUser?.name || currentUser?.username || '',
+        checklist: '[]',
+        obs: '',
+        next_visit: '',
+        snapshot: '',
+        signed: false,
+        signature_name: '',
+        signature_img: '',
+        concluded_at: '', concluded_by: '',
+        created_at: now,
+        created_by: currentUser?.name || currentUser?.username || '',
+      };
+      await _saveVisit(visit);
+      return visit;
+    }
+
+    // Resumo do que foi feito no cliente naquele dia (para card e conclusão)
+    async function _visitDayData(clientId, ymd, pre) {
+      const [vzRecs, records, machines, processes, notes] = pre || await Promise.all([
+        dbGetAll_raw('vazao_records'), dbGetAll_raw('records'),
+        dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('client_notes'),
+      ]);
+      const mName = id => machines.find(m => Number(m.id) === Number(id))?.name || ('Máq. ' + id);
+      const pName = id => processes.find(p => Number(p.id) === Number(id))?.name || ('Proc. ' + id);
+      const vz = vzRecs.filter(r => Number(r.client_id) === Number(clientId) && String(r.date).slice(0,10) === ymd)
+        .map(r => ({ machine: mName(r.machine_id), bomba: r.vazao_name || '', value: r.value, unit: r.vazao_unit || '', maint: r.vazao_name === '__manutencao__' }));
+      const recs = records.filter(r => Number(r.client_id) === Number(clientId) &&
+        ((r.date_end || r.date_start || r.created_at || '').slice(0,10) === ymd) && !r.maintenance);
+      const prod = recs.map(r => ({ machine: mName(r.machine_id), proc: pName(r.process_id), exec: r.executed||0, canc: r.canceled||0, total: parseFloat(r.total)||0 }));
+      const prodTotal = prod.reduce((s,p) => s + p.total, 0);
+      const dayNotes = notes.filter(n => Number(n.client_id) === Number(clientId) && (n.date || n.created_at || '').slice(0,10) === ymd)
+        .map(n => ({ type: n.type || 'Nota', title: n.title || '', content: n.content || '' }));
+      return { vz, prod, prodTotal, notes: dayNotes };
+    }
+
+    async function renderVisitsList() {
+      const list = document.getElementById('visits-list');
+      if (!list) return;
+      const fClient = document.getElementById('visit-filter-client')?.value || '';
+      const fStatus = document.getElementById('visit-filter-status')?.value || '';
+      let [visits, clients] = await Promise.all([dbGetAll_raw('visits'), dbGetAll_raw('clients')]);
+
+      // filtro por papel
+      if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'diretor') {
+        const allowed = new Set((await window.getAll('clients')).map(c => Number(c.id)));
+        visits = visits.filter(v => allowed.has(Number(v.client_id)));
+      }
+      if (fClient) visits = visits.filter(v => Number(v.client_id) === Number(fClient));
+      if (fStatus) visits = visits.filter(v => (v.status || 'rascunho') === fStatus);
+      visits.sort((a,b) => String(b.date).localeCompare(String(a.date)) ||
+        String(b.created_at||'').localeCompare(String(a.created_at||'')));
+
+      const badge = document.getElementById('visits-count-badge');
+      if (badge) badge.textContent = visits.length;
+
+      if (!visits.length) {
+        list.innerHTML = `<div class="empty-state">📋 Nenhuma visita.<p>Uma visita é aberta ao registrar vazão ou fechamento, ou clique em <strong>+ Nova visita hoje</strong>.</p></div>`;
+        return;
+      }
+
+      const cName = id => clients.find(c => Number(c.id) === Number(id))?.name || ('Cliente #' + id);
+      const pre = await Promise.all([
+        dbGetAll_raw('vazao_records'), dbGetAll_raw('records'),
+        dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('client_notes'),
+      ]);
+      const rows = await Promise.all(visits.map(async v => {
+        const concl = _visitIsConcluded(v);
+        let d = await _visitDayData(v.client_id, String(v.date).slice(0,10), pre);
+        if (concl && v.snapshot) { try { d = { prodTotal: 0, vz: [], prod: [], notes: [], ...JSON.parse(v.snapshot) }; } catch (e) {} }
+        const chips = [
+          d.vz.length ? `💧 ${d.vz.filter(x=>!x.maint).length} leitura(s)` : '',
+          d.prod.length ? `📋 ${(d.prodTotal).toLocaleString('pt-BR',{maximumFractionDigits:0})} kg` : '',
+          d.notes.length ? `📝 ${d.notes.length} nota(s)` : '',
+        ].filter(Boolean).join(' · ') || 'sem registros ainda';
+        const bid = 'vbody-' + v.id;
+        return `
+        <div class="list-item" style="display:block;padding:0.6rem 0.9rem;margin-bottom:0.5rem;border-left:4px solid ${concl ? '#16a34a' : '#f59e0b'}">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;cursor:pointer" onclick="const b=document.getElementById('${bid}');b.hidden=!b.hidden;this.querySelector('.v-arr').textContent=b.hidden?'▶':'▼'">
+            <div style="min-width:0">
+              <strong style="font-size:0.86rem">${escHtml(cName(v.client_id))}</strong>
+              <span style="font-size:0.76rem;color:var(--muted)"> · ${fmtDate(v.date)}</span>
+              <div style="font-size:0.74rem;color:var(--muted);margin-top:2px">${chips}${v.tech ? ' · 👷 ' + escHtml(v.tech) : ''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0">
+              <span style="font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:999px;background:${concl?'#dcfce7':'#fef3c7'};color:${concl?'#166534':'#92400e'}">${concl?'🟢 Concluído':'🟡 Rascunho'}</span>
+              <span class="v-arr" style="font-size:0.7rem;color:#94a3b8">▶</span>
+            </div>
+          </div>
+          <div id="${bid}" hidden style="margin-top:0.7rem;border-top:1px solid var(--border);padding-top:0.7rem">
+            ${_visitDayDataHtml(d)}
+            ${concl ? `
+              <div style="font-size:0.78rem;color:var(--muted);margin:0.5rem 0">Concluído por ${escHtml(v.concluded_by||v.tech||'')} em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'}.</div>
+              ${v.obs ? `<div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.5rem">${escHtml(v.obs)}</div>` : ''}
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                <button class="btn-secondary btn-sm" onclick="window._visitPdfStub()">📄 PDF</button>
+                ${currentUser?.role === 'admin' ? `<button class="btn-secondary btn-sm" onclick="window._reopenVisit('${v.id}')">↩️ Reabrir</button>` : ''}
+                ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
+              </div>
+            ` : `
+              <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">📝 Observações / serviços realizados</label>
+              <textarea id="vobs-${v.id}" class="form-input" rows="3" style="resize:vertical;margin-bottom:0.5rem" placeholder="Ex: troca da bomba 2, ajuste de dosagem do detergente, treinamento do operador…">${escHtml(v.obs||'')}</textarea>
+              <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">📅 Próxima visita (opcional)</label>
+              <input type="date" id="vnext-${v.id}" class="form-input" value="${v.next_visit||''}" style="margin-bottom:0.6rem;width:auto">
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                <button class="btn-secondary btn-sm" onclick="window._saveVisitDraft('${v.id}')">💾 Salvar rascunho</button>
+                <button class="btn-primary btn-sm" onclick="window._concludeVisit('${v.id}')">✅ Concluir</button>
+                ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
+              </div>
+            `}
+          </div>
+        </div>`;
+      }));
+      list.innerHTML = rows.join('');
+    }
+
+    function _visitDayDataHtml(d) {
+      const fmtN = n => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+      let h = '';
+      const pumps = d.vz.filter(x => !x.maint);
+      const maint = d.vz.filter(x => x.maint);
+      if (pumps.length) {
+        h += `<div style="font-size:0.78rem;font-weight:700;margin-bottom:0.2rem">💧 Leituras de vazão</div>
+          <table style="width:100%;border-collapse:collapse;font-size:0.76rem;margin-bottom:0.5rem">
+          <thead><tr style="color:var(--muted)"><th style="text-align:left;padding:2px 4px">Máquina</th><th style="text-align:left;padding:2px 4px">Bomba</th><th style="text-align:right;padding:2px 4px">Leitura</th></tr></thead>
+          <tbody>${pumps.map(x => `<tr><td style="padding:2px 4px">${escHtml(x.machine)}</td><td style="padding:2px 4px">${escHtml(x.bomba)}</td><td style="text-align:right;padding:2px 4px">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table>`;
+      }
+      if (maint.length) h += `<div style="font-size:0.76rem;color:#b45309;margin-bottom:0.5rem">🔧 Em manutenção: ${maint.map(x=>escHtml(x.machine)).join(', ')}</div>`;
+      if (d.prod.length) {
+        h += `<div style="font-size:0.78rem;font-weight:700;margin-bottom:0.2rem">📋 Fechamento de produção — ${fmtN(d.prodTotal)} kg</div>
+          <table style="width:100%;border-collapse:collapse;font-size:0.76rem;margin-bottom:0.5rem">
+          <tbody>${d.prod.map(p => `<tr><td style="padding:2px 4px">${escHtml(p.machine)} › ${escHtml(p.proc)}</td><td style="text-align:right;padding:2px 4px">${fmtN(p.total)} kg</td></tr>`).join('')}</tbody></table>`;
+      }
+      if (d.notes.length) {
+        h += `<div style="font-size:0.78rem;font-weight:700;margin-bottom:0.2rem">📝 Notas do dia</div>`;
+        h += d.notes.map(n => `<div style="font-size:0.76rem;margin-bottom:0.2rem"><strong>${escHtml(n.type)}${n.title?' — '+escHtml(n.title):''}:</strong> ${escHtml(n.content)}</div>`).join('');
+      }
+      if (!h) h = '<div style="font-size:0.78rem;color:var(--muted)">Nenhum registro de vazão/fechamento/nota neste dia ainda.</div>';
+      return h;
+    }
+
+    async function _getVisit(id) {
+      return (await dbGetAll_raw('visits')).find(v => String(v.id) === String(id));
+    }
+
+    window._saveVisitDraft = async function(id) {
+      const v = await _getVisit(id); if (!v) return;
+      v.obs = document.getElementById('vobs-' + id)?.value || '';
+      v.next_visit = document.getElementById('vnext-' + id)?.value || '';
+      await _saveVisit(v);
+      if (v.next_visit) await _scheduleNextVisitNote(v);
+      toast('Rascunho salvo.', 'success');
+      await renderVisitsList();
+    };
+
+    window._concludeVisit = async function(id) {
+      const v = await _getVisit(id); if (!v) return;
+      v.obs = document.getElementById('vobs-' + id)?.value || v.obs || '';
+      v.next_visit = document.getElementById('vnext-' + id)?.value || v.next_visit || '';
+      if (!await confirmAction('Concluir o relatório desta visita?\n\nDepois de concluído, o conteúdo fica congelado e o PDF é liberado.', '✅ Concluir')) return;
+      showOverlay('Concluindo…');
+      try {
+        const d = await _visitDayData(v.client_id, String(v.date).slice(0,10));
+        v.snapshot = JSON.stringify(d);
+        v.status = 'concluido';
+        v.concluded_at = new Date().toISOString();
+        v.concluded_by = currentUser?.name || currentUser?.username || '';
+        await _saveVisit(v);
+        if (v.next_visit) await _scheduleNextVisitNote(v);
+        toast('✅ Visita concluída! PDF liberado.', 'success', 5000);
+        await renderVisitsList();
+      } finally { hideOverlay(); }
+    };
+
+    window._reopenVisit = async function(id) {
+      if (currentUser?.role !== 'admin') return;
+      const v = await _getVisit(id); if (!v) return;
+      if (!await confirmAction('Reabrir esta visita para edição?', '↩️ Reabrir')) return;
+      v.status = 'rascunho'; v.concluded_at = ''; v.concluded_by = '';
+      await _saveVisit(v);
+      toast('Visita reaberta.', 'info');
+      await renderVisitsList();
+    };
+
+    window._deleteVisit = async function(id) {
+      if (currentUser?.role !== 'admin') return toast('Apenas admin.', 'error');
+      const v = await _getVisit(id); if (!v) return;
+      if (!await confirmAction('Excluir esta visita?\n\nOs registros de vazão/produção não são apagados, só o relatório de visita.', '🗑️ Excluir', true)) return;
+      await dbDelete('visits', v.id);
+      if (!String(v.id).startsWith('tmp_')) { try { await callGAS('delete', SHEETS.VISITS, null, v.id); } catch (e) {} }
+      toast('Visita excluída.', 'success');
+      await renderVisitsList();
+    };
+
+    window._visitPdfStub = () => toast('PDF da visita chega na próxima atualização.', 'info');
+
+    // Cria/atualiza uma nota de agendamento (mantém o alerta de "agendamento pendente")
+    async function _scheduleNextVisitNote(v) {
+      if (!v.next_visit) return;
+      try {
+        const notes = await dbGetAll_raw('client_notes');
+        const exists = notes.find(n => Number(n.client_id) === Number(v.client_id) &&
+          (n.scheduled_date || '') === v.next_visit);
+        if (exists) return;
+        const now = new Date().toISOString();
+        const note = {
+          id: genId(), client_id: Number(v.client_id), type: 'Agendamento',
+          title: 'Próxima visita', content: 'Agendado no relatório de visita de ' + fmtDate(v.date),
+          date: _todayYMD(), created_by: currentUser?.name || '', created_at: now,
+          synced_at: now, scheduled_date: v.next_visit,
+        };
+        await dbPut('client_notes', note);
+        await callGAS('insert', SHEETS.CLIENT_NOTES, note);
+      } catch (e) { console.warn('agendamento', e); }
+    }
+
+    // + Nova visita hoje
+    document.getElementById('btn-new-visit')?.addEventListener('click', async () => {
+      const clients = [...(await window.getAll('clients'))]
+        .filter(c => c.active !== false && c.active !== 0 && c.active !== 'false')
+        .sort((a,b) => (a.name||'').localeCompare(b.name||''));
+      if (!clients.length) return toast('Nenhum cliente ativo.', 'warning');
+      const sel = document.getElementById('nv-client');
+      sel.innerHTML = '<option value="">Selecionar cliente…</option>' +
+        clients.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+      _makeSearchable(sel);
+      document.getElementById('nv-date').value = _todayYMD();
+      document.getElementById('modal-new-visit').classList.remove('hidden');
+    });
+    document.getElementById('nv-cancel')?.addEventListener('click', () =>
+      document.getElementById('modal-new-visit').classList.add('hidden'));
+    document.getElementById('nv-create')?.addEventListener('click', async () => {
+      const cid = Number(document.getElementById('nv-client')?.value || 0);
+      const ymd = document.getElementById('nv-date')?.value || _todayYMD();
+      if (!cid) return toast('Selecione um cliente.', 'warning');
+      document.getElementById('modal-new-visit').classList.add('hidden');
+      await _ensureVisit(cid, ymd);
+      toast('Visita aberta.', 'success');
+      await renderVisitsList();
+    });
+    document.getElementById('visit-filter-client')?.addEventListener('change', renderVisitsList);
+    document.getElementById('visit-filter-status')?.addEventListener('change', renderVisitsList);
 
     async function initPdfReportsScreen() {
       // Sincronizar dados em background para garantir dados frescos nos PDFs
@@ -5848,7 +6193,7 @@ ${opSections}
           { perm: 'charts',       screen: 'screen-charts',       fn: async () => { await refreshChartsFilters(); await renderCharts(); }, icon: '📊', label: 'Gráficos' },
           { perm: 'vazao',        screen: 'screen-vazao',        fn: initVazaoScreen,       icon: '💧', label: 'Vazão' },
           { perm: 'recipes',      screen: 'screen-recipes',      fn: initRecipesScreen,     icon: '🗂️', label: 'Receitas' },
-          { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen,  icon: '📋', label: 'Histórico' },
+          { perm: 'client_notes', screen: 'screen-client-notes', fn: initClientNotesScreen,  icon: '📋', label: 'Visitas' },
           { perm: 'pdf_reports',  screen: 'screen-pdf-reports',  fn: initPdfReportsScreen,   icon: '📄', label: 'Rel. PDF' },
           { perm: 'users',        screen: 'screen-users',        fn: renderUsersList,         icon: '👤', label: 'Usuários' },
           { perm: 'admin',        screen: 'screen-admin',        fn: refreshAdminPanel,        icon: '⚙️', label: 'Admin', adminOnly: true },
@@ -6473,6 +6818,9 @@ ${opSections}
         const maintSaved = maintBtnsArr.length;
         const maintMsg = maintSaved ? ` + ${maintSaved} manutenção(ões)` : '';
         toast(`✅ ${saved} leitura(s)${maintMsg} salva(s)!`, 'success');
+
+        // Abre (se necessário) o relatório de visita deste cliente/dia
+        try { await _ensureVisit(clientId, String(date).slice(0, 10)); } catch (e) {}
         const _allClientsVz = await dbGetAll_raw('clients');
         const _clientVz = _allClientsVz.find(c => Number(c.id) === clientId);
         const _clientName = _clientVz?.name || `#${clientId}`;

@@ -19,7 +19,8 @@ const SHEETS = {
   CLIENT_NOTES: "ClienteNotas",
   APP_CONFIG: "AppConfig",
   FINANCEIRO: "Financeiro",
-  EQUIPAMENTOS: "Equipamentos"
+  EQUIPAMENTOS: "Equipamentos",
+  VISITS: "Visitas"
 };
 
 // Modo de debug

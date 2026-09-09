@@ -43,6 +43,9 @@ const HEADERS = {
   Config:          ['chave','valor'],
   AppConfig:       ['id','key','active','message','updated_at'],
   Equipamentos:    ['id','date','client_id','items','photo_urls','obs','tech','updated_at'],
+  Visitas:         ['id','client_id','date','status','tech','checklist','obs','next_visit',
+                    'snapshot','signed','signature_name','signature_img',
+                    'concluded_at','concluded_by','created_at','created_by'],
 };
 
 // ── Resposta padrão ──────────────────────────────────────────
@@ -243,7 +246,7 @@ const SHEET_LABELS = {
 
 // Abas que usam fila (batching) em vez de e-mail individual por registro
 // Sheets que NUNCA disparam notificação (imports em massa, configs)
-var NO_NOTIF_SHEETS = ['Financeiro', 'Config', 'AppConfig', 'Usuarios'];
+var NO_NOTIF_SHEETS = ['Financeiro', 'Config', 'AppConfig', 'Usuarios', 'Visitas'];
 
 // Todas as sheets ativas → enviadas em um único e-mail consolidado
 var NOTIF_BATCH_SHEETS = ['Registros', 'VazaoRegistros', 'Clientes', 'Maquinas', 'Processos',

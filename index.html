@@ -138,7 +138,7 @@
               <label class="perm-check"><input type="checkbox" name="perm_charts"    checked /> 📈 Gráficos</label>
               <label class="perm-check"><input type="checkbox" name="perm_vazao"     checked /> 💧 Vazão</label>
               <label class="perm-check"><input type="checkbox" name="perm_recipes"      checked /> 📝 Receitas</label>
-              <label class="perm-check"><input type="checkbox" name="perm_client_notes"  checked /> 📋 Histórico</label>
+              <label class="perm-check"><input type="checkbox" name="perm_client_notes"  checked /> 📋 Visitas</label>
               <label class="perm-check"><input type="checkbox" name="perm_pdf_reports" checked /> 📄 Relatórios PDF</label>
               <label class="perm-check"><input type="checkbox" name="perm_users"                /> 👥 Usuários</label>
               <label class="perm-check"><input type="checkbox" name="perm_financeiro"          /> 💰 Financeiro</label>
@@ -247,6 +247,24 @@
       </div>
     </div>
 
+    <div id="modal-new-visit" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:380px">
+        <h3 style="margin:0 0 0.75rem;font-size:1rem;color:var(--text)">📋 Nova visita</h3>
+        <div class="form-field" style="margin-bottom:0.75rem">
+          <label>Cliente</label>
+          <select id="nv-client" class="form-input"><option value="">Selecionar cliente…</option></select>
+        </div>
+        <div class="form-field" style="margin-bottom:1rem">
+          <label>Data</label>
+          <input type="date" id="nv-date" class="form-input" />
+        </div>
+        <div style="display:flex;gap:0.6rem;justify-content:flex-end">
+          <button class="btn-secondary" id="nv-cancel">Cancelar</button>
+          <button class="btn-primary" id="nv-create">Abrir visita</button>
+        </div>
+      </div>
+    </div>
+
     <div id="modal-pin-setup" class="modal-overlay hidden">
       <div class="modal-box" style="max-width:340px;text-align:center;padding:1.5rem 1.25rem">
         <div style="font-size:2.5rem;margin-bottom:0.4rem">🔢</div>
@@ -350,7 +368,7 @@
           <button class="nav-btn" id="nav-charts">📊 Graficos</button>
           <button class="nav-btn" id="nav-vazao">💧 Vazão</button>
           <button class="nav-btn" id="nav-recipes">📝 Receitas<span id="recipe-pending-badge" class="nav-badge hidden">0</span></button>
-          <button class="nav-btn" id="nav-client-notes">📋 Histórico</button>
+          <button class="nav-btn" id="nav-client-notes">📋 Visitas</button>
           <button class="nav-btn" id="nav-pdf-reports">📄 Relatórios PDF</button>
           <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio</button>
           <button class="nav-btn" id="nav-form">📝 Gerar Relatório</button>
@@ -1325,24 +1343,50 @@
           <div id="records-list"></div>
         </section>
 
-        <!-- ===== TELA HISTÓRICO DE CLIENTES ===== -->
+        <!-- ===== TELA VISITAS ===== -->
         <section id="screen-client-notes" class="screen hidden">
           <div class="screen-header">
             <div class="screen-title">
-              <h2>📋 Histórico de Clientes</h2>
-              <span class="count-badge" id="notes-count-badge">0</span>
+              <h2>📋 Visitas</h2>
+              <span class="count-badge" id="visits-count-badge">0</span>
             </div>
-            <button id="btn-new-note" class="btn-primary hidden">+ Nova Nota</button>
+            <button id="btn-new-visit" class="btn-primary">+ Nova visita hoje</button>
           </div>
           <div class="filter-row">
-            <select id="note-filter-client" class="filter-select" style="flex:2">
+            <select id="visit-filter-client" class="filter-select" style="flex:2">
               <option value="">👤 Todos os clientes</option>
             </select>
-            <select id="note-filter-type" class="filter-select">
-              <option value="">🗂️ Todos os tipos</option>
+            <select id="visit-filter-status" class="filter-select">
+              <option value="">Todos os status</option>
+              <option value="rascunho">🟡 Rascunho</option>
+              <option value="concluido">🟢 Concluído</option>
             </select>
           </div>
-          <div id="notes-list"></div>
+          <div id="visits-list"></div>
+
+          <!-- Notas avulsas (recolhível) -->
+          <div class="card" style="margin-top:1.25rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+                 onclick="const b=document.getElementById('notes-avulsas-body');const c=this.querySelector('.na-chev');b.hidden=!b.hidden;c.style.transform=b.hidden?'rotate(-90deg)':'';">
+              <h3 style="margin:0;font-size:0.92rem;font-weight:700;color:var(--text)">📝 Notas avulsas
+                <span class="count-badge" id="notes-count-badge" style="margin-left:0.4rem">0</span></h3>
+              <span class="na-chev" style="font-size:1.1rem;color:#94a3b8;transition:transform 0.2s;transform:rotate(-90deg)">▾</span>
+            </div>
+            <div id="notes-avulsas-body" hidden style="margin-top:0.85rem">
+              <div style="display:flex;justify-content:flex-end;margin-bottom:0.6rem">
+                <button id="btn-new-note" class="btn-secondary btn-sm hidden">+ Nova Nota</button>
+              </div>
+              <div class="filter-row">
+                <select id="note-filter-client" class="filter-select" style="flex:2">
+                  <option value="">👤 Todos os clientes</option>
+                </select>
+                <select id="note-filter-type" class="filter-select">
+                  <option value="">🗂️ Todos os tipos</option>
+                </select>
+              </div>
+              <div id="notes-list"></div>
+            </div>
+          </div>
         </section>
 
         <!-- ===== TELA RELATÓRIOS PDF ===== -->
@@ -1716,7 +1760,7 @@
         <button class="drawer-item" data-target="screen-processes">📋 Processos</button>
         <button class="drawer-item" data-target="screen-vazao">💧 Vazão</button>
         <button class="drawer-item" data-target="screen-recipes">📝 Receitas<span id="drawer-recipe-badge" class="nav-badge hidden">0</span></button>
-        <button class="drawer-item" data-target="screen-client-notes">📋 Histórico de Clientes</button>
+        <button class="drawer-item" data-target="screen-client-notes">📋 Visitas</button>
         <button class="drawer-item" data-target="screen-pdf-reports">📄 Relatórios PDF</button>
         <button class="drawer-item" data-target="screen-alerts">🔔 Avisos<span id="drawer-alerts-badge" class="nav-badge hidden" style="margin-left:0.4rem">0</span></button>
         <button class="drawer-item hidden" id="drawer-equip-btn" data-target="screen-equipment">🔧 Equipamentos</button>
