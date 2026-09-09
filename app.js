@@ -7540,8 +7540,8 @@ ${opSections}
         toast(`✅ ${saved} leitura(s)${maintMsg} salva(s)!`, 'success');
 
         // Abre (se necessário) o relatório de visita deste cliente/dia —
-        // apenas quando houve leitura de verdade; só marcar manutenção não abre visita
-        if (rows.length > 0) { try { await _ensureVisit(clientId, String(date).slice(0, 10)); } catch (e) {} }
+        // vale para leitura de vazão E/OU marcação de manutenção
+        try { await _ensureVisit(clientId, String(date).slice(0, 10)); } catch (e) {}
         const _allClientsVz = await dbGetAll_raw('clients');
         const _clientVz = _allClientsVz.find(c => Number(c.id) === clientId);
         const _clientName = _clientVz?.name || `#${clientId}`;
