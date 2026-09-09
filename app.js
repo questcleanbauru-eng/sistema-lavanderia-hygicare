@@ -4975,49 +4975,48 @@ ${printScript}
         let ckDone = []; try { ckDone = JSON.parse(v.checklist || '[]'); } catch (e) {}
         const ckSet = new Set(ckDone);
         const ckEditHtml = CKITEMS.map(it => `
-          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;padding:0.15rem 0">
-            <input type="checkbox" data-vck="${escHtml(it)}" ${ckSet.has(it) ? 'checked' : ''}> ${escHtml(it)}
-          </label>`).join('');
+          <label><input type="checkbox" data-vck="${escHtml(it)}" ${ckSet.has(it) ? 'checked' : ''}> ${escHtml(it)}</label>`).join('');
         const ckViewHtml = ckDone.length
-          ? `<div style="font-size:0.78rem;font-weight:700;margin:0.5rem 0 0.15rem">✅ Checklist realizado</div>` +
-            ckDone.map(it => `<div style="font-size:0.78rem">✔️ ${escHtml(it)}</div>`).join('')
+          ? `<div class="visit-panel"><h4>✅ Checklist realizado</h4><div class="visit-ck-view">${ckDone.map(it => `<div>✔️ ${escHtml(it)}</div>`).join('')}</div></div>`
           : '';
+        const admBtns = currentUser?.role === 'admin'
+          ? `<button class="btn-secondary btn-sm" onclick="window._reopenVisit('${v.id}')">↩️ Reabrir</button>
+             <button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : '';
         return `
-        <div class="list-item" style="display:block;padding:0.6rem 0.9rem;margin-bottom:0.5rem;border-left:4px solid ${concl ? '#16a34a' : '#f59e0b'}">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;cursor:pointer" onclick="const b=document.getElementById('${bid}');b.hidden=!b.hidden;this.querySelector('.v-arr').textContent=b.hidden?'▶':'▼'">
-            <div style="min-width:0">
-              <strong style="font-size:0.86rem">${escHtml(cName(v.client_id))}</strong>
-              <span style="font-size:0.76rem;color:var(--muted)"> · ${fmtDate(v.date)}</span>
-              <div style="font-size:0.74rem;color:var(--muted);margin-top:2px">${chips}${v.tech ? ' · 👷 ' + escHtml(v.tech) : ''}</div>
+        <div class="visit-card${concl ? ' visit-card--done' : ''}">
+          <div class="visit-head" onclick="const b=document.getElementById('${bid}');b.hidden=!b.hidden;this.querySelector('.v-arr').textContent=b.hidden?'▶':'▼'">
+            <span class="vh-ico">${concl ? '🟢' : '📋'}</span>
+            <div class="vh-main">
+              <div class="vh-name">${escHtml(cName(v.client_id))}</div>
+              <div class="vh-meta"><span>📅 ${fmtDate(v.date)}</span>${v.tech ? `<span>👷 ${escHtml(v.tech)}</span>` : ''}<span>${chips}</span></div>
             </div>
-            <div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0">
-              <span style="font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:999px;background:${concl?'#dcfce7':'#fef3c7'};color:${concl?'#166534':'#92400e'}">${concl?'🟢 Concluído':'🟡 Rascunho'}</span>
-              <span class="v-arr" style="font-size:0.7rem;color:#94a3b8">▶</span>
-            </div>
+            <span class="visit-pill ${concl ? 'visit-pill--done' : 'visit-pill--draft'}">${concl ? 'Concluído' : 'Rascunho'}</span>
+            <span class="v-arr" style="font-size:0.7rem;color:#94a3b8;flex-shrink:0">▶</span>
           </div>
-          <div id="${bid}" hidden style="margin-top:0.7rem;border-top:1px solid var(--border);padding-top:0.7rem">
-            ${_visitDayDataHtml(d)}
+          <div id="${bid}" hidden class="visit-body">
+            <div class="visit-panel"><h4>🗓️ Resumo do dia</h4>${_visitDayDataHtml(d)}</div>
             ${concl ? `
               ${ckViewHtml}
-              <div style="font-size:0.78rem;color:var(--muted);margin:0.5rem 0">Concluído por ${escHtml(v.concluded_by||v.tech||'')} em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'}${v.signed ? ' · ✍️ assinado por ' + escHtml(v.signature_name||'cliente') : ' · sem assinatura'}.</div>
-              ${v.obs ? `<div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.5rem">${escHtml(v.obs)}</div>` : ''}
-              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+              ${v.obs ? `<div class="visit-panel"><h4>📝 Observações</h4><div class="visit-obs-view">${escHtml(v.obs)}</div></div>` : ''}
+              <div class="visit-conclmeta">Concluído por <strong>${escHtml(v.concluded_by||v.tech||'')}</strong> em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'} · ${v.signed ? '✍️ assinado por ' + escHtml(v.signature_name||'cliente') : 'sem assinatura'}</div>
+              <div class="visit-actions">
                 <button class="btn-primary btn-sm" onclick="window._visitShare('${v.id}')">📲 Compartilhar</button>
                 <button class="btn-secondary btn-sm" onclick="window._visitPdf('${v.id}')">📄 PDF</button>
                 <button class="btn-secondary btn-sm" onclick="window._visitSign('${v.id}')">✍️ Assinatura</button>
-                ${currentUser?.role === 'admin' ? `<button class="btn-secondary btn-sm" onclick="window._reopenVisit('${v.id}')">↩️ Reabrir</button>` : ''}
-                ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
+                ${admBtns}
               </div>
             ` : `
-              <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.2rem">✅ Checklist da visita</div>
-              <div id="vck-${v.id}" style="margin-bottom:0.6rem">${ckEditHtml}</div>
-              <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">📝 Observações / serviços realizados</label>
-              <textarea id="vobs-${v.id}" class="form-input" rows="3" style="resize:vertical;margin-bottom:0.5rem" placeholder="Ex: troca da bomba 2, ajuste de dosagem do detergente, treinamento do operador…">${escHtml(v.obs||'')}</textarea>
-              <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">📅 Próxima visita (opcional)</label>
-              <input type="date" id="vnext-${v.id}" class="form-input" value="${v.next_visit||''}" style="margin-bottom:0.6rem;width:auto">
-              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+              <div class="visit-panel">
+                <h4>✅ Checklist da visita</h4>
+                <div id="vck-${v.id}" class="visit-ck-grid">${ckEditHtml}</div>
+              </div>
+              <label class="visit-field-label">📝 Observações / serviços realizados</label>
+              <textarea id="vobs-${v.id}" class="form-input" placeholder="Ex: troca da bomba 2, ajuste de dosagem do detergente, treinamento do operador…">${escHtml(v.obs||'')}</textarea>
+              <label class="visit-field-label" style="margin-top:0.7rem">📅 Próxima visita (opcional)</label>
+              <input type="date" id="vnext-${v.id}" class="form-input" value="${v.next_visit||''}" style="max-width:200px">
+              <div class="visit-actions">
                 <button class="btn-secondary btn-sm" onclick="window._saveVisitDraft('${v.id}')">💾 Salvar rascunho</button>
-                <button class="btn-primary btn-sm" onclick="window._concludeVisit('${v.id}')">✅ Concluir</button>
+                <button class="btn-primary btn-sm" onclick="window._concludeVisit('${v.id}')">✅ Concluir visita</button>
                 ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
               </div>
             `}
@@ -5029,26 +5028,31 @@ ${printScript}
 
     function _visitDayDataHtml(d) {
       const fmtN = n => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-      let h = '';
       const pumps = d.vz.filter(x => !x.maint);
       const maint = d.vz.filter(x => x.maint);
+      const sub = (n, txt) => `<div style="font-weight:800;font-size:0.8rem;margin:0.55rem 0 0.3rem;color:var(--text)"><span style="color:var(--primary,#2563eb)">${n}.</span> ${txt}</div>`;
+
+      let h = sub(1, '💧 Vazão');
+      if (maint.length) h += `<div class="visit-maint">🔧 Máquina(s) em manutenção: ${maint.map(x => escHtml(x.machine)).join(', ')}</div>`;
       if (pumps.length) {
-        h += `<div style="font-size:0.78rem;font-weight:700;margin-bottom:0.2rem">💧 Leituras de vazão</div>
-          <table style="width:100%;border-collapse:collapse;font-size:0.76rem;margin-bottom:0.5rem">
-          <thead><tr style="color:var(--muted)"><th style="text-align:left;padding:2px 4px">Máquina</th><th style="text-align:left;padding:2px 4px">Bomba</th><th style="text-align:right;padding:2px 4px">Leitura</th></tr></thead>
-          <tbody>${pumps.map(x => `<tr><td style="padding:2px 4px">${escHtml(x.machine)}</td><td style="padding:2px 4px">${escHtml(x.bomba)}</td><td style="text-align:right;padding:2px 4px">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table>`;
+        h += `<table><thead><tr><th>Máquina</th><th>Bomba</th><th style="text-align:right">Leitura</th></tr></thead>
+          <tbody>${pumps.map(x => `<tr><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}</td><td style="text-align:right;font-weight:600">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table>`;
+      } else if (!maint.length) {
+        h += '<div class="visit-empty">Sem leituras de vazão neste dia.</div>';
       }
-      if (maint.length) h += `<div style="font-size:0.76rem;color:#b45309;margin-bottom:0.5rem">🔧 Em manutenção: ${maint.map(x=>escHtml(x.machine)).join(', ')}</div>`;
+
+      h += sub(2, '📋 Fechamento dos dados da Lavanderia');
       if (d.prod.length) {
-        h += `<div style="font-size:0.78rem;font-weight:700;margin-bottom:0.2rem">📋 Fechamento de produção — ${fmtN(d.prodTotal)} kg</div>
-          <table style="width:100%;border-collapse:collapse;font-size:0.76rem;margin-bottom:0.5rem">
-          <tbody>${d.prod.map(p => `<tr><td style="padding:2px 4px">${escHtml(p.machine)} › ${escHtml(p.proc)}</td><td style="text-align:right;padding:2px 4px">${fmtN(p.total)} kg</td></tr>`).join('')}</tbody></table>`;
+        h += `<table><tbody>${d.prod.map(p => `<tr><td>${escHtml(p.machine)} › ${escHtml(p.proc)}</td><td style="text-align:right;font-weight:600;color:#16a34a">${fmtN(p.total)} kg</td></tr>`).join('')}
+          <tr style="border-top:2px solid var(--border)"><td style="font-weight:800">Total processado</td><td style="text-align:right;font-weight:800;color:#16a34a">${fmtN(d.prodTotal)} kg</td></tr></tbody></table>`;
+      } else {
+        h += '<div class="visit-empty">Sem fechamento de produção neste dia.</div>';
       }
+
       if (d.notes.length) {
-        h += `<div style="font-size:0.78rem;font-weight:700;margin-bottom:0.2rem">📝 Notas do dia</div>`;
-        h += d.notes.map(n => `<div style="font-size:0.76rem;margin-bottom:0.2rem"><strong>${escHtml(n.type)}${n.title?' — '+escHtml(n.title):''}:</strong> ${escHtml(n.content)}</div>`).join('');
+        h += sub(3, '📝 Notas do dia');
+        h += d.notes.map(n => `<div style="font-size:0.8rem;margin-bottom:0.2rem"><strong>${escHtml(n.type)}${n.title ? ' — ' + escHtml(n.title) : ''}:</strong> ${escHtml(n.content)}</div>`).join('');
       }
-      if (!h) h = '<div style="font-size:0.78rem;color:var(--muted)">Nenhum registro de vazão/fechamento/nota neste dia ainda.</div>';
       return h;
     }
 
@@ -5182,10 +5186,10 @@ td{padding:5px 8px;border-bottom:1px solid #f1f5f9}.muted{color:#94a3b8;font-siz
   </div>
 </div>
 <p style="font-size:11px;color:#475569">Este documento resume o que foi realizado na visita técnica ao cliente na data acima.</p>
-<h2>💧 Leituras de Vazão</h2>${vzHtml}
-<h2>📋 Fechamento de Produção</h2>${prodHtml}
-<h2>✅ Checklist Realizado</h2>${ckHtml}
-${v.obs ? `<h2>📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
+<h2>1 · 💧 Vazão</h2>${vzHtml}
+<h2>2 · 📋 Fechamento dos Dados da Lavanderia</h2>${prodHtml}
+<h2>3 · ✅ Checklist Realizado</h2>${ckHtml}
+${v.obs ? `<h2>4 · 📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
 ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
 ${signHtml}
 <div class="footer">${getPdfFooterHtml('Relatório de Visita')}</div>
