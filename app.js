@@ -1079,7 +1079,7 @@ ${printScript}
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
-        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
+        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); testApis(); }
         if (screenId === 'screen-alerts')  await renderAlertsScreen();
       });
     });
@@ -1097,7 +1097,7 @@ ${printScript}
         if (screenId === 'screen-recipes')      await initRecipesScreen();
         if (screenId === 'screen-client-notes') await initClientNotesScreen();
         if (screenId === 'screen-users')        await renderUsersList();
-        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
+        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); testApis(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
       });
     });
@@ -1253,7 +1253,7 @@ ${printScript}
         if (screenId === 'screen-users')        await renderUsersList();
         if (screenId === 'screen-financeiro')   await initFinanceiroScreen();
         if (screenId === 'screen-equipment')    await initEquipmentScreen();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); testApis(); }
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); testApis(); }
       });
     });
 
@@ -1863,6 +1863,56 @@ ${printScript}
       callGAS('upsert', 'Config', { chave: 'hygicare_note_types', valor: '' });
       renderNoteTypesAdmin();
       toast('Tipos restaurados para o padrão', 'info', 2000);
+    });
+
+    // ---- Checklist de Visita (Admin) ----
+    function _vckSave(items) {
+      const json = JSON.stringify(items);
+      localStorage.setItem('hygicare_visit_checklist', json);
+      callGAS('upsert', 'Config', { chave: 'hygicare_visit_checklist', valor: json });
+    }
+    function renderVisitChecklistAdmin() {
+      const container = document.getElementById('admin-visit-checklist');
+      if (!container) return;
+      const items = _visitDefaultChecklist();
+      container.innerHTML = items.map((label, i) => `
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+          <span style="color:var(--muted);font-size:0.8rem;width:16px;text-align:right">${i + 1}.</span>
+          <input type="text" value="${escHtml(label)}" data-vci="${i}" placeholder="Item do checklist"
+            style="flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-size:0.88rem;min-width:0">
+          <button type="button" data-vcdel="${i}" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:1rem;padding:2px 6px;flex-shrink:0" title="Remover">✕</button>
+        </div>`).join('') +
+        `<button id="btn-vck-add" style="margin-top:0.3rem;font-size:0.85rem;padding:6px 14px;border:1.5px dashed var(--primary);border-radius:8px;background:#fff;color:var(--primary);cursor:pointer;font-weight:700;width:100%">+ Novo item</button>`;
+
+      container.querySelectorAll('input[data-vci]').forEach(el => {
+        el.addEventListener('change', () => {
+          const arr = _visitDefaultChecklist();
+          arr[Number(el.dataset.vci)] = el.value.trim();
+          _vckSave(arr.filter(Boolean));
+          renderVisitChecklistAdmin();
+        });
+      });
+      container.querySelectorAll('button[data-vcdel]').forEach(el => {
+        el.addEventListener('click', () => {
+          const arr = _visitDefaultChecklist();
+          arr.splice(Number(el.dataset.vcdel), 1);
+          _vckSave(arr);
+          renderVisitChecklistAdmin();
+        });
+      });
+      document.getElementById('btn-vck-add')?.addEventListener('click', () => {
+        const arr = _visitDefaultChecklist();
+        arr.push('Novo item');
+        _vckSave(arr);
+        renderVisitChecklistAdmin();
+      });
+    }
+    document.getElementById('btn-reset-visit-checklist')?.addEventListener('click', () => {
+      if (!confirm('Restaurar checklist padrão de visita?')) return;
+      localStorage.removeItem('hygicare_visit_checklist');
+      callGAS('upsert', 'Config', { chave: 'hygicare_visit_checklist', valor: '' });
+      renderVisitChecklistAdmin();
+      toast('Checklist restaurado.', 'info', 2000);
     });
 
     document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
@@ -2707,7 +2757,7 @@ ${printScript}
         const res = await r.json();
         addApiCount(1, 'read');
         const rows = res.data || [];
-        const managed = ['hygicare_proc_groups', 'hygicare_note_types', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
+        const managed = ['hygicare_proc_groups', 'hygicare_note_types', 'hygicare_visit_checklist', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
           'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text',
           'hygicare_machine_order', 'hygicare_process_order',
           'email_monthly_operational', 'email_monthly_missing', 'email_monthly_vazao', 'email_tecnico',
@@ -4907,6 +4957,7 @@ ${printScript}
       }
 
       const cName = id => clients.find(c => Number(c.id) === Number(id))?.name || ('Cliente #' + id);
+      const CKITEMS = _visitDefaultChecklist();
       const pre = await Promise.all([
         dbGetAll_raw('vazao_records'), dbGetAll_raw('records'),
         dbGetAll_raw('machines'), dbGetAll_raw('processes'), dbGetAll_raw('client_notes'),
@@ -4921,6 +4972,16 @@ ${printScript}
           d.notes.length ? `📝 ${d.notes.length} nota(s)` : '',
         ].filter(Boolean).join(' · ') || 'sem registros ainda';
         const bid = 'vbody-' + v.id;
+        let ckDone = []; try { ckDone = JSON.parse(v.checklist || '[]'); } catch (e) {}
+        const ckSet = new Set(ckDone);
+        const ckEditHtml = CKITEMS.map(it => `
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;padding:0.15rem 0">
+            <input type="checkbox" data-vck="${escHtml(it)}" ${ckSet.has(it) ? 'checked' : ''}> ${escHtml(it)}
+          </label>`).join('');
+        const ckViewHtml = ckDone.length
+          ? `<div style="font-size:0.78rem;font-weight:700;margin:0.5rem 0 0.15rem">✅ Checklist realizado</div>` +
+            ckDone.map(it => `<div style="font-size:0.78rem">✔️ ${escHtml(it)}</div>`).join('')
+          : '';
         return `
         <div class="list-item" style="display:block;padding:0.6rem 0.9rem;margin-bottom:0.5rem;border-left:4px solid ${concl ? '#16a34a' : '#f59e0b'}">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;cursor:pointer" onclick="const b=document.getElementById('${bid}');b.hidden=!b.hidden;this.querySelector('.v-arr').textContent=b.hidden?'▶':'▼'">
@@ -4937,6 +4998,7 @@ ${printScript}
           <div id="${bid}" hidden style="margin-top:0.7rem;border-top:1px solid var(--border);padding-top:0.7rem">
             ${_visitDayDataHtml(d)}
             ${concl ? `
+              ${ckViewHtml}
               <div style="font-size:0.78rem;color:var(--muted);margin:0.5rem 0">Concluído por ${escHtml(v.concluded_by||v.tech||'')} em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'}.</div>
               ${v.obs ? `<div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.7rem;margin-bottom:0.5rem">${escHtml(v.obs)}</div>` : ''}
               <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
@@ -4945,6 +5007,8 @@ ${printScript}
                 ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
               </div>
             ` : `
+              <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.2rem">✅ Checklist da visita</div>
+              <div id="vck-${v.id}" style="margin-bottom:0.6rem">${ckEditHtml}</div>
               <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">📝 Observações / serviços realizados</label>
               <textarea id="vobs-${v.id}" class="form-input" rows="3" style="resize:vertical;margin-bottom:0.5rem" placeholder="Ex: troca da bomba 2, ajuste de dosagem do detergente, treinamento do operador…">${escHtml(v.obs||'')}</textarea>
               <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">📅 Próxima visita (opcional)</label>
@@ -4990,10 +5054,16 @@ ${printScript}
       return (await dbGetAll_raw('visits')).find(v => String(v.id) === String(id));
     }
 
+    function _readVisitChecklist(id) {
+      return [...document.querySelectorAll(`#vck-${id} input[data-vck]`)]
+        .filter(c => c.checked).map(c => c.dataset.vck);
+    }
+
     window._saveVisitDraft = async function(id) {
       const v = await _getVisit(id); if (!v) return;
       v.obs = document.getElementById('vobs-' + id)?.value || '';
       v.next_visit = document.getElementById('vnext-' + id)?.value || '';
+      v.checklist = JSON.stringify(_readVisitChecklist(id));
       await _saveVisit(v);
       if (v.next_visit) await _scheduleNextVisitNote(v);
       toast('Rascunho salvo.', 'success');
@@ -5004,6 +5074,7 @@ ${printScript}
       const v = await _getVisit(id); if (!v) return;
       v.obs = document.getElementById('vobs-' + id)?.value || v.obs || '';
       v.next_visit = document.getElementById('vnext-' + id)?.value || v.next_visit || '';
+      if (document.getElementById('vck-' + id)) v.checklist = JSON.stringify(_readVisitChecklist(id));
       if (!await confirmAction('Concluir o relatório desta visita?\n\nDepois de concluído, o conteúdo fica congelado e o PDF é liberado.', '✅ Concluir')) return;
       showOverlay('Concluindo…');
       try {
@@ -6274,6 +6345,42 @@ ${opSections}
             agCard.style.display = 'none';
           }
         } catch(e) { agCard.style.display = 'none'; }
+      }
+
+      // Relatórios de visita em aberto (rascunho)
+      const vOpenCard = document.getElementById('home-visits-open');
+      if (vOpenCard) {
+        try {
+          let [visits, clis] = await Promise.all([dbGetAll_raw('visits'), dbGetAll_raw('clients')]);
+          if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'diretor') {
+            const allowed = new Set((await window.getAll('clients')).map(c => Number(c.id)));
+            visits = visits.filter(v => allowed.has(Number(v.client_id)));
+          }
+          const drafts = visits.filter(v => (v.status || 'rascunho') === 'rascunho')
+            .sort((a,b) => String(a.date).localeCompare(String(b.date)));
+          if (drafts.length) {
+            const cNm = id => clis.find(c => Number(c.id) === Number(id))?.name || ('#' + id);
+            const today = _todayYMD();
+            const rows = drafts.slice(0, 6).map(v => {
+              const old = String(v.date).slice(0,10) < today;
+              return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid var(--border);font-size:0.82rem">
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${escHtml(cNm(v.client_id))}</strong></span>
+                <span style="flex-shrink:0;font-size:0.75rem;color:${old ? '#dc2626' : 'var(--muted)'};font-weight:${old ? '700' : '400'}">${fmtDate(v.date)}</span>
+              </div>`;
+            }).join('');
+            vOpenCard.style.display = '';
+            vOpenCard.innerHTML = `<div class="card" style="border-left:4px solid #f59e0b;background:#fffbeb;cursor:pointer;padding:0.75rem 1rem" onclick="show('screen-client-notes');initClientNotesScreen()">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
+                <div style="font-weight:700;color:#92400e;font-size:0.92rem">📋 ${drafts.length} relatório(s) de visita em aberto</div>
+                <span style="font-size:1.1rem;color:#d97706">›</span>
+              </div>
+              ${rows}
+              <div style="font-size:0.75rem;color:#b45309;margin-top:0.35rem">Toque para revisar e concluir</div>
+            </div>`;
+          } else {
+            vOpenCard.style.display = 'none';
+          }
+        } catch(e) { vOpenCard.style.display = 'none'; }
       }
 
       // KPIs — usar window.getAll para respeitar filtro de vendedor/consultor

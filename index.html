@@ -448,6 +448,9 @@
           <!-- Card de agendamentos próximos -->
           <div id="home-agendamentos-card" style="display:none;margin-bottom:1rem"></div>
 
+          <!-- Relatórios de visita em aberto -->
+          <div id="home-visits-open" style="display:none;margin-bottom:1rem"></div>
+
           <!-- Widget: clientes sem relatório -->
           <div id="home-alerts-widget" style="display:none;margin-bottom:1rem">
             <div class="card" style="border-left:4px solid #f59e0b;background:#fffbeb;cursor:pointer;padding:0.75rem 1rem" onclick="show('screen-alerts');renderAlertsScreen()">
@@ -1158,6 +1161,22 @@
               <div id="admin-note-types"></div>
               <div style="margin-top:0.75rem">
                 <button id="btn-reset-note-types" class="btn-secondary" style="font-size:0.82rem">↺ Restaurar padrão</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Checklist de Visita -->
+          <div class="card" style="margin-top:1.2rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+                 onclick="(function(b,a){const o=b.style.display!=='none';b.style.display=o?'none':'block';a.textContent=o?'▶':'▼'})(document.getElementById('vck-body'),this.querySelector('.vck-arr'))">
+              <h3 style="margin:0;font-size:1.05rem;color:#1e40af">✅ Checklist de Visita</h3>
+              <span class="vck-arr" style="font-size:0.75rem;color:var(--muted);min-width:14px;text-align:right">▼</span>
+            </div>
+            <div id="vck-body">
+              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 1rem">Itens que o técnico marca no relatório de visita. Alterações são salvas automaticamente na planilha.</p>
+              <div id="admin-visit-checklist"></div>
+              <div style="margin-top:0.75rem">
+                <button id="btn-reset-visit-checklist" class="btn-secondary" style="font-size:0.82rem">↺ Restaurar padrão</button>
               </div>
             </div>
           </div>
