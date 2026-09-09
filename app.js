@@ -2711,6 +2711,56 @@ ${printScript}
 
     // Sync pontual de um único store após write no GAS
     const _postSaveTimers = {};
+
+    // Re-renderiza a tela aberta que depende do store recém-sincronizado,
+    // para o app "atualizar sozinho" após salvar / editar / excluir.
+    const _visible = id => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); };
+    async function _rerenderVisibleForStore(store) {
+      if (_saving) return;                       // não mexer durante um salvamento em curso
+      if (document.getElementById('_report-overlay')) return;
+      try {
+        switch (store) {
+          case 'clients':
+            if (_visible('screen-clients')) { await renderClientsList(); await refreshSellerSelect(); }
+            break;
+          case 'machines':
+            if (_visible('screen-machines')) await renderMachinesList();
+            break;
+          case 'processes':
+            if (_visible('screen-processes')) await renderProcessesList();
+            break;
+          case 'records':
+            if (_visible('screen-reports')) await renderRecordsList();
+            if (_visible('screen-charts'))  await renderCharts();
+            break;
+          case 'users':
+            if (_visible('screen-users')) await renderUsersList();
+            break;
+          case 'vazoes':
+          case 'vazao_records':
+            if (_visible('screen-vazao')) {
+              await renderVazaoHistory();
+              const cid = Number(document.getElementById('vazao-client')?.value || 0);
+              if (cid) await renderVazaoLocalHistory(cid);
+            }
+            break;
+          case 'recipes':
+          case 'recipe_products':
+            if (_visible('screen-recipes')) { await renderRecipesList(); await updateRecipeBadge(); }
+            break;
+          case 'client_notes':
+            if (_visible('screen-client-notes')) await renderClientNotesList();
+            break;
+          case 'visits':
+            if (_visible('screen-client-notes')) await renderVisitsList();
+            break;
+          case 'financeiro':
+            if (_visible('screen-financeiro')) await renderFinanceiroView();
+            break;
+        }
+      } catch (e) { /* re-render best-effort */ }
+    }
+
     async function _syncStoreFromSheet(sheetName) {
       const entry = SHEET_MAP_BY_SHEET[sheetName];
       if (!entry) return;
@@ -2720,10 +2770,7 @@ ${printScript}
         if (!r.ok) return;
         const items = (await r.json()).data || [];
         if (items.length > 0) await saveToStore(entry.store, items);
-        if (entry.store === 'recipes' && !document.getElementById('screen-recipes')?.classList.contains('hidden')) {
-          await renderRecipesList();
-          await updateRecipeBadge();
-        }
+        await _rerenderVisibleForStore(entry.store);
       } catch(e) { /* falha silenciosa */ }
     }
     function _scheduleSyncAfterSave(sheetName) {
@@ -5026,19 +5073,41 @@ ${printScript}
       ]);
       const mName = id => machines.find(m => Number(m.id) === Number(id))?.name || ('Máq. ' + id);
       const pName = id => processes.find(p => Number(p.id) === Number(id))?.name || ('Proc. ' + id);
-      const vz = vzRecs.filter(r => Number(r.client_id) === Number(clientId) && String(r.date).slice(0,10) === ymd)
+      // normaliza qualquer formato de data p/ YYYY-MM-DD (ISO, Date serializada pelo Sheets, DD/MM/YYYY)
+      const _ymd = x => {
+        if (!x) return '';
+        const s = String(x).trim();
+        let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+        m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        const d = new Date(s);
+        return isNaN(d) ? '' : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      };
+      ymd = _ymd(ymd) || ymd;
+      // um registro de produção "cobre" o dia se o dia cai no período dele (início..fim)
+      const _covers = r => {
+        const a = _ymd(r.date_start), b = _ymd(r.date_end) || a, c = _ymd(r.created_at);
+        if (a) return ymd >= a && ymd <= (b || a);
+        return (b || c) === ymd;
+      };
+      const vz = vzRecs.filter(r => Number(r.client_id) === Number(clientId) && _ymd(r.date) === ymd)
         .map(r => ({ machine: mName(r.machine_id), bomba: r.vazao_name || '', value: r.value, unit: r.vazao_unit || '', maint: r.vazao_name === '__manutencao__' }));
-      const recs = records.filter(r => Number(r.client_id) === Number(clientId) &&
-        ((r.date_end || r.date_start || r.created_at || '').slice(0,10) === ymd) && !r.maintenance);
+      const dayRecs = records.filter(r => Number(r.client_id) === Number(clientId) && _covers(r));
+      const recs = dayRecs.filter(r => !r.maintenance);
       const prod = recs.map(r => ({ machine: mName(r.machine_id), proc: pName(r.process_id), exec: r.executed||0, canc: r.canceled||0, total: parseFloat(r.total)||0 }));
       const prodTotal = prod.reduce((s,p) => s + p.total, 0);
       // resumo por máquina (o detalhe por processo fica de fora do relatório de visita)
       const _pm = {};
       for (const p of prod) { if (!_pm[p.machine]) _pm[p.machine] = { machine: p.machine, kg: 0, lines: 0 }; _pm[p.machine].kg += p.total; _pm[p.machine].lines++; }
       const prodByMachine = Object.values(_pm).sort((a,b) => b.kg - a.kg);
-      const dayNotes = notes.filter(n => Number(n.client_id) === Number(clientId) && (n.date || n.created_at || '').slice(0,10) === ymd)
+      // houve um relatório de fechamento nesse dia? (mesmo que 0 kg ou só manutenção)
+      const prodHasReport = dayRecs.length > 0;
+      const prodMaintMachines = [...new Set(dayRecs.filter(r => r.maintenance).map(r => mName(r.machine_id)))];
+      const prodMaintOnly = prodHasReport && recs.length === 0;
+      const dayNotes = notes.filter(n => Number(n.client_id) === Number(clientId) && _ymd(n.date || n.created_at) === ymd)
         .map(n => ({ type: n.type || 'Nota', title: n.title || '', content: n.content || '' }));
-      return { vz, prod, prodByMachine, prodTotal, notes: dayNotes };
+      return { vz, prod, prodByMachine, prodTotal, prodHasReport, prodMaintMachines, prodMaintOnly, notes: dayNotes };
     }
 
     // Remove visitas duplicadas (mesmo cliente + mesma data), mantendo a mais completa
@@ -5092,7 +5161,7 @@ ${printScript}
         if (concl && v.snapshot) { try { d = { prodTotal: 0, vz: [], prod: [], notes: [], ...JSON.parse(v.snapshot) }; } catch (e) {} }
         const chips = [
           d.vz.length ? `💧 ${d.vz.filter(x=>!x.maint).length} leitura(s)` : '',
-          d.prod.length ? `📋 ${(d.prodTotal).toLocaleString('pt-BR',{maximumFractionDigits:0})} kg` : '',
+          d.prod.length ? `📋 ${(d.prodTotal).toLocaleString('pt-BR',{maximumFractionDigits:0})} kg` : (d.prodHasReport ? '📋 fechamento' : ''),
           d.notes.length ? `📝 ${d.notes.length} nota(s)` : '',
         ].filter(Boolean).join(' · ') || 'sem registros ainda';
         const bid = 'vbody-' + v.id;
@@ -5187,6 +5256,10 @@ ${printScript}
       if (pbm.length) {
         h += `<div style="font-size:0.82rem;font-weight:800;color:#16a34a;margin-bottom:0.25rem">Total processado: ${fmtN(d.prodTotal)} kg</div>
           <table><tbody>${pbm.map(m => `<tr><td>${escHtml(m.machine)}</td><td style="text-align:right;font-weight:600">${fmtN(m.kg)} kg</td></tr>`).join('')}</tbody></table>`;
+      } else if (d.prodMaintOnly) {
+        h += `<div class="visit-empty">🔧 Fechamento emitido neste dia — máquina(s) em manutenção${d.prodMaintMachines && d.prodMaintMachines.length ? ': ' + d.prodMaintMachines.map(escHtml).join(', ') : ''}. Sem quilos processados.</div>`;
+      } else if (d.prodHasReport) {
+        h += '<div class="visit-empty">📋 Relatório de fechamento emitido neste dia (sem quilos processados).</div>';
       } else {
         h += '<div class="visit-empty">Sem fechamento de produção neste dia.</div>';
       }
@@ -5361,6 +5434,10 @@ ${printScript}
           pbm.map((m,i) => `<tr style="${i%2?'background:#f8fafc':''}"><td>${escHtml(m.machine)}</td><td style="text-align:right;font-weight:700;color:#16a34a">${fmtN(m.kg)} kg</td></tr>`).join('')
         }</tbody></table>
         <p class="muted" style="font-size:9px">O detalhamento por processo consta no relatório de produção do período.</p>`;
+      } else if (d.prodMaintOnly) {
+        prodHtml = `<p class="muted">🔧 Fechamento emitido neste dia com máquina(s) em manutenção${d.prodMaintMachines && d.prodMaintMachines.length ? ': ' + d.prodMaintMachines.map(escHtml).join(', ') : ''}. Sem quilos processados.</p>`;
+      } else if (d.prodHasReport) {
+        prodHtml = '<p class="muted">Relatório de fechamento emitido neste dia (sem quilos processados).</p>';
       } else prodHtml = '<p class="muted">Não houve fechamento de produção neste dia.</p>';
 
       const ckHtml = ck.length
