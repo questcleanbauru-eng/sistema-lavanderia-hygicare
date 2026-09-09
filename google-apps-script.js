@@ -45,6 +45,7 @@ const HEADERS = {
   Equipamentos:    ['id','date','client_id','items','photo_urls','obs','tech','updated_at'],
   Visitas:         ['id','client_id','date','status','tech','checklist','obs','next_visit',
                     'snapshot','signed','signature_name','signature_img',
+                    'tech_signature_name','tech_signature_img','photos',
                     'concluded_at','concluded_by','created_at','created_by'],
 };
 

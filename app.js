@@ -2663,14 +2663,25 @@ ${printScript}
         return saved;
       }
 
-      // Para visits: preservar rascunhos locais ainda não enviados ao GAS
+      // Para visits: preservar rascunhos locais e fotos (que não vão pra planilha)
       if (storeName === 'visits') {
         const existing = await _originalGetAll('visits');
+        const localById = new Map(existing.map(v => [String(v.id), v]));
         const gasIds = new Set(items.map(i => String(i.id)));
         await clearStore('visits');
         let saved = 0;
         for (const item of items) {
-          try { await dbPut('visits', normalizeItem(item)); saved++; }
+          try {
+            const n = normalizeItem(item);
+            n.signed = n.signed === true || n.signed === 'TRUE' || n.signed === 'true' || n.signed === 1 || n.signed === '1';
+            const old = localById.get(String(n.id));
+            if (old) {
+              if (old.photos && !n.photos)                   n.photos = old.photos;
+              if (old.tech_signature_img && !n.tech_signature_img) n.tech_signature_img = old.tech_signature_img;
+              if (old.signature_img && !n.signature_img)     n.signature_img = old.signature_img;
+            }
+            await dbPut('visits', n); saved++;
+          }
           catch (err) { console.warn('⚠️ Erro ao salvar visit:', err, item); }
         }
         for (const local of existing) {
@@ -4865,8 +4876,10 @@ ${printScript}
       if (!navigator.onLine || !CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return visit;
       try {
         const isNew = String(visit.id).startsWith('tmp_');
+        // photos ficam só no dispositivo (base64 estoura o limite de célula do Sheets)
+        const _stripPhotos = p => { const q = { ...p }; delete q.gas_synced; delete q.photos; return q; };
         if (isNew) {
-          const payload = { ...visit }; delete payload.id; delete payload.gas_synced;
+          const payload = _stripPhotos(visit); delete payload.id;
           const res = await callGAS('insert', SHEETS.VISITS, payload);
           const newId = res && (res.id || (Array.isArray(res.inserted) && res.inserted[0]));
           if (newId) {
@@ -4875,8 +4888,7 @@ ${printScript}
             await dbPut('visits', visit);
           }
         } else {
-          const payload = { ...visit }; delete payload.gas_synced;
-          const ok = await callGAS('update', SHEETS.VISITS, payload, visit.id);
+          const ok = await callGAS('update', SHEETS.VISITS, _stripPhotos(visit), visit.id);
           if (ok) { visit.gas_synced = true; await dbPut('visits', visit); }
         }
       } catch (e) { console.warn('visita sync falhou', e); }
@@ -4904,12 +4916,40 @@ ${printScript}
         signed: false,
         signature_name: '',
         signature_img: '',
+        tech_signature_name: currentUser?.name || currentUser?.username || '',
+        tech_signature_img: localStorage.getItem('hygicare_tech_sig_' + (currentUser?.username || '')) || '',
+        photos: '[]',
         concluded_at: '', concluded_by: '',
         created_at: now,
         created_by: currentUser?.name || currentUser?.username || '',
       };
       await _saveVisit(visit);
       return visit;
+    }
+
+    // Fotos da visita (base64 comprimido) — ficam só no IndexedDB, não vão pra planilha
+    function _visitPhotos(v) { try { return JSON.parse(v.photos || '[]'); } catch (e) { return []; } }
+    function _compressPhotoJpeg(file, maxDim = 1100, quality = 0.6) {
+      return new Promise((resolve, reject) => {
+        const rd = new FileReader();
+        rd.onerror = reject;
+        rd.onload = ev => {
+          const img = new Image();
+          img.onerror = reject;
+          img.onload = () => {
+            const sc = Math.min(1, maxDim / img.width, maxDim / img.height);
+            const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+            const cv = document.createElement('canvas');
+            cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(cv.toDataURL('image/jpeg', quality));
+          };
+          img.src = ev.target.result;
+        };
+        rd.readAsDataURL(file);
+      });
     }
 
     // Resumo do que foi feito no cliente naquele dia (para card e conclusão)
@@ -4982,6 +5022,19 @@ ${printScript}
         const admBtns = currentUser?.role === 'admin'
           ? `<button class="btn-secondary btn-sm" onclick="window._reopenVisit('${v.id}')">↩️ Reabrir</button>
              <button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : '';
+        const photos = _visitPhotos(v);
+        const photoThumbs = photos.map((src, pi) => `
+          <div class="visit-photo">
+            <img src="${src}" onclick="window._visitViewPhoto(this.src)">
+            ${concl ? '' : `<button class="visit-photo-x" onclick="window._visitRemovePhoto('${v.id}',${pi})" title="Remover">✕</button>`}
+          </div>`).join('');
+        const photosPanel = (photos.length || !concl) ? `
+          <div class="visit-panel"><h4>📷 Fotos${photos.length ? ' (' + photos.length + ')' : ''}</h4>
+            <div class="visit-photos">${photoThumbs}
+              ${concl ? '' : `<label class="visit-photo-add">＋<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="window._visitAddPhotos('${v.id}',this)"></label>`}
+            </div>
+            ${(!photos.length && concl) ? '<div class="visit-empty">Sem fotos.</div>' : ''}
+          </div>` : '';
         return `
         <div class="visit-card${concl ? ' visit-card--done' : ''}">
           <div class="visit-head" onclick="const b=document.getElementById('${bid}');b.hidden=!b.hidden;this.querySelector('.v-arr').textContent=b.hidden?'▶':'▼'">
@@ -4998,7 +5051,8 @@ ${printScript}
             ${concl ? `
               ${ckViewHtml}
               ${v.obs ? `<div class="visit-panel"><h4>📝 Observações</h4><div class="visit-obs-view">${escHtml(v.obs)}</div></div>` : ''}
-              <div class="visit-conclmeta">Concluído por <strong>${escHtml(v.concluded_by||v.tech||'')}</strong> em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'} · ${v.signed ? '✍️ assinado por ' + escHtml(v.signature_name||'cliente') : 'sem assinatura'}</div>
+              ${photosPanel}
+              <div class="visit-conclmeta">Concluído por <strong>${escHtml(v.concluded_by||v.tech||'')}</strong> em ${v.concluded_at ? fmtDate(v.concluded_at) : '—'} · ${v.signed ? '✍️ cliente assinou' : 'cliente não assinou'}${v.tech_signature_img ? ' · 👷 técnico assinou' : ''}</div>
               <div class="visit-actions">
                 <button class="btn-primary btn-sm" onclick="window._visitShare('${v.id}')">📲 Compartilhar</button>
                 <button class="btn-secondary btn-sm" onclick="window._visitPdf('${v.id}')">📄 PDF</button>
@@ -5010,6 +5064,7 @@ ${printScript}
                 <h4>✅ Checklist da visita</h4>
                 <div id="vck-${v.id}" class="visit-ck-grid">${ckEditHtml}</div>
               </div>
+              ${photosPanel}
               <label class="visit-field-label">📝 Observações / serviços realizados</label>
               <textarea id="vobs-${v.id}" class="form-input" placeholder="Ex: troca da bomba 2, ajuste de dosagem do detergente, treinamento do operador…">${escHtml(v.obs||'')}</textarea>
               <label class="visit-field-label" style="margin-top:0.7rem">📅 Próxima visita (opcional)</label>
@@ -5064,6 +5119,40 @@ ${printScript}
       return [...document.querySelectorAll(`#vck-${id} input[data-vck]`)]
         .filter(c => c.checked).map(c => c.dataset.vck);
     }
+
+    window._visitAddPhotos = async function(id, input) {
+      const files = [...(input.files || [])];
+      input.value = '';
+      if (!files.length) return;
+      const v = await _getVisit(id); if (!v) return;
+      const arr = _visitPhotos(v);
+      if (arr.length + files.length > 8) return toast('Máximo de 8 fotos por visita.', 'warning');
+      showOverlay('Processando foto(s)…');
+      try {
+        for (const f of files) {
+          if (!f.type.startsWith('image/')) continue;
+          arr.push(await _compressPhotoJpeg(f));
+        }
+        v.photos = JSON.stringify(arr);
+        await _saveVisit(v);
+      } catch (e) { toast('Erro ao processar foto.', 'error'); }
+      finally { hideOverlay(); }
+      await renderVisitsList();
+      document.getElementById('vbody-' + id)?.removeAttribute('hidden');
+    };
+    window._visitRemovePhoto = async function(id, idx) {
+      const v = await _getVisit(id); if (!v) return;
+      const arr = _visitPhotos(v);
+      arr.splice(idx, 1);
+      v.photos = JSON.stringify(arr);
+      await _saveVisit(v);
+      await renderVisitsList();
+      document.getElementById('vbody-' + id)?.removeAttribute('hidden');
+    };
+    window._visitViewPhoto = function(src) {
+      const w = window.open('', '_blank');
+      if (w) w.document.write(`<body style="margin:0;background:#111"><img src="${src}" style="max-width:100%;display:block;margin:auto"></body>`);
+    };
 
     window._saveVisitDraft = async function(id) {
       const v = await _getVisit(id); if (!v) return;
@@ -5155,43 +5244,72 @@ ${printScript}
         ? d.notes.map(n => `<p style="margin:3px 0"><strong>${escHtml(n.type)}${n.title?' — '+escHtml(n.title):''}:</strong> ${escHtml(n.content)}</p>`).join('')
         : '';
 
-      const signHtml = v.signed
-        ? `<div style="margin-top:26px;page-break-inside:avoid">
-             <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Assinatura do cliente</div>
-             ${v.signature_img ? `<img src="${v.signature_img}" style="max-height:90px;max-width:280px;display:block;border-bottom:1px solid #111">` : '<div style="border-bottom:1px solid #111;height:60px"></div>'}
-             <div style="font-size:11px;margin-top:4px">${escHtml(v.signature_name || '')}</div>
-             <div style="font-size:9px;color:#9ca3af">Assinado em ${v.concluded_at ? new Date(v.concluded_at).toLocaleDateString('pt-BR') : fmtDate(v.date)}</div>
-           </div>`
+      const photos = _visitPhotos(v);
+      const photosHtml = photos.length
+        ? `<div class="photos">${photos.map(src => `<img src="${src}">`).join('')}</div>`
         : '';
 
-      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:14mm 16mm}
-.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:${C};color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
-.hdr{background:${C};color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
-h2{font-size:13px;color:${C};border-bottom:2px solid ${C};padding-bottom:3px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:0.5px}
-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px}th{background:${C};color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
-td{padding:5px 8px;border-bottom:1px solid #f1f5f9}.muted{color:#94a3b8;font-size:11px;padding:4px 0}
-.obs{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.6}
-.footer{margin-top:20px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
-@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+      const sigCol = (title, name, img, when) => `
+        <td class="sigcell">
+          <div class="sigline">${img ? `<img src="${img}">` : ''}</div>
+          <div class="signame">${escHtml(name || '—')}</div>
+          <div class="sigrole">${title}${when ? ' · ' + when : ''}</div>
+        </td>`;
+      const whenStr = v.concluded_at ? new Date(v.concluded_at).toLocaleDateString('pt-BR') : fmtDate(v.date);
+      let sigRow = sigCol('Técnico responsável', v.tech_signature_name || v.tech, v.tech_signature_img, whenStr);
+      if (v.signed) sigRow += sigCol('Cliente', v.signature_name, v.signature_img, whenStr);
+      else sigRow += `<td class="sigcell"><div class="sigline"></div><div class="sigrole" style="margin-top:6px">Cliente — não assinado na visita</div></td>`;
+
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1e293b;padding:14mm 15mm;line-height:1.45}
+.abar{display:flex;gap:8px;margin-bottom:14px}.btn-p{padding:7px 14px;background:${C};color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700}
+.hdr{background:${C};color:#fff;padding:18px 22px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:14px}
+.hdr .ttl{font-size:17px;font-weight:800;letter-spacing:.3px}
+.hdr .sub{font-size:9.5px;color:rgba(255,255,255,.78);margin-top:3px}
+.info{display:flex;flex-wrap:wrap;gap:6px 26px;margin:14px 0 4px;padding:11px 14px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;font-size:10.5px}
+.info b{display:block;font-size:8.5px;color:#64748b;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:1px}
+.lead{font-size:10.5px;color:#64748b;margin:10px 0 2px}
+h2{font-size:12px;color:${C};padding:6px 0 4px;margin:16px 0 6px;border-bottom:2px solid ${C};text-transform:uppercase;letter-spacing:.6px}
+table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px}
+th{background:${C};color:#fff;padding:5px 8px;text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:.4px}
+td{padding:5px 8px;border-bottom:1px solid #eef2f7}
+.muted{color:#94a3b8;font-size:10.5px;padding:5px 2px}
+.obs{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:11px 13px;font-size:11px;line-height:1.6}
+ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
+.photos{display:flex;flex-wrap:wrap;gap:7px;margin-top:5px}
+.photos img{width:31%;height:120px;object-fit:cover;border-radius:7px;border:1px solid #e5e7eb}
+.sigs{margin-top:26px;page-break-inside:avoid}
+.sigs table{border:none}.sigcell{width:50%;padding:0 14px;vertical-align:bottom;border:none}
+.sigline{height:70px;border-bottom:1.5px solid #111;display:flex;align-items:flex-end}
+.sigline img{max-height:66px;max-width:100%}
+.signame{font-size:11px;font-weight:600;margin-top:5px}
+.sigrole{font-size:8.5px;color:#9ca3af}
+.footer{margin-top:24px;padding-top:9px;border-top:1px solid #e5e7eb;font-size:8.5px;color:#9ca3af;text-align:center}
+@media print{.abar{display:none}body{padding:9mm}@page{size:A4 portrait;margin:11mm}}`;
 
       return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Visita — ${escHtml(c.name||'')}</title><style>${CSS}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
-<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<button onclick="window.close()" style="padding:7px 14px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
 <div class="hdr">
   <div>${getPdfLogoHtml(true)}</div>
   <div style="text-align:right">
-    <div style="font-size:15px;font-weight:800;color:#fff">Relatório de Visita</div>
-    <div style="font-size:10px;color:rgba(255,255,255,.8);margin-top:2px">${escHtml(c.name||'Cliente')}${c.city?' · '+escHtml(c.city):''}</div>
-    <div style="font-size:10px;color:rgba(255,255,255,.8)">Data: ${fmtDate(v.date)}${v.tech?' · Técnico: '+escHtml(v.tech):''}</div>
+    <div class="ttl">RELATÓRIO DE VISITA</div>
+    <div class="sub">Documento de atendimento técnico</div>
   </div>
 </div>
-<p style="font-size:11px;color:#475569">Este documento resume o que foi realizado na visita técnica ao cliente na data acima.</p>
+<div class="info">
+  <div><b>Cliente</b>${escHtml(c.name||'—')}</div>
+  <div><b>Cidade</b>${escHtml(c.city||'—')}</div>
+  <div><b>Data da visita</b>${fmtDate(v.date)}</div>
+  <div><b>Técnico</b>${escHtml(v.tech||v.tech_signature_name||'—')}</div>
+</div>
+<p class="lead">Este documento resume o que foi realizado na visita técnica ao cliente na data acima.</p>
 <h2>1 · 💧 Vazão</h2>${vzHtml}
 <h2>2 · 📋 Fechamento dos Dados da Lavanderia</h2>${prodHtml}
 <h2>3 · ✅ Checklist Realizado</h2>${ckHtml}
 ${v.obs ? `<h2>4 · 📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
+${photosHtml ? `<h2>📷 Registro Fotográfico</h2>${photosHtml}` : ''}
 ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
-${signHtml}
+<div class="sigs"><table><tr>${sigRow}</tr></table></div>
 <div class="footer">${getPdfFooterHtml('Relatório de Visita')}</div>
 </body></html>`;
     }
@@ -5240,62 +5358,80 @@ ${signHtml}
       if (!link) toast('Abra o PDF e use "Salvar PDF" para anexar manualmente.', 'info', 5000);
     };
 
-    // ---- Assinatura ----
-    let _vsCtx = null, _vsDrawing = false, _vsHasInk = false;
-    function _vsSetup() {
-      const cv = document.getElementById('vs-canvas');
-      if (!cv || cv.dataset.wired) return;
+    // ---- Assinaturas (técnico + cliente) ----
+    let _vsCtx = null;
+    function _vsWirePad(cv) {
+      if (!cv) return;
+      cv._ink = false;
+      if (cv.dataset.wired) return;
       cv.dataset.wired = '1';
       const ctx = cv.getContext('2d');
-      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#111';
+      ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+      let drawing = false;
       const pos = e => {
         const r = cv.getBoundingClientRect();
         const t = e.touches ? e.touches[0] : e;
         return { x: (t.clientX - r.left) * (cv.width / r.width), y: (t.clientY - r.top) * (cv.height / r.height) };
       };
-      const down = e => { e.preventDefault(); _vsDrawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-      const move = e => { if (!_vsDrawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); _vsHasInk = true; };
-      const up = () => { _vsDrawing = false; };
+      const down = e => { e.preventDefault(); drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+      const move = e => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); cv._ink = true; };
+      const up = () => { drawing = false; };
       cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
       cv.addEventListener('touchstart', down, { passive: false });
       cv.addEventListener('touchmove', move, { passive: false });
       cv.addEventListener('touchend', up);
     }
-    function _vsClear() {
-      const cv = document.getElementById('vs-canvas'); if (!cv) return;
-      cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); _vsHasInk = false;
+    function _vsClearPad(cv) { if (!cv) return; cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); cv._ink = false; }
+    function _vsDrawInto(cv, dataUrl) {
+      _vsClearPad(cv);
+      if (!dataUrl) return;
+      const img = new Image();
+      img.onload = () => cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      img.src = dataUrl;
+      cv._ink = true;
     }
+
     window._visitSign = async function(id) {
       const v = await _getVisit(id); if (!v) return;
       _vsCtx = { id };
-      _vsSetup(); _vsClear();
+      const tc = document.getElementById('vs-tech-canvas'), cc = document.getElementById('vs-canvas');
+      _vsWirePad(tc); _vsWirePad(cc);
+      const savedTech = localStorage.getItem('hygicare_tech_sig_' + (currentUser?.username || '')) || '';
+      _vsDrawInto(tc, v.tech_signature_img || savedTech);
+      _vsDrawInto(cc, v.signature_img || '');
+      document.getElementById('vs-tech-name').value = v.tech_signature_name || currentUser?.name || currentUser?.username || '';
       document.getElementById('vs-signed').checked = v.signed !== false;
       document.getElementById('vs-name').value = v.signature_name || '';
       document.getElementById('modal-visit-sign').classList.remove('hidden');
     };
-    document.getElementById('vs-clear')?.addEventListener('click', _vsClear);
+    document.getElementById('vs-tech-clear')?.addEventListener('click', () => _vsClearPad(document.getElementById('vs-tech-canvas')));
+    document.getElementById('vs-clear')?.addEventListener('click', () => _vsClearPad(document.getElementById('vs-canvas')));
     document.getElementById('vs-cancel')?.addEventListener('click', () =>
       document.getElementById('modal-visit-sign').classList.add('hidden'));
     document.getElementById('vs-confirm')?.addEventListener('click', async () => {
       if (!_vsCtx) return;
       const v = await _getVisit(_vsCtx.id); if (!v) return;
+      const tc = document.getElementById('vs-tech-canvas'), cc = document.getElementById('vs-canvas');
+      const techName = document.getElementById('vs-tech-name').value.trim();
+      v.tech_signature_name = techName;
+      if (tc._ink) {
+        v.tech_signature_img = tc.toDataURL('image/png');
+        if (document.getElementById('vs-tech-remember').checked && currentUser?.username)
+          localStorage.setItem('hygicare_tech_sig_' + currentUser.username, v.tech_signature_img);
+      }
       const signed = document.getElementById('vs-signed').checked;
       const name = document.getElementById('vs-name').value.trim();
       if (signed) {
-        if (!name) return toast('Informe o nome de quem assinou.', 'warning');
-        if (!_vsHasInk) return toast('Peça a assinatura no quadro, ou desmarque "Cliente assinou".', 'warning');
-        v.signed = true;
-        v.signature_name = name;
-        v.signature_img = document.getElementById('vs-canvas').toDataURL('image/png');
+        if (!name) return toast('Informe o nome de quem assinou pelo cliente.', 'warning');
+        if (!cc._ink) return toast('Peça a assinatura do cliente, ou desmarque "Cliente assinou".', 'warning');
+        v.signed = true; v.signature_name = name; v.signature_img = cc.toDataURL('image/png');
       } else {
-        v.signed = false;
-        v.signature_name = name;
-        v.signature_img = '';
+        v.signed = false; v.signature_name = name; v.signature_img = '';
       }
       await _saveVisit(v);
       document.getElementById('modal-visit-sign').classList.add('hidden');
-      toast(signed ? '✍️ Assinatura salva.' : 'Marcado como sem assinatura.', 'success');
+      toast('✍️ Assinaturas salvas.', 'success');
       await renderVisitsList();
     });
 
