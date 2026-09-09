@@ -5414,11 +5414,11 @@ ${printScript}
 
       const pumps = d.vz.filter(x => !x.maint);
       const maint = d.vz.filter(x => x.maint);
+      const pumpMachines = [...new Set(pumps.map(x => x.machine))];
       let vzHtml = '';
       if (pumps.length) {
-        vzHtml = `<table><thead><tr><th>Máquina</th><th>Bomba / sensor</th><th style="text-align:right">Leitura</th></tr></thead><tbody>${
-          pumps.map((x,i) => `<tr style="${i%2?'background:#f8fafc':''}"><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}</td><td style="text-align:right;font-weight:700">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')
-        }</tbody></table>`;
+        vzHtml = `<p>✔️ Foi realizada a <strong>aferição de vazão das bombas</strong> nesta visita — ${pumps.length} leitura(s) em ${pumpMachines.length} máquina(s)${pumpMachines.length ? ': ' + pumpMachines.map(escHtml).join(', ') : ''}.</p>
+        <p class="muted" style="font-size:9px">Os valores medidos ficam registrados no histórico de vazão do cliente.</p>`;
       }
       if (maint.length) vzHtml += `<p style="color:#b45309;font-size:11px;margin-top:6px">🔧 Máquina(s) em manutenção no dia: ${maint.map(x=>escHtml(x.machine)).join(', ')}</p>`;
       if (!vzHtml) vzHtml = '<p class="muted">Sem leituras de vazão neste dia.</p>';
@@ -5471,16 +5471,18 @@ ${printScript}
 .hdr .sub{font-size:9.5px;color:rgba(255,255,255,.78);margin-top:3px}
 .info{display:flex;flex-wrap:wrap;gap:6px 26px;margin:14px 0 4px;padding:11px 14px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;font-size:10.5px}
 .info b{display:block;font-size:8.5px;color:#64748b;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:1px}
-.lead{font-size:10.5px;color:#64748b;margin:10px 0 2px}
-h2{font-size:12px;color:${C};padding:6px 0 4px;margin:16px 0 6px;border-bottom:2px solid ${C};text-transform:uppercase;letter-spacing:.6px}
+.lead{font-size:10.5px;color:#64748b;margin:9px 0 2px}
+h2{font-size:12px;color:${C};padding:5px 0 3px;margin:12px 0 5px;border-bottom:2px solid ${C};text-transform:uppercase;letter-spacing:.6px}
+p{font-size:10.5px;margin:3px 0}
 table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px}
 th{background:${C};color:#fff;padding:5px 8px;text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:.4px}
 td{padding:5px 8px;border-bottom:1px solid #eef2f7}
 .muted{color:#94a3b8;font-size:10.5px;padding:5px 2px}
 .obs{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:11px 13px;font-size:11px;line-height:1.6}
 ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
-.photos{display:flex;flex-wrap:wrap;gap:7px;margin-top:5px}
-.photos img{width:31%;height:120px;object-fit:cover;border-radius:7px;border:1px solid #e5e7eb}
+.photopage{page-break-before:always}
+.photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.photos img{width:48%;max-height:340px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;background:#f8fafc}
 .sigs{margin-top:26px;page-break-inside:avoid}
 .sigs table{border:none}.sigcell{width:50%;padding:0 14px;vertical-align:bottom;border:none}
 .sigline{height:70px;border-bottom:1.5px solid #111;display:flex;align-items:flex-end}
@@ -5511,10 +5513,10 @@ ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
 <h2>2 · 📋 Fechamento dos Dados da Lavanderia</h2>${prodHtml}
 <h2>3 · ✅ Checklist Realizado</h2>${ckHtml}
 ${v.obs ? `<h2>4 · 📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
-${photosHtml ? `<h2>📷 Registro Fotográfico</h2>${photosHtml}` : ''}
 ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
 <div class="sigs"><table><tr>${sigRow}</tr></table></div>
 <div class="footer">${getPdfFooterHtml('Relatório de Visita')}</div>
+${photosHtml ? `<div class="photopage"><h2>📷 Registro Fotográfico</h2>${photosHtml}</div>` : ''}
 </body></html>`;
     }
 
