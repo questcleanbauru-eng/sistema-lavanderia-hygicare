@@ -8238,27 +8238,39 @@ ${opSections}
         `Excluir de "${name}":\n${_desc}?\n\nEsta ação não pode ser desfeita.`,
         '🗑️ Excluir vazões', true)) return;
       showOverlay('Excluindo…');
-      let serverFail = 0;
+      let remaining = null;   // quantas linhas ainda restam na planilha p/ este cliente
       try {
+        // 1) apaga no app
         for (const r of victims) await dbDelete('vazao_records', r.id);
+
         if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
-          let sheetRes = null;
-          try { sheetRes = await callGAS('deleteByField', SHEETS.VAZAO_RECORDS, { field: 'client_id', value: String(clientId) }); }
-          catch (e) { sheetRes = null; }
-          // backend sem a ação deleteByField → apaga linha a linha pela ação "delete"
-          if (!sheetRes || !('deleted' in sheetRes)) {
-            for (const r of victims) {
-              const ok = await deleteSheetDB(SHEETS.VAZAO_RECORDS, r.id);
-              if (!ok) serverFail++;
-            }
+          const _fetchSheet = async () => {
+            try {
+              const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.VAZAO_RECORDS}`);
+              return r.ok ? ((await r.json()).data || []) : null;
+            } catch (e) { return null; }
+          };
+          // 2) tenta a ação id-independente (apaga por client_id de uma vez)
+          try { await callGAS('deleteByField', SHEETS.VAZAO_RECORDS, { field: 'client_id', value: String(clientId) }); } catch (e) {}
+          // 3) confere na planilha o que sobrou e apaga pelos ids REAIS dela
+          //    (o id lido da planilha bate com o findRowById; o id local pode ter
+          //     sido arredondado no Sheets e nunca casar)
+          let sheetRows = await _fetchSheet();
+          if (Array.isArray(sheetRows)) {
+            const left = sheetRows.filter(x => Number(x.client_id) === Number(clientId));
+            for (const x of left) { try { await callGAS('delete', SHEETS.VAZAO_RECORDS, null, x.id); } catch (e) {} }
+            sheetRows = await _fetchSheet();
+            remaining = Array.isArray(sheetRows)
+              ? sheetRows.filter(x => Number(x.client_id) === Number(clientId)).length
+              : null;
           }
         }
         hideOverlay();
-        toast(serverFail
-          ? `${victims.length} removidas no app · ${serverFail} não confirmadas na planilha (rode Atualizar e confira).`
-          : `${victims.length} leitura(s)/manutenção removidas (app + planilha).`,
-          serverFail ? 'warning' : 'success', 6000);
+        if (remaining === 0)        toast(`Vazões de "${name}" excluídas (app + planilha).`, 'success', 5000);
+        else if (remaining == null) toast(`${victims.length} removidas no app. Rode Atualizar para confirmar na planilha.`, 'warning', 6000);
+        else                        toast(`Removidas no app, mas ainda restam ${remaining} na planilha. Rode Atualizar e tente de novo.`, 'error', 8000);
       } finally { hideOverlay(); }
+      await _syncStoreFromSheet(SHEETS.VAZAO_RECORDS).catch(() => {});
       await renderVazaoClientsOverview();
       const cur = Number(document.getElementById('vazao-client')?.value || 0);
       if (cur === Number(clientId)) await renderVazaoLocalHistory(cur);

@@ -1020,18 +1020,23 @@ function doPost(e) {
     // Robusto contra ids longos arredondados pelo Sheets.
     if (action === 'deleteByField') {
       const field = String(data && data.field || '');
-      const value = String(data && data.value != null ? data.value : '');
-      if (!field || value === '') return respondError('Campos data.field e data.value obrigatórios');
+      const want  = String(data && data.value != null ? data.value : '').trim();
+      if (!field || want === '') return respondError('Campos data.field e data.value obrigatórios');
       const all = sheet.getDataRange().getValues();
       const hdr = all.length ? all[0].map(String) : [];
       const cIdx = hdr.indexOf(field);
       if (cIdx < 0) return respondError('Aba ' + sheetName + ' não tem coluna "' + field + '"');
+      const wantNum = Number(want);
+      const numeric = want !== '' && !isNaN(wantNum);
       const toDel = [];
       for (let i = 1; i < all.length; i++) {
-        if (String(all[i][cIdx]) === value) toDel.push(i + 1);
+        let cell = all[i][cIdx];
+        if (cell instanceof Date) cell = cell.toISOString();
+        const cs = String(cell).trim();
+        if (cs === want || (numeric && cs !== '' && Number(cs) === wantNum)) toDel.push(i + 1);
       }
       for (let d = toDel.length - 1; d >= 0; d--) sheet.deleteRow(toDel[d]);
-      return respond({ deleted: toDel.length, field: field, value: value });
+      return respond({ deleted: toDel.length, field: field, value: want });
     }
 
     // ── UPSERT ────────────────────────────────────────────
