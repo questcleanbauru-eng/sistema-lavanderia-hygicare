@@ -5207,7 +5207,7 @@ ${printScript}
         const photosPanel = (photos.length || !concl) ? `
           <div class="visit-panel"><h4>📷 Fotos${photos.length ? ' (' + photos.length + ')' : ''}</h4>
             <div class="visit-photos">${photoThumbs}
-              ${concl ? '' : `<label class="visit-photo-add">＋<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="window._visitAddPhotos('${v.id}',this)"></label>`}
+              ${concl ? '' : `<label class="visit-photo-add">＋<input type="file" accept="image/*" multiple style="display:none" onchange="window._visitAddPhotos('${v.id}',this)"></label>`}
             </div>
             ${(!photos.length && concl) ? '<div class="visit-empty">Sem fotos.</div>' : ''}
           </div>` : '';
@@ -8238,17 +8238,26 @@ ${opSections}
         `Excluir de "${name}":\n${_desc}?\n\nEsta ação não pode ser desfeita.`,
         '🗑️ Excluir vazões', true)) return;
       showOverlay('Excluindo…');
+      let serverFail = 0;
       try {
         for (const r of victims) await dbDelete('vazao_records', r.id);
-        let sheetRes = null;
         if (navigator.onLine && CONFIG.GAS_URL && !CONFIG.GAS_URL.includes('YOUR_GAS_URL')) {
+          let sheetRes = null;
           try { sheetRes = await callGAS('deleteByField', SHEETS.VAZAO_RECORDS, { field: 'client_id', value: String(clientId) }); }
           catch (e) { sheetRes = null; }
+          // backend sem a ação deleteByField → apaga linha a linha pela ação "delete"
+          if (!sheetRes || !('deleted' in sheetRes)) {
+            for (const r of victims) {
+              const ok = await deleteSheetDB(SHEETS.VAZAO_RECORDS, r.id);
+              if (!ok) serverFail++;
+            }
+          }
         }
         hideOverlay();
-        toast(`${victims.length} leitura(s) removidas` +
-          (sheetRes && 'deleted' in sheetRes ? ` (local + ${sheetRes.deleted} na planilha).` : ' localmente (rode Atualizar depois de conferir a planilha).'),
-          sheetRes ? 'success' : 'warning', 6000);
+        toast(serverFail
+          ? `${victims.length} removidas no app · ${serverFail} não confirmadas na planilha (rode Atualizar e confira).`
+          : `${victims.length} leitura(s)/manutenção removidas (app + planilha).`,
+          serverFail ? 'warning' : 'success', 6000);
       } finally { hideOverlay(); }
       await renderVazaoClientsOverview();
       const cur = Number(document.getElementById('vazao-client')?.value || 0);
