@@ -4817,12 +4817,14 @@ ${printScript}
       });
 
       window._alertWaMsgs = {};
+      window._alertGroups = {};
       const overdueHtml = overdue.length ? Object.entries(bySeller).map(([seller, items], gi) => {
         const waMsg = `*Hygicare — Aviso de Relatórios Pendentes - App Lavanderia*\n\nVendedor: *${seller}*\n\nClientes sem relatório:\n` +
           items.map(({client, daysSince}) =>
             `• *${client.name}*${client.city?' ('+client.city+')':''} — ${daysSince !== null ? daysSince+' dias sem relatório' : 'sem registros'}`
           ).join('\n') + '\n\nPor favor, agende uma visita ou envie o relatório em breve.\n\n🔗 https://sistema-lavanderia-hygicare.vercel.app/';
         window._alertWaMsgs[gi] = waMsg;
+        window._alertGroups[gi] = { seller, items };
         const waLink = `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
         const cardsHtml = items.map(({ client, last, daysSince }) => {
@@ -4855,6 +4857,10 @@ ${printScript}
           <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
             <div style="font-weight:700;font-size:0.88rem;color:var(--text)">👨‍💼 ${escHtml(seller)} <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(${items.length} cliente${items.length!==1?'s':''})</span></div>
             <div style="display:flex;gap:0.35rem;flex-shrink:0">
+              ${currentUser?.role === 'admin' ? `<button type="button" data-notify-gi="${gi}" onclick="window._notifySellerOverdue(${gi})" title="Notificar ${escHtml(seller)} por push"
+                style="display:inline-flex;align-items:center;gap:0.3rem;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:6px;padding:0.3rem 0.6rem;font-size:0.78rem;font-weight:600;cursor:pointer">
+                🔔 Notificar
+              </button>` : ''}
               <button type="button" onclick="window._copyAlertMsg(${gi})"
                 style="display:inline-flex;align-items:center;gap:0.3rem;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.78rem;font-weight:600;cursor:pointer">
                 📋 Copiar
@@ -4875,6 +4881,36 @@ ${printScript}
            </div>${overdueHtml}`
         : '');
     }
+
+    // Notifica por push o vendedor (ou técnico) responsável pelo grupo de
+    // clientes atrasados — resolve o nome pra um username de login olhando
+    // sellerName/name/username na aba Usuarios (mesma lógica do Apps Script).
+    window._notifySellerOverdue = async function(i) {
+      if (currentUser?.role !== 'admin') return;
+      const g = window._alertGroups?.[i];
+      if (!g) return;
+      const key = String(g.seller || '').trim().toLowerCase();
+      const users = await dbGetAll_raw('users');
+      const user = users.find(u => String(u.sellerName || '').trim().toLowerCase() === key)
+                || users.find(u => String(u.name || '').trim().toLowerCase() === key)
+                || users.find(u => String(u.username || '').trim().toLowerCase() === key);
+      if (!user?.username) return toast(`Não encontrei um usuário de login para "${g.seller}".`, 'warning', 5000);
+
+      const names = g.items.map(it => it.client.name).slice(0, 6).join(', ') + (g.items.length > 6 ? '…' : '');
+      const btn = document.querySelector(`[data-notify-gi="${i}"]`);
+      if (btn) { btn.disabled = true; btn.dataset.orig = btn.innerHTML; btn.innerHTML = '⏳'; }
+      const res = await sendPushToUser(user.username, {
+        title: '📋 Relatórios pendentes',
+        body: `${g.items.length} cliente(s) sem relatório: ${names}`,
+        data: { screen: 'screen-alerts' },
+      });
+      if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.orig; }
+
+      const who = user.name || user.username;
+      if (res && res.sent > 0) toast(`🔔 ${who} notificado (${res.sent} dispositivo${res.sent!==1?'s':''}).`, 'success');
+      else if (res && res.sent === 0) toast(`${who} ainda não ativou notificações em nenhum dispositivo.`, 'warning', 5000);
+      else toast('Falha ao enviar notificação — confira a configuração do servidor.', 'error');
+    };
 
     window._copyAlertMsg = (i) => {
       const msg = window._alertWaMsgs?.[i];
