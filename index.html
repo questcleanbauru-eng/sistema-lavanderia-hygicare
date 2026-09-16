@@ -1235,6 +1235,28 @@
               <p id="proc-colors-msg" style="font-size:0.82rem;margin-top:0.5rem;color:var(--success-dark)"></p>
             </div>
           </div>
+
+          <!-- Card Notificações Push -->
+          <div class="card" style="margin-top:1.2rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+                 onclick="(function(b,a){const o=b.style.display!=='none';b.style.display=o?'none':'block';a.textContent=o?'▶':'▼'})(document.getElementById('push-body'),this.querySelector('.push-arr'))">
+              <h3 style="margin:0;font-size:1.05rem;color:#1e40af">🔔 Notificações Push</h3>
+              <span class="push-arr" style="font-size:0.75rem;color:var(--muted);min-width:14px;text-align:right">▼</span>
+            </div>
+            <div id="push-body">
+              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 1rem">
+                Avisa por notificação mesmo com o app fechado: relatório pendente, visita em rascunho
+                e próxima visita agendada. As checagens rodam automaticamente todo dia (configuradas
+                no Apps Script). Aqui você ativa/testa no <strong>seu</strong> dispositivo atual.
+              </p>
+              <p id="push-status" style="font-size:0.85rem;font-weight:600;margin-bottom:0.75rem">verificando…</p>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button id="btn-push-enable" class="btn-primary" style="font-size:0.82rem">🔔 Ativar neste dispositivo</button>
+                <button id="btn-push-disable" class="btn-secondary" style="font-size:0.82rem">🔕 Desativar neste dispositivo</button>
+                <button id="btn-push-test" class="btn-secondary" style="font-size:0.82rem">📨 Enviar teste</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- ===== TELA VAZÃO ===== -->

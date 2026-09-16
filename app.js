@@ -28,6 +28,205 @@ function gasApiUrl() {
   return CONFIG.GAS_URL; // fallback local (sem service worker)
 }
 
+// ============================================================
+// NOTIFICAÇÕES PUSH — chegam mesmo com o app fechado (diferente de
+// notificação local, que só funciona com a aba aberta). Fica em escopo
+// top-level (fora do DOMContentLoaded) porque precisa ser chamável tanto da
+// tela de login (antes do IIFE interno que define callGAS) quanto de
+// qualquer tela depois. Por isso usa fetch cru contra o GAS, igual ao
+// cadastro de PIN.
+//
+// Chave pública VAPID — não é secreta, pode ficar no client (a privada só
+// existe no servidor, em /api/send-push.js).
+const VAPID_PUBLIC_KEY = 'BM9vf6TAeI5Qx9YVwga0iEP91FgcItSKsq--2Xr7bTwsdXQXCYaW6Rpy9PdLuhKoMm1H85DiMN8v3zpS7OLmIS8';
+
+function _urlB64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function _isIOSDevice() {
+  return /iP(hone|od|ad)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function _isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function _pushApiSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+// Ativa a inscrição push do dispositivo atual e salva vinculada ao usuário
+// logado (aba PushSubscriptions — suporta vários dispositivos por usuário,
+// um endpoint por linha). Retorna true/false.
+async function subscribePush() {
+  if (!_pushApiSupported() || !currentUser?.username) return false;
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return false;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlB64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    const j = sub.toJSON();
+    const payload = {
+      username: currentUser.username,
+      endpoint: j.endpoint,
+      p256dh: j.keys?.p256dh || '',
+      auth: j.keys?.auth || '',
+      ua: navigator.userAgent,
+      created_at: new Date().toISOString(),
+    };
+    // evita duplicar: se este endpoint já está salvo, atualiza em vez de inserir de novo
+    try {
+      const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.PUSH_SUBSCRIPTIONS}`);
+      const rows = r.ok ? ((await r.json()).data || []) : [];
+      const existing = rows.find(x => x.endpoint === payload.endpoint);
+      const body = new URLSearchParams({ payload: JSON.stringify(
+        existing
+          ? { action: 'update', sheet: SHEETS.PUSH_SUBSCRIPTIONS, id: existing.id, data: payload }
+          : { action: 'insert', sheet: SHEETS.PUSH_SUBSCRIPTIONS, data: payload }
+      ) });
+      await fetch(gasApiUrl(), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    } catch (e) { console.warn('subscribePush save', e); }
+    localStorage.setItem('hygicare_push_enabled_' + currentUser.username, '1');
+    return true;
+  } catch (e) { console.warn('subscribePush', e); return false; }
+}
+
+// Cancela a inscrição deste dispositivo e remove a linha salva.
+async function unsubscribePush() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const endpoint = sub.endpoint;
+      await sub.unsubscribe();
+      try {
+        const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.PUSH_SUBSCRIPTIONS}`);
+        const rows = r.ok ? ((await r.json()).data || []) : [];
+        const existing = rows.find(x => x.endpoint === endpoint);
+        if (existing) {
+          const body = new URLSearchParams({ payload: JSON.stringify({ action: 'delete', sheet: SHEETS.PUSH_SUBSCRIPTIONS, id: existing.id }) });
+          await fetch(gasApiUrl(), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        }
+      } catch (e) { /* best effort */ }
+    }
+  } catch (e) { console.warn('unsubscribePush', e); }
+  if (currentUser?.username) localStorage.setItem('hygicare_push_enabled_' + currentUser.username, '0');
+}
+
+// Dispara uma notificação push pro usuário indicado (username de login).
+// Sempre "fire and forget": nunca deixa uma falha de push quebrar o fluxo
+// que chamou (ex.: salvar uma visita não pode falhar por causa disso).
+async function sendPushToUser(username, msg) {
+  if (!username) return;
+  try {
+    await fetch('/api/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, title: msg?.title, body: msg?.body, data: msg?.data || {} }),
+    });
+  } catch (e) { console.warn('sendPushToUser (ignorado):', e); }
+}
+window.sendPushToUser = sendPushToUser;
+
+// ── Navegação ao tocar numa notificação push ──────────────
+// `data` vem do payload da notificação: { screen, clientId, visitId }.
+// Simula um clique no item do menu (em vez de chamar show()/renderX() direto,
+// que vivem num escopo à parte) — reaproveita a mesma lógica de abertura de
+// tela que o menu já usa. Chamado pelo listener de 'message' do service
+// worker (aba já aberta) e por _handlePushLaunchParams (aba nova).
+function _pushNavigate(data) {
+  const screenId = data && data.screen;
+  if (!screenId) return;
+  const item = document.querySelector(`.drawer-item[data-target="${screenId}"]`) ||
+               document.querySelector(`.bnav-btn[data-target="${screenId}"]`);
+  item?.click();
+}
+window._pushNavigate = _pushNavigate;
+
+// Quando a notificação abre uma aba NOVA (nenhuma outra estava aberta), o
+// service worker manda pra cá via querystring (?pushScreen=...) em vez de
+// postMessage — não tem pra quem mandar mensagem ainda.
+function _handlePushLaunchParams() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const screen = params.get('pushScreen');
+    if (!screen) return;
+    _pushNavigate({ screen });
+    ['pushScreen', 'pushClient', 'pushVisit'].forEach(k => params.delete(k));
+    const qs = params.toString();
+    history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+  } catch (e) { /* ignora */ }
+}
+window._handlePushLaunchParams = _handlePushLaunchParams;
+
+// ---------- Banner discreto "ativar notificações" ----------
+function _pushSnoozeKey() { return 'hygicare_push_snooze'; }
+function _dismissPushBanner() {
+  localStorage.setItem(_pushSnoozeKey(), String(Date.now()));
+  document.getElementById('_push-banner')?.remove();
+}
+function _showPushBanner(kind) {
+  if (document.getElementById('_push-banner')) return;
+  const el = document.createElement('div');
+  el.id = '_push-banner';
+  el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9997;background:#0f172a;color:#fff;'
+    + 'padding:0.7rem 0.9rem;display:flex;align-items:center;gap:0.65rem;box-shadow:0 -4px 16px rgba(0,0,0,.25);'
+    + 'font-size:0.82rem;line-height:1.35';
+  if (kind === 'ios-install') {
+    el.innerHTML = `
+      <span style="font-size:1.25rem;flex-shrink:0">📲</span>
+      <span style="flex:1">Para receber notificações no iPhone, adicione o app à Tela de Início: toque em <strong>Compartilhar</strong> (⬆️) e depois em <strong>"Adicionar à Tela de Início"</strong>.</span>
+      <button id="_pb-close" style="background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;flex-shrink:0;font-size:0.8rem">Entendi</button>`;
+  } else {
+    el.innerHTML = `
+      <span style="font-size:1.25rem;flex-shrink:0">🔔</span>
+      <span style="flex:1">Ative as notificações para ser avisado mesmo com o app fechado.</span>
+      <button id="_pb-enable" style="background:#2563eb;border:none;color:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:700;flex-shrink:0;font-size:0.8rem">Ativar</button>
+      <button id="_pb-close" style="background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:7px 10px;cursor:pointer;flex-shrink:0;font-size:0.8rem">Agora não</button>`;
+  }
+  document.body.appendChild(el);
+  document.getElementById('_pb-close').addEventListener('click', _dismissPushBanner);
+  document.getElementById('_pb-enable')?.addEventListener('click', async () => {
+    const btn = document.getElementById('_pb-enable');
+    btn.textContent = '⏳'; btn.disabled = true;
+    const ok = await subscribePush();
+    el.remove();
+    if (ok) toast('🔔 Notificações ativadas!', 'success');
+    else { toast('Não foi possível ativar. Verifique as permissões do navegador.', 'warning'); _dismissPushBanner(); }
+  });
+}
+// Mostra o banner só quando faz sentido: permissão ainda não decidida,
+// não foi dispensado recentemente, e não tem outro modal por cima (ex.: o
+// de cadastro de PIN no primeiro login).
+function _maybeOfferPush() {
+  try {
+    if (!currentUser) return;
+    const pinModal = document.getElementById('modal-pin-setup');
+    if (pinModal && !pinModal.classList.contains('hidden')) { setTimeout(_maybeOfferPush, 4000); return; }
+    if (document.getElementById('_push-banner')) return;
+    const snoozeTs = parseInt(localStorage.getItem(_pushSnoozeKey()) || '0', 10);
+    if (snoozeTs && (Date.now() - snoozeTs) < 24 * 3600 * 1000) return; // reaparece depois de 24h
+    const ios = _isIOSDevice(), standalone = _isStandaloneApp();
+    if (ios && !standalone) { _showPushBanner('ios-install'); return; }
+    if (!('Notification' in window)) return; // navegador sem suporte — não incomoda
+    if (Notification.permission !== 'default') return; // já concedeu ou já negou
+    if (!_pushApiSupported()) return;
+    _showPushBanner('enable');
+  } catch (e) { /* nunca quebra o app por causa do banner */ }
+}
+
 function fmtDate(iso) {
   if (!iso) return '?';
   // Parse YYYY-MM-DD as local date (avoids UTC midnight → dia anterior no UTC-3)
@@ -260,6 +459,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (document.visibilityState === 'visible') swReg.update().catch(() => {});
       });
     } catch (e) { console.warn('SW falhou:', e); }
+
+    // Toque numa notificação push com o app já aberto numa aba: o SW foca
+    // essa aba e manda os dados aqui pra gente navegar até a tela certa.
+    navigator.serviceWorker.addEventListener('message', ev => {
+      if (ev.data?.type === 'PUSH_NAVIGATE') window._pushNavigate?.(ev.data.data || {});
+    });
   }
 
   // Offline indicator
@@ -623,6 +828,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     initApp();
     // Verifica manutenção após login (lê estado salvo localmente)
     setTimeout(() => window._applyMaintenanceMode?.(), 200);
+    // Convite discreto pra ativar notificações push (não empilha com o modal de PIN)
+    setTimeout(() => _maybeOfferPush(), 2200);
+    // Veio de um toque numa notificação push que abriu uma aba nova? navega direto pra tela
+    setTimeout(() => _handlePushLaunchParams(), 400);
   }
 
   if (currentUser) {
@@ -1079,7 +1288,7 @@ ${printScript}
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
-        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); testApis(); }
+        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); testApis(); }
         if (screenId === 'screen-alerts')  await renderAlertsScreen();
       });
     });
@@ -1097,7 +1306,7 @@ ${printScript}
         if (screenId === 'screen-recipes')      await initRecipesScreen();
         if (screenId === 'screen-client-notes') await initClientNotesScreen();
         if (screenId === 'screen-users')        await renderUsersList();
-        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); testApis(); }
+        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); testApis(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
       });
     });
@@ -1253,7 +1462,7 @@ ${printScript}
         if (screenId === 'screen-users')        await renderUsersList();
         if (screenId === 'screen-financeiro')   await initFinanceiroScreen();
         if (screenId === 'screen-equipment')    await initEquipmentScreen();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); testApis(); }
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); testApis(); }
       });
     });
 
@@ -1913,6 +2122,55 @@ ${printScript}
       callGAS('upsert', 'Config', { chave: 'hygicare_visit_checklist', valor: '' });
       renderVisitChecklistAdmin();
       toast('Checklist restaurado.', 'info', 2000);
+    });
+
+    // ── Card Notificações Push (Admin) ────────────────────────
+    async function renderPushAdminCard() {
+      const statusEl = document.getElementById('push-status');
+      if (!statusEl) return;
+      if (!_pushApiSupported()) {
+        statusEl.textContent = '⚠️ Este navegador não suporta notificações push.';
+        statusEl.style.color = 'var(--muted)';
+        return;
+      }
+      const perm = Notification.permission;
+      let sub = null;
+      try { const reg = await navigator.serviceWorker.ready; sub = await reg.pushManager.getSubscription(); } catch (e) {}
+      if (perm === 'granted' && sub) {
+        statusEl.textContent = '🔔 Ativado neste dispositivo.';
+        statusEl.style.color = 'var(--success-dark, #16a34a)';
+      } else if (perm === 'denied') {
+        statusEl.textContent = '🔕 Bloqueado pelo navegador — ative nas permissões do site.';
+        statusEl.style.color = 'var(--danger, #dc2626)';
+      } else {
+        statusEl.textContent = '🔕 Não ativado neste dispositivo.';
+        statusEl.style.color = 'var(--muted)';
+      }
+    }
+    document.getElementById('btn-push-enable')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-push-enable');
+      btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳';
+      const ok = await subscribePush();
+      btn.disabled = false; btn.textContent = orig;
+      toast(ok ? '🔔 Notificações ativadas neste dispositivo!' : 'Não foi possível ativar (permissão negada ou navegador sem suporte).', ok ? 'success' : 'warning');
+      await renderPushAdminCard();
+    });
+    document.getElementById('btn-push-disable')?.addEventListener('click', async () => {
+      await unsubscribePush();
+      toast('🔕 Notificações desativadas neste dispositivo.', 'info');
+      await renderPushAdminCard();
+    });
+    document.getElementById('btn-push-test')?.addEventListener('click', async () => {
+      if (!currentUser?.username) return;
+      const btn = document.getElementById('btn-push-test');
+      btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Enviando…';
+      await sendPushToUser(currentUser.username, {
+        title: '✅ Teste — Hygicare Lavanderia',
+        body: 'Se você recebeu isto, as notificações push estão funcionando!',
+        data: { screen: 'screen-admin' },
+      });
+      btn.disabled = false; btn.textContent = orig;
+      toast('Teste enviado. Se não chegar em alguns segundos, confira se está ativado neste dispositivo e se o servidor (Vercel) já tem as chaves VAPID configuradas.', 'info', 7000);
     });
 
     document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
@@ -2784,6 +3042,7 @@ ${printScript}
       // 2s de delay: dá tempo ao GAS de persistir na planilha antes de re-buscar
       _postSaveTimers[sheetName] = setTimeout(() => _syncStoreFromSheet(sheetName), 2000);
     }
+
 
     async function callGAS(action, sheetName, data, id) {
       if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('YOUR_GAS_URL')) return false;

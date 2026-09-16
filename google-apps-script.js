@@ -47,6 +47,7 @@ const HEADERS = {
                     'snapshot','signed','signature_name','signature_img',
                     'tech_signature_name','tech_signature_img','photos',
                     'concluded_at','concluded_by','created_at','created_by'],
+  PushSubscriptions: ['id','username','endpoint','p256dh','auth','ua','created_at'],
 };
 
 // ── Resposta padrão ──────────────────────────────────────────
@@ -247,7 +248,7 @@ const SHEET_LABELS = {
 
 // Abas que usam fila (batching) em vez de e-mail individual por registro
 // Sheets que NUNCA disparam notificação (imports em massa, configs)
-var NO_NOTIF_SHEETS = ['Financeiro', 'Config', 'AppConfig', 'Usuarios', 'Visitas'];
+var NO_NOTIF_SHEETS = ['Financeiro', 'Config', 'AppConfig', 'Usuarios', 'Visitas', 'PushSubscriptions'];
 
 // Todas as sheets ativas → enviadas em um único e-mail consolidado
 var NOTIF_BATCH_SHEETS = ['Registros', 'VazaoRegistros', 'Clientes', 'Maquinas', 'Processos',
@@ -926,6 +927,16 @@ function doPost(e) {
     }
     if (action === 'sendVazaoNow') {
       try { sendMonthlyVazaoEmail(true); return respond({ ok: true }); }
+      catch(e) { return respondError(e.message); }
+    }
+
+    // ── NOTIFICAÇÕES PUSH — gatilho diário ────────────────
+    if (action === 'setupDailyPushTrigger') {
+      try { setupDailyPushTrigger(); return respond({ ok: true, message: 'Gatilho diário configurado (todo dia às 8h)' }); }
+      catch(e) { return respondError('Erro ao configurar gatilho: ' + e.message); }
+    }
+    if (action === 'runDailyPushChecksNow') {
+      try { runDailyPushChecks(); return respond({ ok: true }); }
       catch(e) { return respondError(e.message); }
     }
 
@@ -2019,6 +2030,160 @@ function setupMonthlyTriggers() {
   });
   ScriptApp.newTrigger('runMonthlyTrigger').timeBased().onMonthDay(1).atHour(8).create();
   Logger.log('setupMonthlyTriggers: gatilho criado — dia 1 às 8h');
+}
+
+// ============================================================
+// NOTIFICAÇÕES PUSH — verificações diárias
+// ============================================================
+// Chama /api/send-push (Vercel) pedindo pra notificar um username. Quem
+// realmente assina/criptografa e manda o push é o Node lá (Apps Script não
+// consegue fazer a criptografia VAPID). A URL do endpoint fica configurável
+// na aba Config (chave "push_api_url"), ex.:
+//   https://sistema-lavanderia-hygicare.vercel.app/api/send-push
+function _pushSend(username, title, body, data) {
+  var url = getConfig('push_api_url');
+  if (!url || !username) return false;
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ username: username, title: title, body: body, data: data || {} }),
+      muteHttpExceptions: true,
+    });
+    return res.getResponseCode() < 300;
+  } catch (e) { Logger.log('_pushSend error: ' + e.message); return false; }
+}
+
+// Evita mandar a mesma notificação todo dia — guarda o último envio de cada
+// "chave" (ex.: "push_pending_123") e só deixa passar de novo depois do
+// cooldown. Usa PropertiesService (persiste entre execuções do gatilho).
+function _pushShouldNotify(key, cooldownDays) {
+  var props = PropertiesService.getScriptProperties();
+  var last  = props.getProperty(key);
+  var now   = Date.now();
+  if (last && (now - parseInt(last, 10)) < cooldownDays * 86400000) return false;
+  props.setProperty(key, String(now));
+  return true;
+}
+
+// Resolve "nome de vendedor/técnico" → username de login, usando a aba
+// Usuarios (campos name, username e sellerName).
+function _pushUserLookup() {
+  var users = readSheet('Usuarios');
+  var map = {};
+  users.forEach(function(u) {
+    [u.sellerName, u.name, u.username].forEach(function(k) {
+      var key = String(k || '').trim().toLowerCase();
+      if (key && !map[key]) map[key] = u.username;
+    });
+  });
+  return map;
+}
+
+// 1) Cliente ativo sem lançamento de produção há X dias → avisa o vendedor.
+function _pushCheckPendingReports() {
+  var now = new Date();
+  var clients = readSheet('Clientes');
+  var records = readSheet('Registros');
+  var byUser  = _pushUserLookup();
+
+  var lastDate = {};
+  records.forEach(function(r) {
+    var cid = String(r.client_id);
+    var d = String(r.date_end || r.date_start || '');
+    if (d && (!lastDate[cid] || d > lastDate[cid])) lastDate[cid] = d;
+  });
+
+  var _truthy   = function(v) { return v === true || v === 'TRUE' || v === 'true' || v === 1 || v === '1'; };
+  var _isActive = function(v) { return !(v === false || v === 'FALSE' || v === 'false' || v === 0 || v === '0'); };
+  var thresholdDays = parseInt(getConfig('push_pending_report_days') || '10', 10);
+
+  clients.forEach(function(c) {
+    if (!_isActive(c.active) || _truthy(c.vazao_only) || _truthy(c.no_reports)) return;
+    var cid  = String(c.id);
+    var last = lastDate[cid];
+    var days = last ? Math.floor((now - new Date(last)) / 86400000) : 9999;
+    if (days < thresholdDays) return;
+    var username = byUser[String(c.seller || '').trim().toLowerCase()];
+    if (!username) return;
+    if (!_pushShouldNotify('push_pending_' + cid, 3)) return;
+    _pushSend(username, '📋 Relatório pendente',
+      c.name + ' está há ' + days + ' dia(s) sem lançamento de produção.',
+      { screen: 'screen-reports', clientId: c.id });
+  });
+}
+
+// 2) Visita em rascunho há mais de X horas sem ser concluída → avisa o técnico.
+function _pushCheckDraftVisits() {
+  var now    = new Date();
+  var visits = readSheet('Visitas');
+  var byUser = _pushUserLookup();
+  var minHours = parseInt(getConfig('push_draft_visit_hours') || '20', 10);
+
+  visits.forEach(function(v) {
+    if (String(v.status || 'rascunho') !== 'rascunho') return;
+    var created = v.created_at ? new Date(v.created_at) : (v.date ? new Date(v.date) : null);
+    if (!created || isNaN(created)) return;
+    var hours = (now - created) / 3600000;
+    if (hours < minHours) return;
+    var username = byUser[String(v.tech || v.created_by || '').trim().toLowerCase()];
+    if (!username) return;
+    if (!_pushShouldNotify('push_draft_' + v.id, 2)) return;
+    var dateLabel = v.date ? Utilities.formatDate(new Date(v.date), Session.getScriptTimeZone(), 'dd/MM/yyyy') : '';
+    _pushSend(username, '📝 Relatório de visita pendente',
+      'Falta concluir o relatório de visita' + (dateLabel ? ' de ' + dateLabel : '') + '.',
+      { screen: 'screen-client-notes', visitId: v.id });
+  });
+}
+
+// 3) Próxima visita agendada (campo next_visit de uma visita concluída)
+//    chegando/vencendo → avisa quem deve visitar.
+function _pushCheckUpcomingVisits() {
+  var visits  = readSheet('Visitas');
+  var clients = readSheet('Clientes');
+  var byUser  = _pushUserLookup();
+  var clientMap = {};
+  clients.forEach(function(c) { clientMap[String(c.id)] = c; });
+
+  var tz = Session.getScriptTimeZone();
+  var todayStr  = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var daysAhead = parseInt(getConfig('push_upcoming_visit_days') || '1', 10);
+
+  visits.forEach(function(v) {
+    if (!v.next_visit) return;
+    var nv = String(v.next_visit).slice(0, 10);
+    var diffDays = Math.floor((new Date(nv + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 86400000);
+    if (diffDays < 0 || diffDays > daysAhead) return;
+    var username = byUser[String(v.tech || v.created_by || '').trim().toLowerCase()];
+    if (!username) return;
+    if (!_pushShouldNotify('push_nextvisit_' + v.id + '_' + nv, 1)) return;
+    var client = clientMap[String(v.client_id)];
+    var title  = diffDays === 0 ? '📅 Visita agendada para hoje' : '📅 Visita agendada em breve';
+    _pushSend(username, title,
+      (client ? client.name : 'Cliente #' + v.client_id) + ' — próxima visita em ' +
+        Utilities.formatDate(new Date(nv + 'T00:00:00'), tz, 'dd/MM/yyyy') + '.',
+      { screen: 'screen-client-notes', clientId: v.client_id });
+  });
+}
+
+function runDailyPushChecks() {
+  Logger.log('runDailyPushChecks: ' + new Date().toISOString());
+  try { _pushCheckPendingReports(); } catch (e) { Logger.log('_pushCheckPendingReports: ' + e.message); }
+  try { _pushCheckDraftVisits(); }   catch (e) { Logger.log('_pushCheckDraftVisits: '   + e.message); }
+  try { _pushCheckUpcomingVisits(); } catch (e) { Logger.log('_pushCheckUpcomingVisits: ' + e.message); }
+  Logger.log('runDailyPushChecks: concluído');
+}
+function runDailyPushTrigger() { runDailyPushChecks(); }
+
+// Configura o gatilho de tempo: todo dia às 8h.
+// Rode esta função UMA VEZ direto no editor do Apps Script (ou via
+// action "setupDailyPushTrigger") para ativar os lembretes diários.
+function setupDailyPushTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'runDailyPushTrigger') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('runDailyPushTrigger').timeBased().everyDays(1).atHour(8).create();
+  Logger.log('setupDailyPushTrigger: gatilho criado — todo dia às 8h');
 }
 
 // ── Relatório Financeiro Mensal ──────────────────────────

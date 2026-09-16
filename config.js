@@ -20,7 +20,8 @@ const SHEETS = {
   APP_CONFIG: "AppConfig",
   FINANCEIRO: "Financeiro",
   EQUIPAMENTOS: "Equipamentos",
-  VISITS: "Visitas"
+  VISITS: "Visitas",
+  PUSH_SUBSCRIPTIONS: "PushSubscriptions"
 };
 
 // Modo de debug

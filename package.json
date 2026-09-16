@@ -1,0 +1,9 @@
+{
+  "name": "sistema-lavanderia-hygicare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hygicare Lavanderia — PWA estático (sem build) + funções serverless em /api (Vercel).",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

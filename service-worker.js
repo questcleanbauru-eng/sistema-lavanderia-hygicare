@@ -1,4 +1,4 @@
-const CACHE = 'lavanderia-cache-v432';
+const CACHE = 'lavanderia-cache-v433';
 const ASSETS = [
   '/',
   '/index.html',
@@ -72,4 +72,50 @@ self.addEventListener('fetch', e => {
       return cached || fetchPromise || caches.match('/index.html');
     })
   );
+});
+
+// ============================================================
+// NOTIFICAÇÕES PUSH — chegam mesmo com o app fechado
+// ============================================================
+// O payload é um JSON { title, body, data } mandado por /api/send-push.js.
+self.addEventListener('push', e => {
+  let payload = {};
+  try { payload = e.data ? e.data.json() : {}; }
+  catch (err) { payload = { title: 'Hygicare Lavanderia', body: e.data ? e.data.text() : '' }; }
+
+  const title = payload.title || 'Hygicare Lavanderia';
+  const data  = payload.data || {};
+  const options = {
+    body: payload.body || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    data,
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+  };
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Ao tocar na notificação: foca uma aba já aberta (e manda os dados pra ela
+// navegar até a tela certa) ou abre uma nova já apontando pra lá.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const data = e.notification.data || {};
+
+  const qs = new URLSearchParams();
+  if (data.screen)   qs.set('pushScreen', data.screen);
+  if (data.clientId) qs.set('pushClient', data.clientId);
+  if (data.visitId)  qs.set('pushVisit', data.visitId);
+  const targetUrl = '/' + (qs.toString() ? ('?' + qs.toString()) : '');
+
+  e.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of allClients) {
+      if ('focus' in c) {
+        c.postMessage({ type: 'PUSH_NAVIGATE', data });
+        return c.focus();
+      }
+    }
+    return self.clients.openWindow(targetUrl);
+  })());
 });
