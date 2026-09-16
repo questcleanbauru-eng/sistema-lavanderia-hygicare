@@ -2168,13 +2168,20 @@ ${printScript}
       if (!currentUser?.username) return;
       const btn = document.getElementById('btn-push-test');
       btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Enviando…';
-      await sendPushToUser(currentUser.username, {
+      const res = await sendPushToUser(currentUser.username, {
         title: '✅ Teste — Hygicare Lavanderia',
         body: 'Se você recebeu isto, as notificações push estão funcionando!',
         data: { screen: 'screen-admin' },
       });
       btn.disabled = false; btn.textContent = orig;
-      toast('Teste enviado. Se não chegar em alguns segundos, confira se está ativado neste dispositivo e se o servidor (Vercel) já tem as chaves VAPID configuradas.', 'info', 7000);
+      if (res && res.sent > 0) {
+        toast(`✅ Teste enviado para ${res.sent} dispositivo(s). Se não chegar em alguns segundos, o servidor (Vercel) pode não ter as chaves VAPID configuradas.`, 'success', 7000);
+      } else if (res && res.sent === 0) {
+        toast('⚠️ Você ainda não ativou notificações neste dispositivo — clique em "Ativar" acima antes de testar.', 'warning', 7000);
+      } else {
+        toast('❌ Falha ao enviar — confira se o servidor (Vercel) já tem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY configuradas.', 'error', 7000);
+      }
+      await renderPushAdminCard();
     });
 
     document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
@@ -4696,6 +4703,20 @@ ${printScript}
       updateAlertsBadge(overdue.length + alerts.length, alertDays);
     }
 
+    // Mostra logo abaixo do select se o usuário escolhido já tem alguma
+    // inscrição push ativa — avisa ANTES de mandar, não só depois de falhar.
+    function _updatePushNotifyUserStatus() {
+      const sel    = document.getElementById('push-notify-user');
+      const status = document.getElementById('push-notify-user-status');
+      if (!sel || !status) return;
+      const opt = sel.selectedOptions && sel.selectedOptions[0];
+      if (!opt || !opt.value) { status.textContent = ''; return; }
+      const subscribed = opt.dataset.sub === '1';
+      status.textContent = subscribed
+        ? '🔔 Este usuário tem notificações ativadas.'
+        : '⚠️ Este usuário ainda não ativou notificações em nenhum dispositivo — o envio não vai chegar.';
+      status.style.color = subscribed ? 'var(--success-dark,#16a34a)' : '#b45309';
+    }
     async function renderPushNotifyCard() {
       const card = document.getElementById('push-notify-card');
       if (!card) return;
@@ -4703,13 +4724,22 @@ ${printScript}
       card.classList.remove('hidden');
       const sel = document.getElementById('push-notify-user');
       if (sel && !sel.dataset.filled) {
-        const users = (await dbGetAll_raw('users')).filter(u => u.username);
-        users.sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username, 'pt-BR'));
-        sel.innerHTML = '<option value="">-- Selecione --</option>' +
-          users.map(u => `<option value="${escHtml(u.username)}">${escHtml(u.name || u.username)} (${escHtml(u.username)})${u.active === false ? ' — inativo' : ''}</option>`).join('');
+        const [users, subsJson] = await Promise.all([
+          dbGetAll_raw('users'),
+          fetch(`${gasApiUrl()}?sheet=${SHEETS.PUSH_SUBSCRIPTIONS}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        const subscribedUsers = new Set((subsJson?.data || []).map(s => String(s.username || '').trim().toLowerCase()));
+        const list = users.filter(u => u.username)
+          .sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username, 'pt-BR'));
+        sel.innerHTML = '<option value="">-- Selecione --</option>' + list.map(u => {
+          const sub = subscribedUsers.has(String(u.username).trim().toLowerCase());
+          return `<option value="${escHtml(u.username)}" data-sub="${sub ? '1' : '0'}">${sub ? '🔔' : '🔕'} ${escHtml(u.name || u.username)} (${escHtml(u.username)})${u.active === false ? ' — inativo' : ''}</option>`;
+        }).join('');
         sel.dataset.filled = '1';
         _makeSearchable(sel);
+        sel.addEventListener('change', _updatePushNotifyUserStatus);
       }
+      _updatePushNotifyUserStatus();
     }
     document.getElementById('btn-push-notify-send')?.addEventListener('click', async () => {
       const sel     = document.getElementById('push-notify-user');

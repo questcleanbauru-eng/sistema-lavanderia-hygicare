@@ -535,7 +535,11 @@
             <h3 style="margin:0 0 0.6rem;font-size:1rem;color:#1e40af">📨 Notificar usuário agora</h3>
             <p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.75rem">Envia uma notificação push imediata para um usuário específico — chega mesmo com o app dele fechado, se já tiver ativado.</p>
             <div class="form-row">
-              <div class="form-field"><label>Usuário</label><select id="push-notify-user"><option value="">-- Selecione --</option></select></div>
+              <div class="form-field">
+                <label>Usuário</label>
+                <select id="push-notify-user"><option value="">-- Selecione --</option></select>
+                <div id="push-notify-user-status" style="font-size:0.76rem;margin-top:0.3rem"></div>
+              </div>
               <div class="form-field"><label>Título</label><input id="push-notify-title" type="text" placeholder="Ex: Aviso importante" maxlength="120" /></div>
             </div>
             <div class="form-field"><label>Mensagem</label><textarea id="push-notify-body" rows="2" placeholder="Escreva a mensagem..." maxlength="500" style="width:100%"></textarea></div>
