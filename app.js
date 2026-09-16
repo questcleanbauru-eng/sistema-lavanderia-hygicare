@@ -126,17 +126,21 @@ async function unsubscribePush() {
 }
 
 // Dispara uma notificação push pro usuário indicado (username de login).
-// Sempre "fire and forget": nunca deixa uma falha de push quebrar o fluxo
-// que chamou (ex.: salvar uma visita não pode falhar por causa disso).
+// Sempre "fire and forget" pra quem só quer notificar sem se importar com o
+// resultado (ex.: salvar uma visita não pode falhar por causa disso) — mas
+// devolve { sent, removed } (ou null se algo deu errado) pra quem quiser
+// mostrar o resultado pro usuário (ex.: tela de Avisos, botão de teste).
 async function sendPushToUser(username, msg) {
-  if (!username) return;
+  if (!username) return null;
   try {
-    await fetch('/api/send-push', {
+    const r = await fetch('/api/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, title: msg?.title, body: msg?.body, data: msg?.data || {} }),
     });
-  } catch (e) { console.warn('sendPushToUser (ignorado):', e); }
+    const j = await r.json().catch(() => null);
+    return j && j.status === 'ok' ? j : null;
+  } catch (e) { console.warn('sendPushToUser (ignorado):', e); return null; }
 }
 window.sendPushToUser = sendPushToUser;
 
@@ -4692,7 +4696,54 @@ ${printScript}
       updateAlertsBadge(overdue.length + alerts.length, alertDays);
     }
 
+    async function renderPushNotifyCard() {
+      const card = document.getElementById('push-notify-card');
+      if (!card) return;
+      if (currentUser?.role !== 'admin') { card.classList.add('hidden'); return; }
+      card.classList.remove('hidden');
+      const sel = document.getElementById('push-notify-user');
+      if (sel && !sel.dataset.filled) {
+        const users = (await dbGetAll_raw('users')).filter(u => u.username);
+        users.sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username, 'pt-BR'));
+        sel.innerHTML = '<option value="">-- Selecione --</option>' +
+          users.map(u => `<option value="${escHtml(u.username)}">${escHtml(u.name || u.username)} (${escHtml(u.username)})${u.active === false ? ' — inativo' : ''}</option>`).join('');
+        sel.dataset.filled = '1';
+        _makeSearchable(sel);
+      }
+    }
+    document.getElementById('btn-push-notify-send')?.addEventListener('click', async () => {
+      const sel     = document.getElementById('push-notify-user');
+      const titleEl = document.getElementById('push-notify-title');
+      const bodyEl  = document.getElementById('push-notify-body');
+      const msgEl   = document.getElementById('push-notify-msg');
+      const username = sel?.value || '';
+      const title    = (titleEl?.value || '').trim();
+      const body     = (bodyEl?.value || '').trim();
+      if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+      if (!username) return toast('Selecione um usuário.', 'warning');
+      if (!title && !body) return toast('Escreva um título ou uma mensagem.', 'warning');
+
+      const btn = document.getElementById('btn-push-notify-send');
+      btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Enviando…';
+      const res = await sendPushToUser(username, { title: title || 'Hygicare Lavanderia', body, data: { screen: 'screen-home' } });
+      btn.disabled = false; btn.textContent = orig;
+
+      if (res && res.sent > 0) {
+        if (msgEl) { msgEl.textContent = `✅ Enviada para ${res.sent} dispositivo(s).`; msgEl.style.color = 'var(--success-dark,#16a34a)'; }
+        toast('📨 Notificação enviada!', 'success');
+        if (titleEl) titleEl.value = '';
+        if (bodyEl) bodyEl.value = '';
+      } else if (res && res.sent === 0) {
+        if (msgEl) { msgEl.textContent = '⚠️ Esse usuário ainda não ativou notificações em nenhum dispositivo.'; msgEl.style.color = 'var(--muted)'; }
+        toast('Usuário sem notificações ativadas.', 'warning');
+      } else {
+        if (msgEl) { msgEl.textContent = '❌ Não foi possível enviar (verifique a configuração do servidor).'; msgEl.style.color = 'var(--danger,#dc2626)'; }
+        toast('Falha ao enviar notificação.', 'error');
+      }
+    });
+
     async function renderAlertsScreen() {
+      await renderPushNotifyCard();
       const [{ overdue, alertDays }, { alerts: scheduled, todayStr }] = await Promise.all([
         _computeOverdue(), _computeScheduledAlerts()
       ]);
