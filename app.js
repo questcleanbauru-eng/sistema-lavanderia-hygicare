@@ -232,7 +232,7 @@ function _renderInstallPushGate(installed, pushOn) {
             ${window._deferredInstallPrompt
               ? `<button id="_pg-install-btn" class="btn-primary" style="width:100%;margin-top:0.3rem">📲 Instalar app</button>`
               : `Use o menu do navegador (⋮ ou ⋯) e escolha <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela inicial"</strong>.`}
-            <div style="font-size:0.76rem;color:var(--muted);margin-top:0.55rem">Depois de instalar, feche esta aba e abra o app pelo ícone criado.</div>
+            <div style="font-size:0.78rem;color:var(--primary,#2563eb);font-weight:600;margin-top:0.6rem">⚠️ Já instalou? Esta aqui ainda é a aba do navegador. Feche-a e abra pelo ícone do app na sua tela — ou clique em <strong>"Abrir no app"</strong>, se aparecer na barra de endereço.</div>
           </div>
         </div>`;
 
