@@ -300,6 +300,60 @@ async function _checkInstallPushGate() {
   } catch (e) { /* nunca trava o app por um erro aqui */ }
 }
 window._checkInstallPushGate = _checkInstallPushGate;
+
+// ---------- Configurar notificações (acessível a QUALQUER usuário, não só admin) ----------
+// O card "Notificações Push" do Admin é só um atalho de conveniência/teste
+// pra quem administra; a ativação de verdade pra todo mundo acontece pelo
+// gate obrigatório. Este popup, no menu ☰, é o "voltar aqui depois" pra
+// qualquer usuário — checar status, desativar, reativar ou testar.
+async function _openPushSettings() {
+  if (!currentUser?.username) return;
+  const { installed, pushOn } = await _gateStatus();
+  const overlay = document.createElement('div');
+  overlay.id = '_push-settings';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
+  const statusLine = pushOn
+    ? '<div style="color:var(--success-dark,#059669);font-weight:700;font-size:0.95rem">🔔 Ativado neste dispositivo</div>'
+    : '<div style="color:#b45309;font-weight:700;font-size:0.95rem">🔕 Não ativado neste dispositivo</div>';
+  const installNote = installed ? '' : '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem">⚠️ Você está pelo navegador, não pelo app instalado — as notificações não funcionam de forma confiável assim.</div>';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+      <div style="font-size:1.05rem;font-weight:700;margin-bottom:0.7rem;color:var(--text)">🔔 Notificações</div>
+      ${statusLine}
+      ${installNote}
+      <div style="display:flex;gap:0.5rem;margin-top:1.1rem">
+        ${pushOn
+          ? `<button id="_ps-off" class="btn-secondary" style="flex:1">Desativar</button><button id="_ps-test" class="btn-primary" style="flex:1">Testar</button>`
+          : `<button id="_ps-on" class="btn-primary" style="flex:1">Ativar</button>`}
+      </div>
+      <button id="_ps-close" class="btn-secondary" style="width:100%;margin-top:0.6rem">Fechar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('_ps-close').addEventListener('click', () => overlay.remove());
+  document.getElementById('_ps-on')?.addEventListener('click', async () => {
+    const btn = document.getElementById('_ps-on'); btn.disabled = true; btn.textContent = '⏳';
+    const ok = await subscribePush();
+    overlay.remove();
+    toast(ok ? '🔔 Notificações ativadas!' : 'Não foi possível ativar — verifique as permissões do navegador.', ok ? 'success' : 'warning');
+  });
+  document.getElementById('_ps-off')?.addEventListener('click', async () => {
+    await unsubscribePush();
+    overlay.remove();
+    toast('🔕 Notificações desativadas neste dispositivo.', 'info');
+  });
+  document.getElementById('_ps-test')?.addEventListener('click', async () => {
+    const btn = document.getElementById('_ps-test'); btn.disabled = true; btn.textContent = '⏳ Enviando…';
+    const res = await sendPushToUser(currentUser.username, {
+      title: '✅ Teste — Hygicare Lavanderia',
+      body: 'Se você recebeu isto, as notificações estão funcionando!',
+      data: { screen: 'screen-home' },
+    });
+    overlay.remove();
+    toast(res && res.sent > 0 ? `📨 Teste enviado (${res.sent} dispositivo${res.sent!==1?'s':''}).` : 'Falha no teste — tente novamente.', res && res.sent > 0 ? 'success' : 'warning');
+  });
+}
+window._openPushSettings = _openPushSettings;
 // Reavalia quando o usuário volta pra esta aba (ex.: foi ativar notificação
 // nas configurações do site e voltou, sem recarregar a página).
 document.addEventListener('visibilitychange', () => {
@@ -1401,6 +1455,10 @@ ${printScript}
     document.getElementById('drawer-pin')?.addEventListener('click', () => {
       closeDrawer();
       if (currentUser?.username) _openPinSetup(currentUser.username);
+    });
+    document.getElementById('drawer-push')?.addEventListener('click', () => {
+      closeDrawer();
+      _openPushSettings();
     });
 
     // Estado compartilhado entre funções (sem poluir window)
