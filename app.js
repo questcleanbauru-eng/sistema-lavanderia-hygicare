@@ -70,6 +70,37 @@ function _pushApiSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
 
+// Salva/atualiza no Sheets a inscrição deste dispositivo pro usuário logado.
+// Consulta as inscrições existentes ANTES de decidir insert x update (evita
+// duplicar quando o endpoint já está salvo), e devolve true/false. Usada
+// tanto pela ativação manual (subscribePush) quanto pela auto-cura de
+// _gateStatus (quando o navegador já tem a inscrição local mas o servidor
+// não tem mais registro dela — ex.: alguém limpou a aba na planilha).
+async function _savePushSubscriptionToServer(sub) {
+  if (!currentUser?.username || !sub) return false;
+  const j = sub.toJSON();
+  const payload = {
+    username: currentUser.username,
+    endpoint: j.endpoint,
+    p256dh: j.keys?.p256dh || '',
+    auth: j.keys?.auth || '',
+    ua: navigator.userAgent,
+    created_at: new Date().toISOString(),
+  };
+  try {
+    const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.PUSH_SUBSCRIPTIONS}`);
+    const rows = r.ok ? ((await r.json()).data || []) : [];
+    const existing = rows.find(x => x.endpoint === payload.endpoint);
+    const body = new URLSearchParams({ payload: JSON.stringify(
+      existing
+        ? { action: 'update', sheet: SHEETS.PUSH_SUBSCRIPTIONS, id: existing.id, data: payload }
+        : { action: 'insert', sheet: SHEETS.PUSH_SUBSCRIPTIONS, data: payload }
+    ) });
+    await fetch(gasApiUrl(), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    return true;
+  } catch (e) { console.warn('_savePushSubscriptionToServer', e); return false; }
+}
+
 // Ativa a inscrição push do dispositivo atual e salva vinculada ao usuário
 // logado (aba PushSubscriptions — suporta vários dispositivos por usuário,
 // um endpoint por linha). Retorna true/false.
@@ -86,27 +117,7 @@ async function subscribePush() {
         applicationServerKey: _urlB64ToUint8Array(VAPID_PUBLIC_KEY),
       });
     }
-    const j = sub.toJSON();
-    const payload = {
-      username: currentUser.username,
-      endpoint: j.endpoint,
-      p256dh: j.keys?.p256dh || '',
-      auth: j.keys?.auth || '',
-      ua: navigator.userAgent,
-      created_at: new Date().toISOString(),
-    };
-    // evita duplicar: se este endpoint já está salvo, atualiza em vez de inserir de novo
-    try {
-      const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.PUSH_SUBSCRIPTIONS}`);
-      const rows = r.ok ? ((await r.json()).data || []) : [];
-      const existing = rows.find(x => x.endpoint === payload.endpoint);
-      const body = new URLSearchParams({ payload: JSON.stringify(
-        existing
-          ? { action: 'update', sheet: SHEETS.PUSH_SUBSCRIPTIONS, id: existing.id, data: payload }
-          : { action: 'insert', sheet: SHEETS.PUSH_SUBSCRIPTIONS, data: payload }
-      ) });
-      await fetch(gasApiUrl(), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-    } catch (e) { console.warn('subscribePush save', e); }
+    await _savePushSubscriptionToServer(sub);
     localStorage.setItem('hygicare_push_enabled_' + currentUser.username, '1');
     return true;
   } catch (e) { console.warn('subscribePush', e); return false; }
@@ -193,11 +204,27 @@ window._handlePushLaunchParams = _handlePushLaunchParams;
 async function _gateStatus() {
   const installed = _isStandaloneApp();
   let pushOn = false;
-  if (_pushApiSupported()) {
+  if (_pushApiSupported() && currentUser?.username) {
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
-      pushOn = Notification.permission === 'granted' && !!sub;
+      if (Notification.permission === 'granted' && sub) {
+        // o navegador acha que está inscrito — confere se o SERVIDOR também
+        // tem esse endpoint salvo (pode ter sido apagado por fora, ex.:
+        // alguém limpou a aba na planilha, ou um envio anterior removeu por
+        // 404/410). Sem essa checagem, o app ficava "ativado" pra sempre no
+        // aparelho mesmo sem chegar nenhuma notificação de verdade.
+        try {
+          const r = await fetch(`${gasApiUrl()}?sheet=${SHEETS.PUSH_SUBSCRIPTIONS}`);
+          const rows = r.ok ? ((await r.json()).data || []) : null;
+          if (Array.isArray(rows)) {
+            pushOn = rows.some(x => x.endpoint === sub.endpoint);
+            if (!pushOn) pushOn = await _savePushSubscriptionToServer(sub); // auto-cura: re-salva sozinho
+          } else {
+            pushOn = true; // não deu pra confirmar (ex.: offline) — assume o que o navegador diz
+          }
+        } catch (e) { pushOn = true; }
+      }
     } catch (e) { /* trata como não ativado */ }
   }
   return { installed, pushOn };
@@ -2272,9 +2299,8 @@ ${printScript}
         return;
       }
       const perm = Notification.permission;
-      let sub = null;
-      try { const reg = await navigator.serviceWorker.ready; sub = await reg.pushManager.getSubscription(); } catch (e) {}
-      if (perm === 'granted' && sub) {
+      const { pushOn } = await _gateStatus(); // já confere/auto-cura contra o servidor
+      if (pushOn) {
         statusEl.textContent = '🔔 Ativado neste dispositivo.';
         statusEl.style.color = 'var(--success-dark, #16a34a)';
       } else if (perm === 'denied') {
