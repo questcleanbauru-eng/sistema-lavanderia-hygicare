@@ -40,6 +40,16 @@ function gasApiUrl() {
 // existe no servidor, em /api/send-push.js).
 const VAPID_PUBLIC_KEY = 'BM9vf6TAeI5Qx9YVwga0iEP91FgcItSKsq--2Xr7bTwsdXQXCYaW6Rpy9PdLuhKoMm1H85DiMN8v3zpS7OLmIS8';
 
+// Captura o prompt de instalação (Chrome/Edge/Android) assim que o navegador
+// oferece — precisa ficar registrado bem cedo, fora de qualquer handler.
+window._deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window._deferredInstallPrompt = e;
+  if (document.getElementById('_push-gate')) _checkInstallPushGate();
+});
+window.addEventListener('appinstalled', () => { window._deferredInstallPrompt = null; });
+
 function _urlB64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -175,61 +185,123 @@ function _handlePushLaunchParams() {
 }
 window._handlePushLaunchParams = _handlePushLaunchParams;
 
-// ---------- Banner discreto "ativar notificações" ----------
-function _pushSnoozeKey() { return 'hygicare_push_snooze'; }
-function _dismissPushBanner() {
-  localStorage.setItem(_pushSnoozeKey(), String(Date.now()));
-  document.getElementById('_push-banner')?.remove();
-}
-function _showPushBanner(kind) {
-  if (document.getElementById('_push-banner')) return;
-  const el = document.createElement('div');
-  el.id = '_push-banner';
-  el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9997;background:#0f172a;color:#fff;'
-    + 'padding:0.7rem 0.9rem;display:flex;align-items:center;gap:0.65rem;box-shadow:0 -4px 16px rgba(0,0,0,.25);'
-    + 'font-size:0.82rem;line-height:1.35';
-  if (kind === 'ios-install') {
-    el.innerHTML = `
-      <span style="font-size:1.25rem;flex-shrink:0">📲</span>
-      <span style="flex:1">Para receber notificações no iPhone, adicione o app à Tela de Início: toque em <strong>Compartilhar</strong> (⬆️) e depois em <strong>"Adicionar à Tela de Início"</strong>.</span>
-      <button id="_pb-close" style="background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;flex-shrink:0;font-size:0.8rem">Entendi</button>`;
-  } else {
-    el.innerHTML = `
-      <span style="font-size:1.25rem;flex-shrink:0">🔔</span>
-      <span style="flex:1">Ative as notificações para ser avisado mesmo com o app fechado.</span>
-      <button id="_pb-enable" style="background:#2563eb;border:none;color:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:700;flex-shrink:0;font-size:0.8rem">Ativar</button>
-      <button id="_pb-close" style="background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:7px 10px;cursor:pointer;flex-shrink:0;font-size:0.8rem">Agora não</button>`;
+// ---------- Gate obrigatório: instalar o app + ativar notificações ----------
+// Substituiu o banner dispensável — agora bloqueia o uso do app (tela cheia,
+// sem "agora não") até o dispositivo estar instalado (modo standalone) E
+// com push ativado. Só é ignorado se o navegador não suportar push de jeito
+// nenhum (aí não tem como exigir).
+async function _gateStatus() {
+  const installed = _isStandaloneApp();
+  let pushOn = false;
+  if (_pushApiSupported()) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      pushOn = Notification.permission === 'granted' && !!sub;
+    } catch (e) { /* trata como não ativado */ }
   }
-  document.body.appendChild(el);
-  document.getElementById('_pb-close').addEventListener('click', _dismissPushBanner);
-  document.getElementById('_pb-enable')?.addEventListener('click', async () => {
-    const btn = document.getElementById('_pb-enable');
-    btn.textContent = '⏳'; btn.disabled = true;
-    const ok = await subscribePush();
-    el.remove();
-    if (ok) toast('🔔 Notificações ativadas!', 'success');
-    else { toast('Não foi possível ativar. Verifique as permissões do navegador.', 'warning'); _dismissPushBanner(); }
+  return { installed, pushOn };
+}
+function _removeInstallPushGate() {
+  document.getElementById('_push-gate')?.remove();
+}
+function _renderInstallPushGate(installed, pushOn) {
+  let el = document.getElementById('_push-gate');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_push-gate';
+    el.style.cssText = 'position:fixed;inset:0;z-index:999999;background:#0f172a;color:#fff;'
+      + 'display:flex;align-items:center;justify-content:center;padding:1.25rem;overflow-y:auto';
+    document.body.appendChild(el);
+  }
+  const ios    = _isIOSDevice();
+  const denied = ('Notification' in window) && Notification.permission === 'denied';
+
+  const step1 = installed
+    ? `<div class="_pg-step _pg-done">✅ App instalado</div>`
+    : ios
+      ? `<div class="_pg-step">
+          <div class="_pg-step-title">1️⃣ Instale o app na Tela de Início</div>
+          <div class="_pg-step-body">Toque em <strong>Compartilhar</strong> (⬆️, na barra do Safari) e depois em <strong>"Adicionar à Tela de Início"</strong>. Em seguida, feche esta aba e abra o app pelo ícone que apareceu na sua tela.</div>
+        </div>`
+      : `<div class="_pg-step">
+          <div class="_pg-step-title">1️⃣ Instale o app</div>
+          <div class="_pg-step-body">
+            ${window._deferredInstallPrompt
+              ? `<button id="_pg-install-btn" class="_pg-btn">📲 Instalar app</button>`
+              : `Use o menu do navegador (⋮ ou ⋯) e escolha <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela inicial"</strong>.`}
+            <div style="font-size:0.78rem;opacity:.75;margin-top:0.55rem">Depois de instalar, feche esta aba e abra o app pelo ícone criado.</div>
+          </div>
+        </div>`;
+
+  const step2 = pushOn
+    ? `<div class="_pg-step _pg-done">✅ Notificações ativadas</div>`
+    : denied
+      ? `<div class="_pg-step">
+          <div class="_pg-step-title">2️⃣ Ative as notificações</div>
+          <div class="_pg-step-body">Seu navegador bloqueou as notificações deste site. Abra as configurações do site (ícone 🔒 ou ⓘ ao lado do endereço) → Notificações → Permitir, e recarregue a página.</div>
+        </div>`
+      : `<div class="_pg-step">
+          <div class="_pg-step-title">2️⃣ Ative as notificações</div>
+          <div class="_pg-step-body"><button id="_pg-push-btn" class="_pg-btn">🔔 Ativar notificações</button></div>
+        </div>`;
+
+  el.innerHTML = `
+    <div style="max-width:420px;width:100%;background:#111827;border-radius:16px;padding:1.75rem 1.5rem;box-shadow:0 20px 50px rgba(0,0,0,.5)">
+      <div style="font-size:2rem;margin-bottom:0.4rem">🔔📲</div>
+      <h2 style="margin:0 0 0.4rem;font-size:1.2rem">Antes de continuar</h2>
+      <p style="margin:0 0 1.2rem;font-size:0.85rem;color:#cbd5e1;line-height:1.5">Para usar o Hygicare Lavanderia é preciso instalar o app e ativar as notificações — assim você recebe avisos importantes mesmo com o app fechado.</p>
+      ${step1}
+      ${step2}
+      <button id="_pg-logout" style="margin-top:1.3rem;width:100%;background:none;border:1px solid rgba(255,255,255,.25);color:#cbd5e1;border-radius:8px;padding:8px;font-size:0.82rem;cursor:pointer">Sair</button>
+    </div>
+    <style>
+      #_push-gate ._pg-step{background:#1e293b;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.7rem}
+      #_push-gate ._pg-done{background:#14532d;color:#bbf7d0;font-weight:700;font-size:0.9rem}
+      #_push-gate ._pg-step-title{font-weight:700;font-size:0.9rem;margin-bottom:0.35rem}
+      #_push-gate ._pg-step-body{font-size:0.82rem;color:#cbd5e1;line-height:1.5}
+      #_push-gate ._pg-btn{background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:0.88rem;font-weight:700;cursor:pointer}
+    </style>`;
+
+  document.getElementById('_pg-install-btn')?.addEventListener('click', async () => {
+    const p = window._deferredInstallPrompt;
+    if (!p) return;
+    p.prompt();
+    try { await p.userChoice; } catch (e) { /* usuário recusou — tela continua explicando */ }
+    window._deferredInstallPrompt = null;
+    _checkInstallPushGate();
+  });
+  document.getElementById('_pg-push-btn')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true; btn.textContent = '⏳';
+    await subscribePush();
+    await _checkInstallPushGate();
+  });
+  document.getElementById('_pg-logout')?.addEventListener('click', () => {
+    _removeInstallPushGate();
+    document.getElementById('btn-logout')?.click();
   });
 }
-// Mostra o banner só quando faz sentido: permissão ainda não decidida,
-// não foi dispensado recentemente, e não tem outro modal por cima (ex.: o
-// de cadastro de PIN no primeiro login).
-function _maybeOfferPush() {
+// Reavalia e mostra/some o gate. Se o navegador não suporta push de jeito
+// nenhum, não tem como exigir — deixa passar (com aviso no console).
+async function _checkInstallPushGate() {
   try {
     if (!currentUser) return;
+    // não empilha em cima do cadastro de PIN no primeiro login
     const pinModal = document.getElementById('modal-pin-setup');
-    if (pinModal && !pinModal.classList.contains('hidden')) { setTimeout(_maybeOfferPush, 4000); return; }
-    if (document.getElementById('_push-banner')) return;
-    const snoozeTs = parseInt(localStorage.getItem(_pushSnoozeKey()) || '0', 10);
-    if (snoozeTs && (Date.now() - snoozeTs) < 24 * 3600 * 1000) return; // reaparece depois de 24h
-    const ios = _isIOSDevice(), standalone = _isStandaloneApp();
-    if (ios && !standalone) { _showPushBanner('ios-install'); return; }
-    if (!('Notification' in window)) return; // navegador sem suporte — não incomoda
-    if (Notification.permission !== 'default') return; // já concedeu ou já negou
-    if (!_pushApiSupported()) return;
-    _showPushBanner('enable');
-  } catch (e) { /* nunca quebra o app por causa do banner */ }
+    if (pinModal && !pinModal.classList.contains('hidden')) { setTimeout(_checkInstallPushGate, 4000); return; }
+    if (!_pushApiSupported()) { console.warn('[push] navegador sem suporte a notificações — obrigatoriedade ignorada.'); _removeInstallPushGate(); return; }
+    const { installed, pushOn } = await _gateStatus();
+    if (installed && pushOn) { _removeInstallPushGate(); return; }
+    _renderInstallPushGate(installed, pushOn);
+  } catch (e) { /* nunca trava o app por um erro aqui */ }
 }
+window._checkInstallPushGate = _checkInstallPushGate;
+// Reavalia quando o usuário volta pra esta aba (ex.: foi ativar notificação
+// nas configurações do site e voltou, sem recarregar a página).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && document.getElementById('_push-gate')) _checkInstallPushGate();
+});
 
 function fmtDate(iso) {
   if (!iso) return '?';
@@ -832,8 +904,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initApp();
     // Verifica manutenção após login (lê estado salvo localmente)
     setTimeout(() => window._applyMaintenanceMode?.(), 200);
-    // Convite discreto pra ativar notificações push (não empilha com o modal de PIN)
-    setTimeout(() => _maybeOfferPush(), 2200);
+    // Instalar o app + ativar notificações agora é obrigatório pra usar o sistema
+    // (não empilha com o modal de PIN — _checkInstallPushGate se adia sozinho)
+    setTimeout(() => _checkInstallPushGate(), 2200);
     // Veio de um toque numa notificação push que abriu uma aba nova? navega direto pra tela
     setTimeout(() => _handlePushLaunchParams(), 400);
   }
