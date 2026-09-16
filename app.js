@@ -203,6 +203,9 @@ window._handlePushLaunchParams = _handlePushLaunchParams;
 // nenhum (aí não tem como exigir).
 async function _gateStatus() {
   const installed = _isStandaloneApp();
+  // Admin fica isento de instalar — só precisa de notificação ativada.
+  // Continua podendo instalar se quiser, só não é obrigado.
+  const installExempt = currentUser?.role === 'admin';
   let pushOn = false;
   if (_pushApiSupported() && currentUser?.username) {
     try {
@@ -227,12 +230,12 @@ async function _gateStatus() {
       }
     } catch (e) { /* trata como não ativado */ }
   }
-  return { installed, pushOn };
+  return { installed, pushOn, installExempt };
 }
 function _removeInstallPushGate() {
   document.getElementById('_push-gate')?.remove();
 }
-function _renderInstallPushGate(installed, pushOn) {
+function _renderInstallPushGate(installed, pushOn, installExempt) {
   let el = document.getElementById('_push-gate');
   if (!el) {
     el = document.createElement('div');
@@ -248,7 +251,17 @@ function _renderInstallPushGate(installed, pushOn) {
 
   const step1 = installed
     ? `<div class="_pg-step _pg-done">✅ App instalado</div>`
-    : ios
+    : installExempt
+      ? `<div class="_pg-step" style="opacity:.8">
+          <div class="_pg-step-title">1️⃣ Instalar o app <span style="font-weight:400;color:var(--muted)">(dispensado para admin)</span></div>
+          <div class="_pg-step-body">
+            Como administrador, você pode continuar usando pelo navegador normalmente.
+            ${window._deferredInstallPrompt
+              ? `<button id="_pg-install-btn" class="btn-secondary" style="width:100%;margin-top:0.6rem">📲 Instalar mesmo assim</button>`
+              : `Se quiser instalar mesmo assim, use o menu do navegador (⋮ ou ⋯) → "Instalar app".`}
+          </div>
+        </div>`
+      : ios
       ? `<div class="_pg-step">
           <div class="_pg-step-title">1️⃣ Instale o app na Tela de Início</div>
           <div class="_pg-step-body">Toque em <strong>Compartilhar</strong> (⬆️, na barra do Safari) e depois em <strong>"Adicionar à Tela de Início"</strong>. Em seguida, feche esta aba e abra o app pelo ícone que apareceu na sua tela.</div>
@@ -321,9 +334,9 @@ async function _checkInstallPushGate() {
     const pinModal = document.getElementById('modal-pin-setup');
     if (pinModal && !pinModal.classList.contains('hidden')) { setTimeout(_checkInstallPushGate, 4000); return; }
     if (!_pushApiSupported()) { console.warn('[push] navegador sem suporte a notificações — obrigatoriedade ignorada.'); _removeInstallPushGate(); return; }
-    const { installed, pushOn } = await _gateStatus();
-    if (installed && pushOn) { _removeInstallPushGate(); return; }
-    _renderInstallPushGate(installed, pushOn);
+    const { installed, pushOn, installExempt } = await _gateStatus();
+    if ((installed || installExempt) && pushOn) { _removeInstallPushGate(); return; }
+    _renderInstallPushGate(installed, pushOn, installExempt);
   } catch (e) { /* nunca trava o app por um erro aqui */ }
 }
 window._checkInstallPushGate = _checkInstallPushGate;
@@ -335,14 +348,14 @@ window._checkInstallPushGate = _checkInstallPushGate;
 // qualquer usuário — checar status, desativar, reativar ou testar.
 async function _openPushSettings() {
   if (!currentUser?.username) return;
-  const { installed, pushOn } = await _gateStatus();
+  const { installed, pushOn, installExempt } = await _gateStatus();
   const overlay = document.createElement('div');
   overlay.id = '_push-settings';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1.25rem';
   const statusLine = pushOn
     ? '<div style="color:var(--success-dark,#059669);font-weight:700;font-size:0.95rem">🔔 Ativado neste dispositivo</div>'
     : '<div style="color:#b45309;font-weight:700;font-size:0.95rem">🔕 Não ativado neste dispositivo</div>';
-  const installNote = installed ? '' : '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem">⚠️ Você está pelo navegador, não pelo app instalado — as notificações não funcionam de forma confiável assim.</div>';
+  const installNote = (installed || installExempt) ? '' : '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem">⚠️ Você está pelo navegador, não pelo app instalado — as notificações não funcionam de forma confiável assim.</div>';
   overlay.innerHTML = `
     <div style="background:#fff;border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)">
       <div style="font-size:1.05rem;font-weight:700;margin-bottom:0.7rem;color:var(--text)">🔔 Notificações</div>
