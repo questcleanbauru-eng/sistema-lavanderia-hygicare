@@ -210,7 +210,9 @@ function _renderInstallPushGate(installed, pushOn) {
   if (!el) {
     el = document.createElement('div');
     el.id = '_push-gate';
-    el.style.cssText = 'position:fixed;inset:0;z-index:999999;background:#0f172a;color:#fff;'
+    // mesmo fundo em degradê da tela de login — pra não parecer uma tela "estranha"
+    el.style.cssText = 'position:fixed;inset:0;z-index:999999;'
+      + 'background:linear-gradient(160deg,#eef2ff 0%,#f8fafc 45%,#ecfeff 100%);'
       + 'display:flex;align-items:center;justify-content:center;padding:1.25rem;overflow-y:auto';
     document.body.appendChild(el);
   }
@@ -228,9 +230,9 @@ function _renderInstallPushGate(installed, pushOn) {
           <div class="_pg-step-title">1️⃣ Instale o app</div>
           <div class="_pg-step-body">
             ${window._deferredInstallPrompt
-              ? `<button id="_pg-install-btn" class="_pg-btn">📲 Instalar app</button>`
+              ? `<button id="_pg-install-btn" class="btn-primary" style="width:100%;margin-top:0.3rem">📲 Instalar app</button>`
               : `Use o menu do navegador (⋮ ou ⋯) e escolha <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela inicial"</strong>.`}
-            <div style="font-size:0.78rem;opacity:.75;margin-top:0.55rem">Depois de instalar, feche esta aba e abra o app pelo ícone criado.</div>
+            <div style="font-size:0.76rem;color:var(--muted);margin-top:0.55rem">Depois de instalar, feche esta aba e abra o app pelo ícone criado.</div>
           </div>
         </div>`;
 
@@ -243,24 +245,25 @@ function _renderInstallPushGate(installed, pushOn) {
         </div>`
       : `<div class="_pg-step">
           <div class="_pg-step-title">2️⃣ Ative as notificações</div>
-          <div class="_pg-step-body"><button id="_pg-push-btn" class="_pg-btn">🔔 Ativar notificações</button></div>
+          <div class="_pg-step-body"><button id="_pg-push-btn" class="btn-primary" style="width:100%;margin-top:0.3rem">🔔 Ativar notificações</button></div>
         </div>`;
 
   el.innerHTML = `
-    <div style="max-width:420px;width:100%;background:#111827;border-radius:16px;padding:1.75rem 1.5rem;box-shadow:0 20px 50px rgba(0,0,0,.5)">
-      <div style="font-size:2rem;margin-bottom:0.4rem">🔔📲</div>
-      <h2 style="margin:0 0 0.4rem;font-size:1.2rem">Antes de continuar</h2>
-      <p style="margin:0 0 1.2rem;font-size:0.85rem;color:#cbd5e1;line-height:1.5">Para usar o Hygicare Lavanderia é preciso instalar o app e ativar as notificações — assim você recebe avisos importantes mesmo com o app fechado.</p>
-      ${step1}
-      ${step2}
-      <button id="_pg-logout" style="margin-top:1.3rem;width:100%;background:none;border:1px solid rgba(255,255,255,.25);color:#cbd5e1;border-radius:8px;padding:8px;font-size:0.82rem;cursor:pointer">Sair</button>
+    <div style="max-width:420px;width:100%;margin:0 auto;text-align:center;background:#fff;border:1px solid var(--border);border-radius:20px;padding:2.1rem 1.75rem 1.75rem;box-shadow:0 12px 40px -12px rgba(15,23,42,.18)">
+      <div style="font-size:2.1rem;margin-bottom:0.5rem">🔔📲</div>
+      <h2 style="margin:0 0 0.4rem;font-size:1.15rem;color:var(--text)">Antes de continuar</h2>
+      <p style="margin:0 0 1.2rem;font-size:0.85rem;color:var(--muted);line-height:1.5">Para usar o Hygicare Lavanderia é preciso instalar o app e ativar as notificações — assim você recebe avisos importantes mesmo com o app fechado.</p>
+      <div style="text-align:left">
+        ${step1}
+        ${step2}
+      </div>
+      <button id="_pg-logout" class="btn-secondary" style="width:100%;margin-top:0.6rem">Sair</button>
     </div>
     <style>
-      #_push-gate ._pg-step{background:#1e293b;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.7rem}
-      #_push-gate ._pg-done{background:#14532d;color:#bbf7d0;font-weight:700;font-size:0.9rem}
-      #_push-gate ._pg-step-title{font-weight:700;font-size:0.9rem;margin-bottom:0.35rem}
-      #_push-gate ._pg-step-body{font-size:0.82rem;color:#cbd5e1;line-height:1.5}
-      #_push-gate ._pg-btn{background:#2563eb;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:0.88rem;font-weight:700;cursor:pointer}
+      #_push-gate ._pg-step{background:var(--primary-light,#eff6ff);border:1px solid var(--border);border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.7rem}
+      #_push-gate ._pg-done{background:#ecfdf5;border-color:#a7f3d0;color:var(--success-dark,#059669);font-weight:700;font-size:0.9rem;text-align:center}
+      #_push-gate ._pg-step-title{font-weight:700;font-size:0.9rem;margin-bottom:0.35rem;color:var(--text)}
+      #_push-gate ._pg-step-body{font-size:0.82rem;color:var(--text);line-height:1.5}
     </style>`;
 
   document.getElementById('_pg-install-btn')?.addEventListener('click', async () => {
