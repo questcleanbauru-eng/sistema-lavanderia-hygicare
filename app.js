@@ -5796,7 +5796,7 @@ ${printScript}
               <div class="visit-actions">
                 <button class="btn-secondary btn-sm" onclick="window._saveVisitDraft('${v.id}')">💾 Salvar rascunho</button>
                 <button class="btn-primary btn-sm" onclick="window._concludeVisit('${v.id}')">✅ Concluir visita</button>
-                ${currentUser?.role === 'admin' ? `<button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
+                ${currentUser?.role === 'admin' ? `<button class="btn-secondary btn-sm" onclick="window._closeVisitAdmin('${v.id}')" title="Encerra sem exigir informações completas nem pedir assinatura">🔒 Encerrar</button><button class="btn-danger btn-sm" onclick="window._deleteVisit('${v.id}')">🗑️</button>` : ''}
               </div>
             `}
           </div>
@@ -5955,6 +5955,33 @@ ${printScript}
       } finally { hideOverlay(); }
       // Oferece a coleta de assinatura logo após concluir
       setTimeout(() => window._visitSign(id), 300);
+    };
+
+    // Encerrar (admin): mesma coisa que concluir, mas sem exigir dados
+    // completos nem abrir a assinatura automaticamente — pra relatórios que
+    // não precisam de todo o detalhe (ex.: visita rápida, sem muito a
+    // registrar). O admin ainda pode abrir a assinatura depois, manualmente,
+    // se quiser.
+    window._closeVisitAdmin = async function(id) {
+      if (currentUser?.role !== 'admin') return toast('Apenas admin.', 'error');
+      const v = await _getVisit(id); if (!v) return;
+      v.obs = document.getElementById('vobs-' + id)?.value || v.obs || '';
+      v.next_visit = document.getElementById('vnext-' + id)?.value || v.next_visit || '';
+      if (document.getElementById('vck-' + id)) v.checklist = JSON.stringify(_readVisitChecklist(id));
+      if (!await confirmAction('Encerrar esta visita sem exigir informações completas?\n\nO relatório é marcado como concluído direto — sem pedir assinatura na hora.', '🔒 Encerrar')) return;
+      showOverlay('Encerrando…');
+      try {
+        const d = await _visitDayData(v.client_id, String(v.date).slice(0,10));
+        v.snapshot = JSON.stringify(d);
+        v.status = 'concluido';
+        v.concluded_at = new Date().toISOString();
+        v.concluded_by = currentUser?.name || currentUser?.username || '';
+        await _saveVisit(v);
+        await _flushVisitPhotos(v);
+        if (v.next_visit) await _scheduleNextVisitNote(v);
+        toast('🔒 Visita encerrada.', 'success', 4000);
+        await renderVisitsList();
+      } finally { hideOverlay(); }
     };
 
     window._reopenVisit = async function(id) {
