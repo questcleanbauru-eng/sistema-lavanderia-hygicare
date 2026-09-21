@@ -408,7 +408,7 @@
           <button class="nav-btn" id="nav-recipes">📝 Receitas<span id="recipe-pending-badge" class="nav-badge hidden">0</span></button>
           <button class="nav-btn" id="nav-client-notes">📋 Visitas</button>
           <button class="nav-btn" id="nav-pdf-reports">📄 Relatórios PDF</button>
-          <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio</button>
+          <button class="nav-btn" id="nav-reports">📄 Emitir Relatorio<span id="nav-reports-new-badge" class="nav-badge hidden">0</span></button>
           <button class="nav-btn" id="nav-form">📝 Gerar Relatório</button>
           <button class="nav-btn" id="nav-alerts">🔔 Avisos<span id="nav-alerts-badge" class="nav-badge hidden">0</span></button>
           <button class="nav-btn admin-only hidden" id="nav-users">👤 Usuarios</button>
@@ -1411,6 +1411,7 @@
             <div class="screen-title">
               <h2>📄 Emitir Relatorio</h2>
               <span class="count-badge" id="records-count">0</span>
+              <span class="count-badge hidden" id="reports-new-badge" style="background:#dc2626;color:#fff" title="Relatórios ainda não visualizados">0</span>
             </div>
           </div>
           <div class="search-bar">
@@ -1832,7 +1833,7 @@
         </button>
         <button class="bnav-btn" data-target="screen-reports">
           <span class="bnav-icon">📋</span>
-          <span class="bnav-label">Relatórios</span>
+          <span class="bnav-label">Relatórios<span id="bnav-reports-new-badge" class="nav-badge hidden">0</span></span>
         </button>
         <button class="bnav-btn bnav-fab" data-target="screen-form">
           <span class="bnav-icon">➕</span>

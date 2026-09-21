@@ -10046,6 +10046,36 @@ ${recipeSections}
       if (val) sel.value = val;
     }
 
+    // ---------- "Novo" nos relatórios de Emitir Relatório ----------
+    // Marca (por usuário, neste dispositivo) quais relatórios (grupos
+    // cliente+período) já foram abertos pelo "👁️ Ver". Quem nunca foi
+    // aberto ganha um selo 🆕 Novo, que some assim que é visualizado.
+    function _reportViewedKey(g) {
+      return `${g.clientId}|${g.dateStartRaw}|${g.dateEndRaw}`;
+    }
+    function _viewedReportsStorageKey() {
+      return 'hygicare_viewed_reports_' + (currentUser?.username || 'anon');
+    }
+    function _getViewedReports() {
+      try { return new Set(JSON.parse(localStorage.getItem(_viewedReportsStorageKey()) || '[]')); }
+      catch (e) { return new Set(); }
+    }
+    function _markReportViewed(key) {
+      if (!key) return;
+      const set = _getViewedReports();
+      if (set.has(key)) return;
+      set.add(key);
+      try { localStorage.setItem(_viewedReportsStorageKey(), JSON.stringify([...set])); } catch (e) {}
+    }
+    function updateReportsNewBadge(count) {
+      ['reports-new-badge', 'nav-reports-new-badge', 'bnav-reports-new-badge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = count;
+        el.classList.toggle('hidden', count === 0);
+      });
+    }
+
     // =====================================================
     // RENDER — HISTÓRICO DE REGISTROS
     // =====================================================
@@ -10157,6 +10187,21 @@ ${recipeSections}
       const countEl = document.getElementById('records-count');
       if (countEl) countEl.textContent = Object.keys(grouped).length;
 
+      // "Novo": na primeira vez que este usuário carrega esta tela depois do
+      // recurso existir, marca tudo que já existe hoje como "visto" — senão
+      // todo o histórico apareceria como novo de uma vez. Só relatórios
+      // criados a partir de agora entram na contagem de não vistos.
+      const _seedFlag = 'hygicare_viewed_reports_seeded_' + (currentUser?.username || 'anon');
+      if (!localStorage.getItem(_seedFlag)) {
+        try {
+          localStorage.setItem(_viewedReportsStorageKey(), JSON.stringify(Object.values(grouped).map(_reportViewedKey)));
+          localStorage.setItem(_seedFlag, '1');
+        } catch (e) {}
+      }
+      const _viewedReports = _getViewedReports();
+      const unreadCount = Object.values(grouped).filter(g => !_viewedReports.has(_reportViewedKey(g))).length;
+      updateReportsNewBadge(unreadCount);
+
       // Filtrar
       let entries = Object.entries(grouped);
       if (text) {
@@ -10244,6 +10289,7 @@ ${recipeSections}
           </tr>`;
         }).join('');
 
+        const _isNew = !_viewedReports.has(_reportViewedKey(g));
         return `
           <div class="records-group">
             <div class="records-group-header" onclick="event.target.closest('.btn-record-action') || this.nextElementSibling.classList.toggle('open')">
@@ -10251,6 +10297,7 @@ ${recipeSections}
                 <div class="records-group-title">
                   👤 ${g.clientName}
                   <span class="badge" style="font-size:0.72rem">${g.period}</span>
+                  <span id="_rnew-${safeKey}" class="badge" style="font-size:0.72rem;background:#dc2626;color:#fff;font-weight:700;${_isNew ? '' : 'display:none'}">🆕 Novo</span>
                 </div>
                 <span class="rgh-chevron">▼</span>
               </div>
@@ -10339,6 +10386,12 @@ ${recipeSections}
         if (!win) { toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error'); return; }
         win.document.write(buildReportHtml(g, false).replaceAll('#1a3f5c', getPdfColor()));
         win.document.close();
+        // marca como visto — some o selo "🆕 Novo" na hora, sem recarregar a lista
+        _markReportViewed(_reportViewedKey(g));
+        document.getElementById('_rnew-' + safeKey)?.remove();
+        const cur = document.getElementById('reports-new-badge');
+        const n = Math.max(0, (parseInt(cur?.textContent, 10) || 0) - 1);
+        updateReportsNewBadge(n);
       };
 
       // ---- Imprimir um grupo (auto-print) ----
