@@ -4621,8 +4621,11 @@ ${printScript}
         }
       }
 
-      function openDrop() {
-        renderDrop(input.value);
+      function openDrop(query) {
+        // ao focar, mostra a lista inteira (não só o que bate com o valor já
+        // selecionado) — assim dá pra trocar de opção direto, sem precisar
+        // apagar o texto atual primeiro
+        renderDrop(query !== undefined ? query : '');
         drop.style.display = 'block';
       }
 
@@ -11235,7 +11238,13 @@ ${recipeSections}
     // Limpar filtros
     document.getElementById('btn-clear-charts')?.addEventListener('click', () => {
       ['chart-filter-client','chart-filter-gerente','chart-filter-seller','chart-date-start','chart-date-end'].forEach(id => {
-        const el = document.getElementById(id); if (el) el.value = '';
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = '';
+        // dispara "change" pra sincronizar o campo de busca visível (select
+        // vira texto digitável via _makeSearchable) — setar .value sozinho
+        // não dispara change nativo, então o nome antigo ficava preso na tela
+        el.dispatchEvent(new Event('change', { bubbles: true }));
       });
       document.querySelectorAll('.chart-preset-btn').forEach(b => b.classList.remove('active'));
       document.querySelector('[data-preset="year"]')?.classList.add('active');
