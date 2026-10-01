@@ -10163,10 +10163,15 @@ ${recipeSections}
         const monthSortKey = rawDate ? rawDate.slice(0, 7) : '0000-00';
 
         const key = `${clientName}|||${period}`;
-        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], _ids: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null };
+        if (!grouped[key]) grouped[key] = { clientName, clientId: Number(r.client_id), period, dateStartRaw: (r.date_start || '').slice(0, 10), dateEndRaw: (r.date_end || '').slice(0, 10), createdMonth, monthSortKey, rows: [], _ids: [], totalKg: 0, precoKg: parseFloat(r.price_kg || client?.price_kg || 0) || null, createdAt: '' };
         grouped[key]._ids.push(r.id);
         grouped[key].rows.push({ recordId: r.id, machineName, procName, procId: Number(r.process_id), machId: Number(r.machine_id), executed: r.executed || 0, canceled: r.canceled || 0, capacity: r.capacity || 0, total: r.total || 0, maintenance: Number(r.maintenance) || 0 });
         grouped[key].totalKg += parseFloat(r.total || 0);
+        // Maior created_at/synced_at das linhas do grupo — usado como critério
+        // de desempate (relatórios lançados por último aparecem primeiro
+        // quando têm a mesma data de período, ex.: vários do mesmo dia)
+        const _rCreated = r.created_at || r.synced_at || '';
+        if (_rCreated > grouped[key].createdAt) grouped[key].createdAt = _rCreated;
       }
 
       // Enriquecer cada grupo com linhas zero para processos sem dados no período
@@ -10243,7 +10248,9 @@ ${recipeSections}
       }
 
       // Ordenar do mais recente para o mais antigo
-      entries.sort((a, b) => b[1].monthSortKey.localeCompare(a[1].monthSortKey) || b[1].period.localeCompare(a[1].period));
+      entries.sort((a, b) => b[1].monthSortKey.localeCompare(a[1].monthSortKey)
+        || b[1].period.localeCompare(a[1].period)
+        || b[1].createdAt.localeCompare(a[1].createdAt));
 
       // Guardar dados para uso nos botões PDF/Imprimir
       _recordGroups = {};
