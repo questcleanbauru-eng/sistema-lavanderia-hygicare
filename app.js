@@ -5592,7 +5592,10 @@ ${printScript}
     }
 
     // Fotos da visita
-    function _visitPhotos(v) { try { return JSON.parse(v.photos || '[]'); } catch (e) { return []; } }
+    // filter(Boolean) pra descartar entradas vazias/corrompidas (ex.: uma
+    // foto removida que deixou um slot "" no array) — sem isso virava um
+    // <img src=""> quebrado no card e no PDF.
+    function _visitPhotos(v) { try { return (JSON.parse(v.photos || '[]') || []).filter(Boolean); } catch (e) { return []; } }
     // Normaliza URL do Drive para uma que funciona em <img> (uc?export=view não funciona mais)
     function _photoSrc(u) {
       if (typeof u !== 'string') return '';
@@ -6060,8 +6063,12 @@ ${printScript}
       const _obs = v.obs || '';
       const bigObs = _obs.length > 260 || _obs.split('\n').length > 4;
       const photosPage2 = photos.length > 2 || bigObs;
+      // max-height inline (não depende da especificidade do CSS) + sem
+      // largura fixa — uma foto estreita/retrato não deixa um box vazio do
+      // lado, o tamanho acompanha a proporção real da imagem
+      const _photoMaxH = photosPage2 ? 340 : 150;
       const photosSection = photos.length
-        ? `<div class="photoblock${photosPage2 ? ' photopage' : ''}"><h2>📷 Registro Fotográfico</h2><div class="photos">${photos.map(src => `<img src="${_photoSrc(src)}">`).join('')}</div></div>`
+        ? `<div class="photoblock${photosPage2 ? ' photopage' : ''}"><h2>📷 Registro Fotográfico</h2><div class="photos">${photos.map(src => `<img src="${_photoSrc(src)}" style="max-height:${_photoMaxH}px">`).join('')}</div></div>`
         : '';
 
       const sigCol = (title, name, img, when) => `
@@ -6094,9 +6101,8 @@ ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
 .photoblock{page-break-inside:avoid}
 .photopage{page-break-before:always}
 .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
-.photos img{width:48%;max-height:340px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;background:#f8fafc}
+.photos img{max-width:48%;width:auto;height:auto;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;background:#f8fafc}
 .photoblock:not(.photopage){margin-top:14px}
-.photoblock:not(.photopage) .photos img{max-height:150px}
 .sigs{margin-top:22px;page-break-inside:avoid}
 .sigs table{border:none}.sigcell{width:50%;padding:0 14px;vertical-align:bottom;border:none}
 .sigline{height:70px;border-bottom:1.5px solid #111;display:flex;align-items:flex-end}
@@ -6126,9 +6132,9 @@ ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
 <h2>1 · 💧 Vazão</h2>${vzHtml}
 <h2>2 · 📋 Fechamento dos Dados da Lavanderia</h2>${prodHtml}
 <h2>3 · ✅ Checklist Realizado</h2>${ckHtml}
+${photosPage2 ? '' : photosSection}
 ${v.obs ? `<h2>4 · 📝 Observações / Serviços Realizados</h2><div class="obs">${escHtml(v.obs)}</div>` : ''}
 ${notesHtml ? `<h2>🗒️ Notas do Dia</h2>${notesHtml}` : ''}
-${photosPage2 ? '' : photosSection}
 <div class="sigs"><table><tr>${sigRow}</tr></table></div>
 <div class="footer">${getPdfFooterHtml('Relatório de Visita')}</div>
 ${photosPage2 ? photosSection : ''}
