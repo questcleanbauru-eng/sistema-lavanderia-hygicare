@@ -10824,6 +10824,15 @@ ${recipeSections}
       CHART_IDS.forEach(id => {
         const old = document.getElementById(id);
         if (!old) return;
+        // remove mensagem "sem dados" deixada por um render anterior sem
+        // resultado — old.replaceWith troca só o canvas, não os irmãos, então
+        // sem isso ela ficava pendurada mesmo depois do gráfico voltar a ter dados
+        let sib = old.nextElementSibling;
+        while (sib && sib.classList.contains('chart-empty-msg')) {
+          const next = sib.nextElementSibling;
+          sib.remove();
+          sib = next;
+        }
         const nc = document.createElement('canvas');
         nc.id = id;
         nc.height = heights[id] || 220;
@@ -10943,7 +10952,7 @@ ${recipeSections}
         CHART_IDS.forEach(id => {
           const el = document.getElementById(id);
           if (el) el.insertAdjacentHTML('afterend',
-            `<p style="text-align:center;color:#94a3b8;padding:2rem 0;margin:0;font-size:0.85rem">📭 Sem dados para este período</p>`);
+            `<p class="chart-empty-msg" style="text-align:center;color:#94a3b8;padding:2rem 0;margin:0;font-size:0.85rem">📭 Sem dados para este período</p>`);
         });
         return;
       }
