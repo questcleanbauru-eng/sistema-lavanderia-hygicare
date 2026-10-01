@@ -19,6 +19,24 @@ function loadChartJs() {
   return _chartJsPromise;
 }
 
+// ---------- LAZY LOAD PDF.JS (importar receita de PDF) ----------
+// jsdelivr (não cdnjs) porque já é o único CDN de script liberado na CSP do app
+const PDFJS_URL        = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+let _pdfJsPromise = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve();
+  if (_pdfJsPromise) return _pdfJsPromise;
+  _pdfJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_URL;
+    s.onload  = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL; resolve(); };
+    s.onerror = () => reject(new Error('Falha ao carregar PDF.js'));
+    document.head.appendChild(s);
+  });
+  return _pdfJsPromise;
+}
+
 // ---------- HELPERS ----------
 // URL efetiva para chamadas API — usa proxy same-origin para evitar CORS
 function gasApiUrl() {
@@ -9158,6 +9176,207 @@ ${opSections}
       document.getElementById('recipe-allmach-yes').dataset.active = allMachines ? '1' : '';
     }
 
+    // ============================================================
+    // IMPORTAR RECEITA DE PDF — modelo "PROCESSO DE LAVAGEM" (Hygicare/
+    // Diversey): tabela Nº | OPERAÇÃO | TEMPO | TEMP.°C | NÍVEL | PRODUTO |
+    // DOSAGEM ML. Extração por POSIÇÃO (x,y de cada palavra no PDF via
+    // PDF.js), não por ordem de texto — assim não depende de como o PDF
+    // serializa o conteúdo internamente, só da tabela estar no layout
+    // padrão. Nada é salvo sozinho: só pré-preenche o formulário de Nova
+    // Receita pro técnico conferir e salvar manualmente.
+    async function _pdfPageRows(pdf) {
+      const allRows = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const items = content.items
+          .map(it => ({ text: it.str, x: it.transform[4], y: it.transform[5] }))
+          .filter(it => it.text.trim());
+        items.sort((a, b) => b.y - a.y || a.x - b.x); // topo→baixo, esquerda→direita
+        const rows = [];
+        let cur = null;
+        for (const it of items) {
+          if (!cur || Math.abs(it.y - cur.y) > 3) { cur = { y: it.y, items: [] }; rows.push(cur); }
+          cur.items.push(it);
+        }
+        rows.forEach(r => r.items.sort((a, b) => a.x - b.x));
+        allRows.push(...rows);
+      }
+      return allRows;
+    }
+
+    function _pdfMinutes(s) {
+      const m = String(s || '').match(/(\d+[.,]?\d*)/);
+      return m ? parseFloat(m[1].replace(',', '.')) : 0;
+    }
+    function _pdfTemp(s) {
+      const t = String(s || '').toUpperCase();
+      if (t.includes('FRIA'))   return 'Fria';
+      if (t.includes('QUENTE')) return 'Quente';
+      const m = t.match(/(\d+)/);
+      return m ? m[1] : 'Fria';
+    }
+    function _pdfLevel(s) {
+      const t = String(s || '').toUpperCase();
+      if (t.includes('ALTO'))  return 'Alto';
+      if (t.includes('BAIXO')) return 'Baixo';
+      if (t.includes('M'))     return 'Médio'; // MÉDIO / MEDIO
+      return 'Alto';
+    }
+
+    // Monta as etapas a partir das linhas já agrupadas por y — localiza o
+    // cabeçalho da tabela, usa o x de cada coluna como referência e classifica
+    // cada palavra das linhas seguintes na coluna mais próxima. Linha com "Nº"
+    // numérico = etapa nova; linha sem número mas com produto = mais um
+    // produto da etapa anterior (como nas linhas mescladas do PDF).
+    function _parseRecipeSteps(rows) {
+      const headerRow = rows.find(r => {
+        const t = r.items.map(i => i.text.toUpperCase()).join(' ');
+        return t.includes('OPERA') && t.includes('DOSAGEM');
+      });
+      if (!headerRow) return [];
+
+      const HEADS = [
+        { key: 'n',       match: /^N/ },
+        { key: 'op',      match: /OPERA/ },
+        { key: 'tempo',   match: /TEMPO/ },
+        { key: 'temp',    match: /TEMP/ },
+        { key: 'nivel',   match: /N[ÍI]VEL/ },
+        { key: 'produto', match: /PRODUTO/ },
+        { key: 'dose',    match: /DOSAGEM/ },
+      ];
+      const cols = [];
+      for (const h of HEADS) {
+        const it = headerRow.items.find(i => h.match.test(i.text.toUpperCase()) && !cols.some(c => c.it === i));
+        if (it) cols.push({ key: h.key, x: it.x, it });
+      }
+      cols.sort((a, b) => a.x - b.x);
+      if (cols.length < 4) return []; // não achou colunas suficientes — modelo diferente do esperado
+
+      const colFor = x => {
+        let best = cols[0].key;
+        for (const c of cols) { if (x >= c.x - 8) best = c.key; }
+        return best;
+      };
+
+      const dataRows = rows.filter(r => r.y < headerRow.y - 2);
+      const steps = [];
+      let cur = null;
+      for (const row of dataRows) {
+        const cells = {};
+        for (const it of row.items) {
+          const k = colFor(it.x);
+          cells[k] = (cells[k] ? cells[k] + ' ' : '') + it.text;
+        }
+        const nNum = parseInt((cells.n || '').trim(), 10);
+        const produto = (cells.produto || '').trim();
+        const dose    = (cells.dose || '').trim();
+        if (!isNaN(nNum)) {
+          cur = {
+            n: nNum,
+            operation: (cells.op || '').trim(),
+            time: _pdfMinutes(cells.tempo),
+            temp: _pdfTemp(cells.temp),
+            level: _pdfLevel(cells.nivel),
+            products: [],
+          };
+          steps.push(cur);
+          if (produto) cur.products.push({ name: produto, dosage: dose });
+        } else if (cur && produto) {
+          cur.products.push({ name: produto, dosage: dose });
+        }
+      }
+      return steps;
+    }
+
+    function _parseRecipeHeader(rows) {
+      const fullText = rows.map(r => r.items.map(i => i.text).join(' ')).join('\n');
+      const clienteM = fullText.match(/Cliente:\s*([^\n]+)/i);
+      const progM    = fullText.match(/PROGRAMA\s*N[ºO°]?\s*\d+[^\n]*/i);
+      const capM     = fullText.match(/M[ÁA]QUINAS?\s*DE\s*(\d+)\s*KG/i);
+      return {
+        clientNameRaw: clienteM ? clienteM[1].trim() : '',
+        programName:   progM ? progM[0].replace(/\s+/g, ' ').trim() : '',
+        machineCapacity: capM ? capM[1] : '',
+      };
+    }
+
+    async function _parseRecipePdfFile(file) {
+      await loadPdfJs();
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      const rows = await _pdfPageRows(pdf);
+      const header = _parseRecipeHeader(rows);
+      const steps  = _parseRecipeSteps(rows);
+      return { ...header, steps };
+    }
+
+    async function _importRecipeFromPdf(file) {
+      if (!canDo('create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
+      showOverlay('Lendo PDF…');
+      let parsed;
+      try {
+        parsed = await _parseRecipePdfFile(file);
+      } catch (e) {
+        hideOverlay();
+        return toast('Não consegui ler esse PDF: ' + e.message, 'error', 6000);
+      }
+      hideOverlay();
+      if (!parsed.steps.length) {
+        return toast('Não encontrei a tabela de etapas nesse PDF — confere se é o modelo "Processo de Lavagem".', 'warning', 7000);
+      }
+
+      await _openRecipeForm(null); // abre como "Nova Receita" já zerada
+
+      // tenta casar o cliente pelo nome extraído do PDF — por sobreposição de
+      // palavras (não substring): o PDF costuma ter palavras extras tipo
+      // "LAVANDERIA"/"UNIDADE" que uma comparação direta não bate, e
+      // substring pura confundiria clientes parecidos (ex.: "FRANGO RICO -
+      // POLONI" vs "FRIGORÍFICO FRANGO RICO")
+      const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+      const target = norm(parsed.clientNameRaw);
+      const targetWords = new Set(target.split(' ').filter(Boolean));
+      const clients = await window.getAll('clients');
+      let match = null;
+      if (targetWords.size) {
+        let bestScore = 0;
+        for (const c of clients) {
+          const cWords = norm(c.name).split(' ').filter(w => w.length > 2);
+          if (!cWords.length) continue;
+          const hits = cWords.filter(w => targetWords.has(w)).length;
+          const score = hits / cWords.length;
+          if (score > bestScore) { bestScore = score; match = c; }
+        }
+        if (bestScore < 0.9) match = null; // exige quase todas as palavras do nome batendo
+      }
+
+      const clientSel = document.getElementById('recipe-client');
+      if (match) clientSel.value = match.id;
+      if (parsed.programName) document.getElementById('recipe-name').value = parsed.programName;
+
+      const products = await dbGetAll_raw('recipe_products');
+      document.getElementById('recipe-steps-body').innerHTML =
+        parsed.steps.map((s, i) => _stepRowHtml(s, products, i)).join('');
+
+      const msg = [
+        match ? `✅ Cliente identificado: ${match.name}.` : `⚠️ Não identifiquei o cliente ("${parsed.clientNameRaw || '—'}") — selecione manualmente.`,
+        `${parsed.steps.length} etapa(s) lida(s) do PDF.`,
+        parsed.machineCapacity ? `Ficha é para máquinas de ${parsed.machineCapacity}kg.` : '',
+        'Confira tudo antes de salvar!',
+      ].filter(Boolean).join(' ');
+      toast(msg, match ? 'success' : 'warning', 8000);
+    }
+
+    document.getElementById('btn-import-recipe-pdf')?.addEventListener('click', () => {
+      if (!canDo('create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
+      document.getElementById('input-recipe-pdf')?.click();
+    });
+    document.getElementById('input-recipe-pdf')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (file) await _importRecipeFromPdf(file);
+    });
+
     async function _openRecipeForm(recipeId = null) {
       _editingRecipeId = recipeId;
       const isEdit = recipeId !== null;
@@ -9311,6 +9530,7 @@ ${opSections}
       const list = document.getElementById('recipes-list');
       if (!list) return;
       document.getElementById('btn-new-recipe')?.classList.toggle('hidden', !canDo('create_recipe'));
+      document.getElementById('btn-import-recipe-pdf')?.classList.toggle('hidden', !canDo('create_recipe'));
 
       // Skeleton enquanto carrega
       if (!list.querySelector('.skeleton-card')) {
