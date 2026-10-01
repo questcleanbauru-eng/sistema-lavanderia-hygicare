@@ -9391,6 +9391,14 @@ ${opSections}
       if (match) clientSel.value = match.id;
       if (parsed.programName) document.getElementById('recipe-name').value = parsed.programName;
 
+      // a ficha é específica pra uma capacidade de máquina (ex.: "MAQUINAS DE
+      // 60 kg") — isso não é "todas as máquinas da lavanderia", então já marca
+      // "Não — Específica(s)" e preenche o campo com a capacidade lida
+      if (parsed.machineCapacity) {
+        _setAllMachinesToggle(false);
+        document.getElementById('recipe-machine-info').value = `Máquinas de ${parsed.machineCapacity} kg`;
+      }
+
       const products = await dbGetAll_raw('recipe_products');
       document.getElementById('recipe-steps-body').innerHTML =
         parsed.steps.map((s, i) => _stepRowHtml(s, products, i)).join('');
