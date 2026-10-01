@@ -6363,38 +6363,74 @@ ${photosPage2 ? photosSection : ''}
       const clientOpts = '<option value="">Selecionar cliente...</option>' +
         sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
+      // Campos internos (ocultos) lidos pelos geradores — recebem as mesmas opções
       ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const cur = el.value;
         el.innerHTML = clientOpts;
         if (cur) el.value = cur;
-        _makeSearchable(el);
       });
 
-      // Datas padrão: mês atual
-      const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const today = `${yyyy}-${mm}-${String(now.getDate()).padStart(2,'0')}`;
-      const monthStart = `${yyyy}-${mm}-01`;
-      [['pdf-summary-start', monthStart],['pdf-summary-end', today],
-       ['pdf-client-start',  monthStart],['pdf-client-end',  today],
-       ['pdf-vazao-start',   monthStart],['pdf-vazao-end',   today],
-       ['pdf-group-start',   monthStart],['pdf-group-end',   today],
-       ['pdf-cancel-start',  monthStart],['pdf-cancel-end',  today],
-       ['pdf-operator-start',monthStart],['pdf-operator-end',today]].forEach(([id, val]) => {
-        const el = document.getElementById(id);
-        if (el) el.value = val;
-      });
+      // Filtro único do topo
+      const gClient = document.getElementById('pdf-global-client');
+      const gStart  = document.getElementById('pdf-global-start');
+      const gEnd    = document.getElementById('pdf-global-end');
+      if (gClient) {
+        const cur = gClient.value;
+        gClient.innerHTML = '<option value="">👥 Todos os clientes</option>' +
+          sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+        if (cur) gClient.value = cur;
+        _makeSearchable(gClient);
+      }
+
+      // Datas padrão: mês atual (só na primeira vez — mantém o que o usuário escolheu)
+      const _ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const _presetRange = p => {
+        const d = new Date();
+        const end = _ymd(d);
+        if (p === '30d') { const x = new Date(d); x.setDate(x.getDate()-29); return [_ymd(x), end]; }
+        if (p === '3m')  { const x = new Date(d.getFullYear(), d.getMonth()-2, 1); return [_ymd(x), end]; }
+        if (p === 'year') return [`${d.getFullYear()}-01-01`, end];
+        return [_ymd(new Date(d.getFullYear(), d.getMonth(), 1)), end];
+      };
+      const _markPreset = () => {
+        document.querySelectorAll('#rpt-filter .pdf-preset').forEach(b => {
+          const [s, e] = _presetRange(b.dataset.p);
+          b.classList.toggle('active', gStart?.value === s && gEnd?.value === e);
+        });
+      };
+      // Copia o filtro do topo para os campos de cada relatório
+      const _syncPdfFilters = () => {
+        const c = gClient?.value || '';
+        const s = gStart?.value || '';
+        const e = gEnd?.value || '';
+        ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
+          const el = document.getElementById(id); if (el) el.value = c;
+        });
+        ['summary','client','vazao','group','cancel','operator'].forEach(k => {
+          const st = document.getElementById(`pdf-${k}-start`); if (st) st.value = s;
+          const en = document.getElementById(`pdf-${k}-end`);   if (en) en.value = e;
+        });
+        document.querySelectorAll('#screen-pdf-reports .rpt-card[data-needs-client]').forEach(card => {
+          card.classList.toggle('rpt-disabled', !c);
+          card.querySelectorAll('.rpt-btns button').forEach(b => { b.disabled = !c; });
+        });
+        _markPreset();
+      };
+      if (gStart && gEnd && !gStart.value && !gEnd.value) {
+        [gStart.value, gEnd.value] = _presetRange('month');
+      }
 
       const opCard = document.getElementById('pdf-operator-card');
-      if (opCard) opCard.style.display = (currentUser?.role === 'admin' || currentUser?.role === 'gerente') ? '' : 'none';
+      const showOp = currentUser?.role === 'admin' || currentUser?.role === 'gerente';
+      if (opCard) opCard.style.display = showOp ? '' : 'none';
 
       // Clientes por Vendedor — somente admin
       const cbsCard = document.getElementById('pdf-cbs-card');
+      const showCbs = currentUser?.role === 'admin';
       if (cbsCard) {
-        cbsCard.style.display = currentUser?.role === 'admin' ? '' : 'none';
+        cbsCard.style.display = showCbs ? '' : 'none';
         const cbsSel = document.getElementById('pdf-cbs-seller');
         if (cbsSel) {
           const sellers = [...new Set(clients.map(c => (c.seller || '').trim()).filter(Boolean))]
@@ -6406,46 +6442,28 @@ ${photosPage2 ? photosSection : ''}
           _makeSearchable(cbsSel);
         }
       }
+      const adminSec = document.getElementById('pdf-admin-section');
+      if (adminSec) adminSec.style.display = (showOp || showCbs) ? '' : 'none';
 
-      // Inicia com todos os cards recolhidos — usuário abre o que quiser
-      document.querySelectorAll('#screen-pdf-reports .card').forEach(card => {
-        const header = card.firstElementChild;
-        const body   = header?.nextElementSibling;
-        const chev   = card.querySelector('.pdf-chev');
-        if (!body || !chev) return;
-        body.hidden = true;
-        chev.style.transform = 'rotate(-90deg)';
-        card.style.paddingBottom = '0';
-      });
-
-      // Preset date buttons (uma única vez por tela)
-      if (!document.getElementById('screen-pdf-reports').dataset.presetsWired) {
-        document.getElementById('screen-pdf-reports').dataset.presetsWired = '1';
-        document.getElementById('screen-pdf-reports').addEventListener('click', e => {
-          const btn = e.target.closest('.pdf-preset');
+      // Eventos do filtro (uma única vez por tela)
+      const screen = document.getElementById('screen-pdf-reports');
+      if (!screen.dataset.presetsWired) {
+        screen.dataset.presetsWired = '1';
+        gClient?.addEventListener('change', _syncPdfFilters);
+        gStart?.addEventListener('change', _syncPdfFilters);
+        gEnd?.addEventListener('change', _syncPdfFilters);
+        screen.addEventListener('click', e => {
+          const btn = e.target.closest('#rpt-filter .pdf-preset');
           if (!btn) return;
-          const grp = btn.dataset.group;
-          const p   = btn.dataset.p;
-          const d   = new Date();
-          const y   = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0');
-          const todayStr = `${y}-${mo}-${String(d.getDate()).padStart(2,'0')}`;
-          let s = '', end = todayStr;
-          if (p === 'month') {
-            s   = `${y}-${mo}-01`;
-          } else if (p === '30d') {
-            const d30 = new Date(d); d30.setDate(d30.getDate()-29);
-            s = `${d30.getFullYear()}-${String(d30.getMonth()+1).padStart(2,'0')}-${String(d30.getDate()).padStart(2,'0')}`;
-          } else if (p === '3m') {
-            const d3m = new Date(d); d3m.setMonth(d3m.getMonth()-2); d3m.setDate(1);
-            s = `${d3m.getFullYear()}-${String(d3m.getMonth()+1).padStart(2,'0')}-01`;
-          } else if (p === 'year') {
-            s = `${y}-01-01`;
-          }
-          const map = { summary:['pdf-summary-start','pdf-summary-end'], client:['pdf-client-start','pdf-client-end'], vazao:['pdf-vazao-start','pdf-vazao-end'], group:['pdf-group-start','pdf-group-end'], cancel:['pdf-cancel-start','pdf-cancel-end'], operator:['pdf-operator-start','pdf-operator-end'] };
-          const [startId, endId] = map[grp] || [];
-          if (startId) { document.getElementById(startId).value = s; document.getElementById(endId).value = end; }
+          [gStart.value, gEnd.value] = _presetRange(btn.dataset.p);
+          _syncPdfFilters();
         });
       }
+      _syncPdfFilters();
+
+      // Filtro fica fixo logo abaixo do cabeçalho (que também é fixo) ao rolar
+      const hdr = document.querySelector('header');
+      screen.style.setProperty('--rpt-sticky-top', `${hdr ? Math.round(hdr.getBoundingClientRect().height) : 0}px`);
     }
 
     // Comprime imagem antes de salvar no localStorage / GAS
