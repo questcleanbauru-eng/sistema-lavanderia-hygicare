@@ -1798,6 +1798,14 @@
 
     <!-- Modal Receita (criar / editar) -->
     <div id="modal-recipe" class="modal-overlay hidden">
+      <!-- Espelho do PDF original, lado a lado — só aparece ao importar, só em telas largas -->
+      <div id="recipe-pdf-pane" class="hidden">
+        <div class="recipe-pdf-pane-hdr">
+          <strong>📄 PDF original</strong>
+          <button type="button" id="btn-close-pdf-pane">✕ Fechar espelho</button>
+        </div>
+        <iframe id="recipe-pdf-frame" title="PDF importado"></iframe>
+      </div>
       <div class="modal-box" style="max-width:960px;width:96vw;max-height:92vh;overflow-y:auto">
         <div class="modal-hdr">
           <h3 id="modal-recipe-title">📝 Nova Receita</h3>

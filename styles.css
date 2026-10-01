@@ -1172,6 +1172,34 @@ footer code { background: #dbeafe; color: var(--primary); padding: 0.15rem 0.4re
   padding-bottom: 0.8rem;
   border-bottom: 2px solid #e2e8f0;
 }
+
+/* Espelho do PDF ao lado do formulário de Receita importada (só desktop) */
+#recipe-pdf-pane {
+  display: flex; flex-direction: column;
+  width: 38vw; max-width: 560px; min-width: 300px;
+  height: 92vh;
+  background: #1e293b;
+  border-radius: 14px 0 0 14px;
+  overflow: hidden;
+  margin-right: -2px; /* encosta no modal-box, sem frestas */
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+  animation: slideDown .2s ease;
+}
+#recipe-pdf-pane ~ .modal-box { border-radius: 0 14px 14px 0; }
+.recipe-pdf-pane-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  background: #0f172a; color: #fff; flex-shrink: 0;
+  font-size: 0.85rem;
+}
+.recipe-pdf-pane-hdr button {
+  background: none; border: 1px solid rgba(255,255,255,.3); color: #e2e8f0;
+  border-radius: 7px; padding: 4px 9px; font-size: 0.78rem; cursor: pointer;
+}
+#recipe-pdf-frame { flex: 1; border: none; background: #fff; }
+@media (max-width: 900px) {
+  #recipe-pdf-pane { display: none !important; } /* sem espaço pro espelho no celular */
+}
 .modal-hdr h3 { margin: 0; font-size: 1.1rem; color: #1e40af; }
 @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
 

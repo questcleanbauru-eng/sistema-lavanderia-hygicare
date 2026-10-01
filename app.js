@@ -9329,6 +9329,25 @@ ${opSections}
       return { ...header, steps };
     }
 
+    // Espelho do PDF ao lado do formulário — só faz sentido com tela larga
+    // (computador); no celular não tem espaço, então nem mostra o botão.
+    window._recipePdfBlobUrl = null;
+    function _showRecipePdfMirror(file) {
+      if (window.innerWidth < 900) return; // sem espaço — fica só o formulário
+      _hideRecipePdfMirror(); // limpa um espelho anterior, se houver
+      window._recipePdfBlobUrl = URL.createObjectURL(file);
+      const frame = document.getElementById('recipe-pdf-frame');
+      if (frame) frame.src = window._recipePdfBlobUrl;
+      document.getElementById('recipe-pdf-pane')?.classList.remove('hidden');
+    }
+    function _hideRecipePdfMirror() {
+      document.getElementById('recipe-pdf-pane')?.classList.add('hidden');
+      const frame = document.getElementById('recipe-pdf-frame');
+      if (frame) frame.src = 'about:blank';
+      if (window._recipePdfBlobUrl) { URL.revokeObjectURL(window._recipePdfBlobUrl); window._recipePdfBlobUrl = null; }
+    }
+    document.getElementById('btn-close-pdf-pane')?.addEventListener('click', _hideRecipePdfMirror);
+
     async function _importRecipeFromPdf(file) {
       if (!canDo('create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
       showOverlay('Lendo PDF…');
@@ -9376,6 +9395,8 @@ ${opSections}
       document.getElementById('recipe-steps-body').innerHTML =
         parsed.steps.map((s, i) => _stepRowHtml(s, products, i)).join('');
 
+      _showRecipePdfMirror(file); // espelho ao lado, pra conferir visualmente contra o original
+
       const msg = [
         match ? `✅ Cliente identificado: ${match.name}.` : `⚠️ Não identifiquei o cliente ("${parsed.clientNameRaw || '—'}") — selecione manualmente.`,
         `${parsed.steps.length} etapa(s) lida(s) do PDF.`,
@@ -9396,6 +9417,7 @@ ${opSections}
     });
 
     async function _openRecipeForm(recipeId = null) {
+      _hideRecipePdfMirror(); // reseta o espelho de uma importação anterior, se houver
       _editingRecipeId = recipeId;
       const isEdit = recipeId !== null;
       document.getElementById('modal-recipe-title').textContent = isEdit ? '✏️ Editar Receita' : '📝 Nova Receita';
@@ -9471,8 +9493,8 @@ ${opSections}
       if (!canDo('create_recipe')) return toast('Sem permissão para criar receitas.', 'error');
       _openRecipeForm(null);
     });
-    document.getElementById('modal-recipe-close')?.addEventListener('click',  () => document.getElementById('modal-recipe').classList.add('hidden'));
-    document.getElementById('modal-recipe-cancel')?.addEventListener('click', () => document.getElementById('modal-recipe').classList.add('hidden'));
+    document.getElementById('modal-recipe-close')?.addEventListener('click',  () => { document.getElementById('modal-recipe').classList.add('hidden'); _hideRecipePdfMirror(); });
+    document.getElementById('modal-recipe-cancel')?.addEventListener('click', () => { document.getElementById('modal-recipe').classList.add('hidden'); _hideRecipePdfMirror(); });
 
     document.getElementById('btn-save-recipe')?.addEventListener('click', async () => {
       if (_saving) return;
@@ -9536,6 +9558,7 @@ ${opSections}
         }
 
         document.getElementById('modal-recipe').classList.add('hidden');
+        _hideRecipePdfMirror();
         await renderRecipesList();
       } catch(err) {
         toast('Erro ao salvar receita: ' + err.message, 'error');
