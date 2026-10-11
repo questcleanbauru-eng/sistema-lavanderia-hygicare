@@ -1083,7 +1083,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const getClr = (name, fi) => {
       const upper = (name||'').toUpperCase().trim();
       for (const grp of savedGroups) {
-        if ((grp.processes||[]).some(p => p.toUpperCase() === upper)) return grp.color;
+        // bate tanto por processo-membro (tabelas por máquina) quanto pelo
+        // próprio nome do grupo (linha já somada do Total Geral)
+        if ((grp.processes||[]).some(p => p.toUpperCase() === upper) || (grp.name||'').toUpperCase().trim() === upper) return grp.color;
       }
       if (PROC_COLORS[upper]) return PROC_COLORS[upper];
       // Cor pelo grupo configurado (já verificado acima via savedGroups)
@@ -1092,6 +1094,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       let h = 0;
       for (let ci = 0; ci < upper.length; ci++) h = (h * 31 + upper.charCodeAt(ci)) & 0xffffffff;
       return CLR_PALETTE[Math.abs(h) % CLR_PALETTE.length];
+    };
+    // Resolve o "nome de agregação" de um processo pro Total Geral: se ele
+    // estiver dentro de um grupo configurado em Admin → Cores dos Processos,
+    // usa o nome do GRUPO (soma tudo numa linha só); senão, mantém o nome
+    // original do processo (comportamento de sempre).
+    const groupNameFor = (name) => {
+      const upper = (name||'').toUpperCase().trim();
+      const grp = savedGroups.find(g => (g.processes||[]).some(p => p.toUpperCase() === upper));
+      return grp ? grp.name : name;
     };
 
     // Separar linhas de manutenção dos dados reais
@@ -1152,7 +1163,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const chartBlock = isEmpty
         ? `<p class="maint-txt">EM MANUTENÇÃO</p>`
-        : `<canvas id="${cid}" width="130" height="130"></canvas><div class="leg">${legend}</div>`;
+        : `<canvas id="${cid}" width="85" height="85"></canvas><div class="leg">${legend}</div>`;
 
       const hasMaint = _maintMachNames.has(machineName);
       const maintBanner = hasMaint ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;padding:4px 10px;font-size:9.5px;font-weight:700;color:#dc2626;margin-bottom:6px;display:inline-block">🔧 MÁQUINA EM MANUTENÇÃO NO PERÍODO</div>` : '';
@@ -1176,7 +1187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Total Geral (exclui linhas de manutenção) ---
     const totByProc = {};
     for (const row of _dataRows) {
-      const k = row.procName;
+      const k = groupNameFor(row.procName); // processos do mesmo grupo somam numa linha só
       if (!totByProc[k]) totByProc[k] = { ex:0, ca:0, kg:0 };
       totByProc[k].ex += parseFloat(row.executed||0);
       totByProc[k].ca += parseFloat(row.canceled||0);
@@ -1238,37 +1249,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:10px;color:#212121;background:#fff}
-.hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:60px;max-height:60px;padding:0 10px;gap:10px;margin-bottom:8px}
-.hdr-logo{width:40px;height:40px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;text-align:center;line-height:1.3;flex-shrink:0;letter-spacing:.5px}
-.hdr-c{flex:1;text-align:center;line-height:1.3}
-.hdr-c h1{font-size:18px;font-weight:bold;color:#fff;letter-spacing:.3px}
-.hdr-info{font-size:10px;color:#c5cae9;margin-top:4px}
-.hdr-sub{font-size:9px;color:#9fa8da;margin-top:2px}
-.sec{margin-bottom:8px;border:1px solid #ddd;page-break-inside:avoid}
-.sec-hd{background:#1a3f5c;color:#fff;text-align:center;padding:4px;font-size:11px;font-weight:bold;letter-spacing:.4px}
+body{font-family:Arial,sans-serif;font-size:9px;color:#212121;background:#fff}
+.hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:42px;max-height:42px;padding:0 8px;gap:8px;margin-bottom:5px}
+.hdr-logo{width:30px;height:30px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800;text-align:center;line-height:1.2;flex-shrink:0;letter-spacing:.5px}
+.hdr-c{flex:1;text-align:center;line-height:1.2}
+.hdr-c h1{font-size:14px;font-weight:bold;color:#fff;letter-spacing:.2px}
+.hdr-info{font-size:8.5px;color:#c5cae9;margin-top:2px}
+.hdr-sub{font-size:7.5px;color:#9fa8da;margin-top:1px}
+.sec{margin-bottom:4px;border:1px solid #ddd;page-break-inside:avoid}
+.sec-hd{background:#1a3f5c;color:#fff;text-align:center;padding:2.5px;font-size:9.5px;font-weight:bold;letter-spacing:.3px}
 .blue{background:#1a3f5c}.gray{background:#37474f}
 .sec-body{display:flex;align-items:stretch}
 .tbl-area{flex:0 0 75%;width:75%}
-.chart-area{flex:0 0 25%;width:25%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 8px;border-left:1px solid #ddd;gap:5px}
-table{width:100%;border-collapse:collapse;font-size:9px}
-thead th{background:#e3e8f0;font-size:9px;font-weight:bold;padding:4px 6px;border:1px solid #ddd;white-space:nowrap;text-align:center}
+.chart-area{flex:0 0 25%;width:25%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3px 5px;border-left:1px solid #ddd;gap:2px}
+table{width:100%;border-collapse:collapse;font-size:8px}
+thead th{background:#e3e8f0;font-size:8px;font-weight:bold;padding:2px 4px;border:1px solid #ddd;white-space:nowrap;text-align:center}
 th.tl{text-align:left}
-tbody tr{height:22px}
+tbody tr{height:14px}
 tbody tr:nth-child(even) td{background:#f9f9f9}
-tbody td{padding:3px 6px;border:1px solid #ddd;vertical-align:middle}
+tbody td{padding:1.5px 4px;border:1px solid #ddd;vertical-align:middle}
 .tc{text-align:center}.tl{text-align:left}.tr{text-align:right}.tb{font-weight:bold}.t-red{color:#e53935;font-weight:bold}
 .w30{width:30px}.w80{width:80px}.w90{width:90px}.w70{width:70px}
-tfoot td{background:#e3e8f0;font-weight:bold;padding:3px 6px;border:1px solid #ddd;font-size:9px}
-.leg{width:100%;font-size:8px;line-height:1.5}
-.li{display:flex;align-items:center;gap:4px;margin-bottom:1px;white-space:nowrap;overflow:hidden}
-.ld{width:8px;height:8px;border-radius:2px;flex-shrink:0}
-.maint-txt{color:#9e9e9e;font-style:italic;font-size:10px;text-align:center;padding:20px 4px}
-.price-row{display:flex;justify-content:space-between;align-items:center;padding:5px 14px;border-bottom:1px solid #eee;font-size:10px}
+tfoot td{background:#e3e8f0;font-weight:bold;padding:1.5px 4px;border:1px solid #ddd;font-size:8px}
+.leg{width:100%;font-size:6.5px;line-height:1.25}
+.li{display:flex;align-items:center;gap:3px;margin-bottom:0.5px;white-space:nowrap;overflow:hidden}
+.ld{width:6px;height:6px;border-radius:2px;flex-shrink:0}
+.maint-txt{color:#9e9e9e;font-style:italic;font-size:9px;text-align:center;padding:10px 4px}
+.price-row{display:flex;justify-content:space-between;align-items:center;padding:3px 12px;border-bottom:1px solid #eee;font-size:9px}
 .price-row:last-child{border-bottom:none}
-.rpt-footer{margin-top:10px;border-top:2px solid #1a3f5c;padding:7px 0 0;text-align:center;font-size:8px;color:#555;line-height:1.7;page-break-inside:avoid}
-.rpt-footer strong{color:#1a3f5c;font-size:8.5px}
-@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:10mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
+.rpt-footer{margin-top:5px;border-top:2px solid #1a3f5c;padding:4px 0 0;text-align:center;font-size:7px;color:#555;line-height:1.5;page-break-inside:avoid}
+.rpt-footer strong{color:#1a3f5c;font-size:7.5px}
+@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:7mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
 @media screen{
   .action-bar{position:sticky;top:0;z-index:999;background:#1a3f5c;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
   .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
@@ -1323,7 +1334,7 @@ ${sectionsHtml}
       </table>
     </div>
     <div class="chart-area">
-      ${geralActive.length ? `<canvas id="chtotal" width="130" height="130"></canvas><div class="leg">${geralLegend}</div>` : '<p class="maint-txt">Sem dados</p>'}
+      ${geralActive.length ? `<canvas id="chtotal" width="85" height="85"></canvas><div class="leg">${geralLegend}</div>` : '<p class="maint-txt">Sem dados</p>'}
     </div>
   </div>
 </div>
