@@ -2008,6 +2008,19 @@ ${printScript}
       callGAS('upsert', 'Config', { chave: 'hygicare_proc_groups', valor: json });
     }
 
+    // Tira sufixos de máquina/capacidade do nome do processo pra achar o
+    // "nome base" — ex.: "BRANCO - P1", "BRANCO 30kg", "BRANCO - 20 KG P7"
+    // e "PESADO (P1)" todos viram "BRANCO"/"PESADO". Usado só pra SUGERIR
+    // agrupamento automático — nunca mexe no nome real do processo.
+    function _baseProcessName(name) {
+      let s = (name || '').toUpperCase().trim();
+      s = s.replace(/\s*\(\s*P\d+\s*\)\s*$/i, '').trim();               // "(P1)"
+      s = s.replace(/\s*-?\s*(\d+\s*KG)?\s*-?\s*P\d+\s*$/i, '').trim(); // "- P1", "- 20 KG P7"
+      s = s.replace(/\s*-?\s*\d+\s*KG\s*$/i, '').trim();                // "30kg", "- 30kg"
+      s = s.replace(/\s*-\s*$/, '').trim();
+      return s;
+    }
+
     window._pcaAssign = async function(sel) {
       const procName = sel.dataset.proc;
       const gi = sel.value === '' ? null : Number(sel.value);
@@ -2099,8 +2112,9 @@ ${printScript}
       container.innerHTML = `
         <div class="pca-grid">
           <div>
-            <div style="font-size:0.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:0.5rem">
-              Sem grupo
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+              <span style="font-size:0.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px">Sem grupo</span>
+              ${ungrouped.length ? `<button class="pca-auto-grp" style="font-size:0.78rem;padding:2px 10px;border:1.5px solid #16a34a;border-radius:6px;background:#fff;color:#16a34a;cursor:pointer;font-weight:700" title="Junta sozinho nomes parecidos (ex.: BRANCO, BRANCO - P1, BRANCO 30kg) num grupo só, por nome base">🪄 Agrupar automaticamente</button>` : ''}
             </div>
             <div id="pca-ungrouped"
                  ondragover="event.preventDefault();event.currentTarget.style.borderColor='#2563eb'"
@@ -2129,6 +2143,38 @@ ${printScript}
             (d2.groups = d2.groups || []).push({ name: name.trim(), color: '#2563eb', processes: [] });
             _pcaSave(d2);
             await renderProcColorsAdmin();
+          }
+          if (e.target.closest('.pca-auto-grp')) {
+            const allProcesses = await dbGetAll_raw('processes');
+            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
+            const groups2 = d2.groups || [];
+            const assigned2 = new Set(groups2.flatMap(gr => gr.processes || []));
+            const allNames2 = [...new Set(allProcesses.map(p => (p.name||'').toUpperCase().trim()).filter(Boolean))].sort();
+            const ungrouped2 = allNames2.filter(n => !assigned2.has(n));
+
+            // agrupa os processos "sem grupo" pelo nome base (ignora sufixo de
+            // máquina/capacidade) — só sugere, não mexe em dados do processo
+            const byBase = {};
+            for (const n of ungrouped2) { const base = _baseProcessName(n); if (base) (byBase[base] ||= []).push(n); }
+
+            const titleCase = s => s.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+            let created = 0, merged = 0;
+            for (const [base, names] of Object.entries(byBase)) {
+              let grp = groups2.find(gr => (gr.name||'').toUpperCase().trim() === base);
+              if (names.length < 2 && !grp) continue; // nome sozinho, sem variação — não cria grupo à toa
+              if (!grp) { grp = { name: titleCase(base), color: '#2563eb', processes: [] }; groups2.push(grp); created++; }
+              for (const n of names) { if (!grp.processes.includes(n)) { grp.processes.push(n); merged++; } }
+            }
+
+            if (!merged) { toast('Nada pra agrupar automaticamente — não achei nomes parecidos sobrando.', 'info'); return; }
+            if (!await confirmAction(
+              `Agrupar automaticamente ${merged} processo(s) em ${created} grupo(s) novo(s) (por nome parecido, ex.: "BRANCO" + "BRANCO - P1" + "BRANCO 30kg")?\n\nDá pra revisar/ajustar depois arrastando manualmente.`,
+              '🪄 Agrupar', false)) return;
+
+            d2.groups = groups2;
+            _pcaSave(d2);
+            await renderProcColorsAdmin();
+            toast(`✅ ${merged} processo(s) agrupados automaticamente em ${created} grupo(s) novo(s).`, 'success', 6000);
           }
           const delGrp = e.target.closest('.pca-del-grp');
           if (delGrp) {
