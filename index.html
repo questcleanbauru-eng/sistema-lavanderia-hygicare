@@ -1247,10 +1247,14 @@
               <span class="pca-arr" style="font-size:0.75rem;color:var(--muted);min-width:14px;text-align:right">▼</span>
             </div>
             <div id="pca-body">
-              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 1rem">Crie grupos, arraste processos para dentro e defina uma cor — aplicada nos gráficos do relatório PDF. Alterações são salvas automaticamente.</p>
+              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 0.6rem">Os grupos são <strong>por cliente</strong> — escolha um cliente, crie grupos, arraste processos pra dentro e defina uma cor. Afeta os gráficos do PDF e a soma do "Total Geral" só daquele cliente.</p>
+              <div class="form-field" style="margin-bottom:0.75rem;max-width:320px">
+                <label>👥 Cliente</label>
+                <select id="pca-client-select" class="form-input"><option value="">-- Selecione um cliente --</option></select>
+              </div>
               <div id="admin-proc-colors"></div>
               <div style="margin-top:0.75rem">
-                <button id="btn-reset-proc-colors" class="btn-secondary" style="font-size:0.82rem">↺ Remover todos os grupos</button>
+                <button id="btn-reset-proc-colors" class="btn-secondary" style="font-size:0.82rem">↺ Remover todos os grupos deste cliente</button>
               </div>
               <p id="proc-colors-msg" style="font-size:0.82rem;margin-top:0.5rem;color:var(--success-dark)"></p>
             </div>

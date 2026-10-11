@@ -1079,7 +1079,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const savedProcColors = JSON.parse(localStorage.getItem('hygicare_proc_colors') || '{}');
     const PROC_COLORS = { ...PROC_COLORS_DEFAULT, ...savedProcColors };
     const FALLBACK = ['#546e7a','#78909c','#90a4ae','#607d8b','#455a64','#37474f'];
-    const savedGroups = (JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}').groups) || [];
+    // Grupos de processo são por cliente (Admin → Cores dos Processos)
+    const savedGroups = _procGroupsForClient(g.clientId);
     const getClr = (name, fi) => {
       const upper = (name||'').toUpperCase().trim();
       for (const grp of savedGroups) {
@@ -1996,17 +1997,36 @@ ${printScript}
     // ---- Cores dos Processos (Admin) — grupos com drag-and-drop ----
     let _pcaListenersSet = false;
 
+    // Grupos de processo são POR CLIENTE — cada cliente tem sua própria
+    // configuração (mesmo nome de processo em clientes diferentes não se
+    // mistura). _pcaClientId guarda qual cliente está selecionado no painel
+    // agora; os handlers de clique/drag abaixo usam essa variável.
+    let _pcaClientId = localStorage.getItem('hygicare_pca_client') || '';
+    function _procGroupsStore() {
+      try { return JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{}'); } catch (e) { return {}; }
+    }
+    function _procGroupsForClient(clientId) {
+      if (!clientId) return [];
+      const store = _procGroupsStore();
+      const byClient = store.byClient || {};
+      if (byClient[String(clientId)]) return byClient[String(clientId)].groups || [];
+      return store.groups || []; // compat: config antiga (global, de antes do agrupamento por cliente) vira ponto de partida
+    }
+    function _saveProcGroupsForClient(clientId, groups) {
+      if (!clientId) return;
+      const store = _procGroupsStore();
+      store.byClient = store.byClient || {};
+      store.byClient[String(clientId)] = { groups };
+      const json = JSON.stringify(store);
+      localStorage.setItem('hygicare_proc_groups', json);
+      callGAS('upsert', 'Config', { chave: 'hygicare_proc_groups', valor: json });
+    }
+
     window._pcaDragStart = function(event) {
       event.dataTransfer.setData('text/plain', event.currentTarget.dataset.proc || '');
       event.currentTarget.style.opacity = '0.4';
       event.currentTarget.addEventListener('dragend', function() { this.style.opacity = ''; }, { once: true });
     };
-
-    function _pcaSave(d) {
-      const json = JSON.stringify(d);
-      localStorage.setItem('hygicare_proc_groups', json);
-      callGAS('upsert', 'Config', { chave: 'hygicare_proc_groups', valor: json });
-    }
 
     // Tira sufixos de máquina/capacidade do nome do processo pra achar o
     // "nome base" — ex.: "BRANCO - P1", "BRANCO 30kg", "BRANCO - 20 KG P7"
@@ -2022,17 +2042,17 @@ ${printScript}
     }
 
     window._pcaAssign = async function(sel) {
+      if (!_pcaClientId) return;
       const procName = sel.dataset.proc;
       const gi = sel.value === '' ? null : Number(sel.value);
       if (gi === null) return;
-      const d = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-      d.groups = d.groups || [];
-      d.groups.forEach(g => { g.processes = (g.processes||[]).filter(p => p !== procName); });
-      if (d.groups[gi]) {
-        if (!d.groups[gi].processes) d.groups[gi].processes = [];
-        if (!d.groups[gi].processes.includes(procName)) d.groups[gi].processes.push(procName);
+      const groups = _procGroupsForClient(_pcaClientId);
+      groups.forEach(g => { g.processes = (g.processes||[]).filter(p => p !== procName); });
+      if (groups[gi]) {
+        if (!groups[gi].processes) groups[gi].processes = [];
+        if (!groups[gi].processes.includes(procName)) groups[gi].processes.push(procName);
       }
-      _pcaSave(d);
+      _saveProcGroupsForClient(_pcaClientId, groups);
       await renderProcColorsAdmin();
     };
 
@@ -2040,28 +2060,58 @@ ${printScript}
       event.preventDefault();
       event.currentTarget.style.background = '';
       event.currentTarget.style.borderColor = '';
+      if (!_pcaClientId) return;
       const procName = event.dataTransfer.getData('text/plain');
       if (!procName) return;
-      const d = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-      d.groups = d.groups || [];
-      d.groups.forEach(g => { g.processes = (g.processes || []).filter(p => p !== procName); });
-      if (groupIdx !== null && d.groups[groupIdx]) {
-        if (!d.groups[groupIdx].processes) d.groups[groupIdx].processes = [];
-        if (!d.groups[groupIdx].processes.includes(procName)) d.groups[groupIdx].processes.push(procName);
+      const groups = _procGroupsForClient(_pcaClientId);
+      groups.forEach(g => { g.processes = (g.processes || []).filter(p => p !== procName); });
+      if (groupIdx !== null && groups[groupIdx]) {
+        if (!groups[groupIdx].processes) groups[groupIdx].processes = [];
+        if (!groups[groupIdx].processes.includes(procName)) groups[groupIdx].processes.push(procName);
       }
-      _pcaSave(d);
+      _saveProcGroupsForClient(_pcaClientId, groups);
       await renderProcColorsAdmin();
     };
 
     async function renderProcColorsAdmin() {
       const container = document.getElementById('admin-proc-colors');
-      if (!container) return;
-      const processes = await dbGetAll_raw('processes');
-      const d = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-      const groups = d.groups || [];
+      const clientSel = document.getElementById('pca-client-select');
+      if (!container || !clientSel) return;
+
+      // popula o select de clientes uma vez só; preserva a seleção atual
+      if (!clientSel.dataset.filled) {
+        const allClients = await dbGetAll_raw('clients');
+        clientSel.innerHTML = '<option value="">-- Selecione um cliente --</option>' +
+          allClients.sort((a,b) => (a.name||'').localeCompare(b.name||'','pt-BR'))
+            .map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+        clientSel.dataset.filled = '1';
+        if (_pcaClientId) clientSel.value = _pcaClientId;
+        clientSel.addEventListener('change', () => {
+          _pcaClientId = clientSel.value;
+          localStorage.setItem('hygicare_pca_client', _pcaClientId);
+          renderProcColorsAdmin();
+        });
+      }
+      _pcaClientId = clientSel.value;
+
+      if (!_pcaClientId) {
+        container.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;text-align:center;padding:1.5rem 0">👆 Selecione um cliente acima para gerenciar os grupos de processos dele.</p>';
+        return;
+      }
+
+      const [allProcesses, allMachines] = await Promise.all([dbGetAll_raw('processes'), dbGetAll_raw('machines')]);
+      const clientMachineIds = new Set(allMachines.filter(m => Number(m.client_id) === Number(_pcaClientId)).map(m => Number(m.id)));
+      const processes = allProcesses.filter(p => clientMachineIds.has(Number(p.machine_id)));
+
+      const groups = _procGroupsForClient(_pcaClientId);
       const assignedSet = new Set(groups.flatMap(g => g.processes || []));
       const allNames = [...new Set(processes.map(p => (p.name || '').toUpperCase().trim()).filter(Boolean))].sort();
       const ungrouped = allNames.filter(n => !assignedSet.has(n));
+
+      if (!allNames.length) {
+        container.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;text-align:center;padding:1.5rem 0">Este cliente ainda não tem processos cadastrados.</p>';
+        return;
+      }
 
       const ungroupedHtml = ungrouped.length
         ? ungrouped.map(name => `
@@ -2136,24 +2186,27 @@ ${printScript}
       if (!_pcaListenersSet) {
         _pcaListenersSet = true;
         container.addEventListener('click', async (e) => {
+          if (!_pcaClientId) return;
           if (e.target.closest('.pca-new-grp')) {
             const name = prompt('Nome do grupo (ex: Pesado, Leve):');
             if (!name || !name.trim()) return;
-            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-            (d2.groups = d2.groups || []).push({ name: name.trim(), color: '#2563eb', processes: [] });
-            _pcaSave(d2);
+            const groups = _procGroupsForClient(_pcaClientId);
+            groups.push({ name: name.trim(), color: '#2563eb', processes: [] });
+            _saveProcGroupsForClient(_pcaClientId, groups);
             await renderProcColorsAdmin();
           }
           if (e.target.closest('.pca-auto-grp')) {
-            const allProcesses = await dbGetAll_raw('processes');
-            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-            const groups2 = d2.groups || [];
+            const [allProcesses2, allMachines2] = await Promise.all([dbGetAll_raw('processes'), dbGetAll_raw('machines')]);
+            const clientMachineIds2 = new Set(allMachines2.filter(m => Number(m.client_id) === Number(_pcaClientId)).map(m => Number(m.id)));
+            const clientProcesses2 = allProcesses2.filter(p => clientMachineIds2.has(Number(p.machine_id)));
+            const groups2 = _procGroupsForClient(_pcaClientId);
             const assigned2 = new Set(groups2.flatMap(gr => gr.processes || []));
-            const allNames2 = [...new Set(allProcesses.map(p => (p.name||'').toUpperCase().trim()).filter(Boolean))].sort();
+            const allNames2 = [...new Set(clientProcesses2.map(p => (p.name||'').toUpperCase().trim()).filter(Boolean))].sort();
             const ungrouped2 = allNames2.filter(n => !assigned2.has(n));
 
-            // agrupa os processos "sem grupo" pelo nome base (ignora sufixo de
-            // máquina/capacidade) — só sugere, não mexe em dados do processo
+            // agrupa os processos "sem grupo" (deste cliente) pelo nome base
+            // (ignora sufixo de máquina/capacidade) — só sugere, não mexe em
+            // dados do processo
             const byBase = {};
             for (const n of ungrouped2) { const base = _baseProcessName(n); if (base) (byBase[base] ||= []).push(n); }
 
@@ -2171,35 +2224,35 @@ ${printScript}
               `Agrupar automaticamente ${merged} processo(s) em ${created} grupo(s) novo(s) (por nome parecido, ex.: "BRANCO" + "BRANCO - P1" + "BRANCO 30kg")?\n\nDá pra revisar/ajustar depois arrastando manualmente.`,
               '🪄 Agrupar', false)) return;
 
-            d2.groups = groups2;
-            _pcaSave(d2);
+            _saveProcGroupsForClient(_pcaClientId, groups2);
             await renderProcColorsAdmin();
             toast(`✅ ${merged} processo(s) agrupados automaticamente em ${created} grupo(s) novo(s).`, 'success', 6000);
           }
           const delGrp = e.target.closest('.pca-del-grp');
           if (delGrp) {
             const gi = Number(delGrp.dataset.gidx);
-            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-            (d2.groups || []).splice(gi, 1);
-            _pcaSave(d2);
+            const groups = _procGroupsForClient(_pcaClientId);
+            groups.splice(gi, 1);
+            _saveProcGroupsForClient(_pcaClientId, groups);
             await renderProcColorsAdmin();
           }
           const rmProc = e.target.closest('.pca-rm-proc');
           if (rmProc) {
             const gi = Number(rmProc.dataset.gidx), pi = Number(rmProc.dataset.pidx);
-            const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-            if (d2.groups?.[gi]?.processes) d2.groups[gi].processes.splice(pi, 1);
-            _pcaSave(d2);
+            const groups = _procGroupsForClient(_pcaClientId);
+            if (groups[gi]?.processes) groups[gi].processes.splice(pi, 1);
+            _saveProcGroupsForClient(_pcaClientId, groups);
             await renderProcColorsAdmin();
           }
         });
         container.addEventListener('change', (e) => {
           if (!e.target.classList.contains('pca-grp-color')) return;
+          if (!_pcaClientId) return;
           const gi = Number(e.target.dataset.gidx);
-          const d2 = JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}');
-          if (d2.groups?.[gi]) {
-            d2.groups[gi].color = e.target.value;
-            _pcaSave(d2);
+          const groups = _procGroupsForClient(_pcaClientId);
+          if (groups[gi]) {
+            groups[gi].color = e.target.value;
+            _saveProcGroupsForClient(_pcaClientId, groups);
             document.querySelectorAll(`.pca-dot-${gi}`).forEach(s => s.style.background = e.target.value);
           }
         });
@@ -2433,12 +2486,11 @@ ${printScript}
     });
 
     document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
-      if (!confirm('Remover todos os grupos e configurações de cor?')) return;
-      localStorage.removeItem('hygicare_proc_groups');
-      localStorage.removeItem('hygicare_proc_colors');
-      callGAS('upsert', 'Config', { chave: 'hygicare_proc_groups', valor: '' });
+      if (!_pcaClientId) return toast('Selecione um cliente primeiro.', 'warning');
+      if (!confirm('Remover todos os grupos de processo deste cliente?')) return;
+      _saveProcGroupsForClient(_pcaClientId, []);
       renderProcColorsAdmin();
-      toast('Configurações de cores removidas', 'info', 2000);
+      toast('Grupos deste cliente removidos.', 'info', 2500);
     });
 
     // Toggle período no formulário de registro
@@ -11060,9 +11112,13 @@ ${recipeSections}
     const _procGroupsFallback = ['#546e7a','#78909c','#90a4ae','#607d8b','#455a64','#37474f'];
     function colorForProcess(name, fi = 0) {
       const upper = (name || '').toUpperCase().trim();
-      const groups = (JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{"groups":[]}').groups) || [];
+      // Grupos são por cliente — só dá pra aplicar quando o gráfico está
+      // filtrado num cliente só (com vários/todos misturados não tem como
+      // saber de qual cliente usar os grupos, então cai no hash de sempre)
+      const filterClientId = document.getElementById('chart-filter-client')?.value || '';
+      const groups = filterClientId ? _procGroupsForClient(filterClientId) : [];
       for (const grp of groups) {
-        if ((grp.processes || []).some(p => p.toUpperCase() === upper)) return grp.color;
+        if ((grp.processes || []).some(p => p.toUpperCase() === upper) || (grp.name||'').toUpperCase().trim() === upper) return grp.color;
       }
       let h = 0;
       for (let i = 0; i < upper.length; i++) h = (h * 31 + upper.charCodeAt(i)) & 0xffffffff;
