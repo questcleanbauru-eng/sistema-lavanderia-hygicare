@@ -465,6 +465,23 @@ function getPdfFooterHtml(reportType) {
   return `${escHtml(name)} ${escHtml(sub)}${type} · Gerado em ${date}${extra ? '<br>' + escHtml(extra) : ''}`;
 }
 
+// Grupos de processo (Admin → Cores dos Processos) — por cliente. Leitura
+// pura (só localStorage), por isso fica top-level: tanto buildReportHtml
+// (fora do IIFE que define callGAS) quanto as telas de dentro do IIFE
+// (Admin, Gráficos) conseguem chamar, sem depender de em qual escopo cada
+// uma está. Quem GRAVA (_saveProcGroupsForClient, que chama callGAS) fica
+// dentro do IIFE, perto da tela que o usa.
+function _procGroupsStore() {
+  try { return JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{}'); } catch (e) { return {}; }
+}
+function _procGroupsForClient(clientId) {
+  if (!clientId) return [];
+  const store = _procGroupsStore();
+  const byClient = store.byClient || {};
+  if (byClient[String(clientId)]) return byClient[String(clientId)].groups || [];
+  return store.groups || []; // compat: config antiga (global, de antes do agrupamento por cliente)
+}
+
 // ---------- SORT ORDER — Máquinas e Processos ----------
 function _getMachOrder()  { try { return JSON.parse(localStorage.getItem('hygicare_machine_order') || '{}'); } catch { return {}; } }
 function _getProcOrder()  { try { return JSON.parse(localStorage.getItem('hygicare_process_order') || '{}'); } catch { return {}; } }
@@ -2001,17 +2018,9 @@ ${printScript}
     // configuração (mesmo nome de processo em clientes diferentes não se
     // mistura). _pcaClientId guarda qual cliente está selecionado no painel
     // agora; os handlers de clique/drag abaixo usam essa variável.
+    // _procGroupsStore/_procGroupsForClient (leitura) são top-level — ver
+    // perto de getPdfColor — pra funcionar também fora deste IIFE.
     let _pcaClientId = localStorage.getItem('hygicare_pca_client') || '';
-    function _procGroupsStore() {
-      try { return JSON.parse(localStorage.getItem('hygicare_proc_groups') || '{}'); } catch (e) { return {}; }
-    }
-    function _procGroupsForClient(clientId) {
-      if (!clientId) return [];
-      const store = _procGroupsStore();
-      const byClient = store.byClient || {};
-      if (byClient[String(clientId)]) return byClient[String(clientId)].groups || [];
-      return store.groups || []; // compat: config antiga (global, de antes do agrupamento por cliente) vira ponto de partida
-    }
     function _saveProcGroupsForClient(clientId, groups) {
       if (!clientId) return;
       const store = _procGroupsStore();
