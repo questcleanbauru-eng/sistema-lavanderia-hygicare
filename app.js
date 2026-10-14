@@ -10112,6 +10112,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       }, '');
       const lastDateStr = fmtDate(lastIso);
 
+      const C = getPdfColor();
       const recipeSections = activeRecipes.map((r, idx) => {
         const allMach = String(r.all_machines) === '1' || r.all_machines === true || r.all_machines === 'true';
         const machStr = allMach ? 'Todas as máquinas' : (r.machine_info || '—');
@@ -10132,13 +10133,22 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
         }).join('');
         return `
         <div class="rs"${idx > 0 ? ' style="page-break-before:always"' : ''}>
-          <div class="rs-hdr">
-            <span class="rs-proc">📋 ${escHtml(r.name||'—')}</span>
-            <span class="rs-meta">⚙️ ${escHtml(machStr)} &nbsp;·&nbsp; ${fmtDate(r.date||r.created_at?.slice(0,10))}</span>
+          <div class="rs-top">
+            <div>${getPdfLogoHtml(true)}</div>
+            <div class="rs-top-c">
+              <div class="rs-ttl">PROCESSO DE LAVAGEM</div>
+              <div class="rs-sub">${escHtml(c.name)}</div>
+            </div>
+          </div>
+          <div class="rs-info">
+            <div><b>Receita</b>${escHtml(r.name||'—')}</div>
+            <div><b>Máquina(s)</b>${escHtml(machStr)}</div>
+            <div><b>Data</b>${fmtDate(r.date||r.created_at?.slice(0,10))}</div>
+            <div><b>Versão</b>v${r.version||1}</div>
           </div>
           ${steps.length
             ? `<table><thead><tr><th style="width:34px">N.</th><th>Operação</th><th>Tempo</th><th>Temp.</th><th>Nível</th><th>Produto(s)</th><th>Dosagem</th></tr></thead><tbody>${stepsRows}</tbody></table>`
-            : '<p style="color:#94a3b8;font-size:0.82rem;padding:8px 14px">Sem etapas cadastradas.</p>'}
+            : '<p class="muted">Sem etapas cadastradas.</p>'}
         </div>`;
       }).join('');
 
@@ -10147,39 +10157,35 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
 <title>${escHtml(titleStr)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:20px}
-.doc-hdr{background:#1d4ed8;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:16px}
-.doc-hdr h1{font-size:1.1rem;font-weight:700;margin-bottom:3px}
-.doc-hdr p{font-size:0.75rem;color:#93c5fd}
-.rs{border:1px solid #e2e8f0;border-radius:8px;margin-bottom:14px;overflow:hidden;break-inside:avoid}
-.rs-hdr{background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px}
-.rs-proc{font-weight:700;font-size:0.88rem;color:#1d4ed8}
-.rs-meta{font-size:0.75rem;color:#64748b}
+body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;padding:16px 20px}
+.rs-top{display:flex;align-items:center;background:${C};color:#fff;padding:14px 20px;border-radius:9px;gap:14px;margin-bottom:12px}
+.rs-top-c{flex:1;text-align:right}
+.rs-ttl{font-size:16px;font-weight:800;letter-spacing:.3px}
+.rs-sub{font-size:11px;color:rgba(255,255,255,.8);margin-top:2px}
+.rs-info{display:flex;flex-wrap:wrap;gap:7px 26px;margin-bottom:12px;padding:10px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;font-size:11px}
+.rs-info b{display:block;font-size:8.5px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:1px}
 table{width:100%;border-collapse:collapse;font-size:12px}
-thead th{background:#1d4ed8;color:#fff;padding:6px 9px;text-align:left;font-size:0.72rem;font-weight:700}
+thead th{background:${C};color:#fff;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 tbody tr:nth-child(even){background:#f8fafc}
-tbody td{padding:5px 9px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+tbody td{padding:6px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.muted{color:#94a3b8;font-size:0.82rem;padding:8px 14px}
 .footer{margin-top:18px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
 @media screen{
-  .abar{position:sticky;top:0;z-index:999;background:#1d4ed8;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .abar{position:sticky;top:0;z-index:999;background:${C};padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:10px}
   .abar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
-  .btn-x{background:#fff;color:#1d4ed8}
+  .btn-x{background:#fff;color:${C}}
   .btn-p{background:#16a34a;color:#fff}
-  .abar-lbl{color:#bfdbfe;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .abar-lbl{color:#fff;opacity:.85;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
-@media print{.abar{display:none}body{padding:10px}}
+@media print{.abar{display:none}body{padding:10px}@page{margin:10mm}}
 </style></head><body>
 <div class="abar">
   <button class="btn-x" onclick="window.close()">✕ Fechar</button>
   <button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
   <span class="abar-lbl">${escHtml(c.name)} · ${activeRecipes.length} receita${activeRecipes.length > 1 ? 's' : ''}</span>
 </div>
-<div class="doc-hdr">
-  <h1>📋 Processos de Lavagens</h1>
-  <p>${escHtml(c.name)} &nbsp;·&nbsp; Hygicare Lavanderia &nbsp;·&nbsp; Última atualização: ${lastDateStr}</p>
-</div>
 ${recipeSections}
-<div class="footer">Hygicare Lavanderia — ${escHtml(c.name)} — Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+<div class="footer">${getPdfFooterHtml('Processos de Lavagens — ' + c.name)}</div>
 </body></html>`;
 
       win.document.write(htmlDoc);
