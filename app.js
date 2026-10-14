@@ -5911,6 +5911,7 @@ ${printScript}
               <div class="vh-meta"><span>📅 ${fmtDate(v.date)}</span>${v.tech ? `<span>👷 ${escHtml(v.tech)}</span>` : ''}<span>${chips}</span></div>
             </div>
             <span class="visit-pill ${concl ? 'visit-pill--done' : 'visit-pill--draft'}">${concl ? 'Concluído' : 'Rascunho'}</span>
+            ${concl ? '' : `<button class="btn-primary btn-sm" style="flex-shrink:0;white-space:nowrap" onclick="event.stopPropagation();window._concludeVisit('${v.id}')" title="Concluir sem precisar abrir o card">✅ Concluir</button>`}
             <span class="v-arr" style="font-size:0.7rem;color:#94a3b8;flex-shrink:0">▶</span>
           </div>
           <div id="${bid}" hidden class="visit-body">
