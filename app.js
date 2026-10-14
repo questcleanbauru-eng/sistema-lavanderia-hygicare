@@ -10112,7 +10112,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
       }, '');
       const lastDateStr = fmtDate(lastIso);
 
-      const recipeSections = activeRecipes.map(r => {
+      const recipeSections = activeRecipes.map((r, idx) => {
         const allMach = String(r.all_machines) === '1' || r.all_machines === true || r.all_machines === 'true';
         const machStr = allMach ? 'Todas as máquinas' : (r.machine_info || '—');
         const steps = (() => { try { return JSON.parse(r.steps || '[]'); } catch(e) { return []; } })();
@@ -10131,7 +10131,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
           </tr>`;
         }).join('');
         return `
-        <div class="rs">
+        <div class="rs"${idx > 0 ? ' style="page-break-before:always"' : ''}>
           <div class="rs-hdr">
             <span class="rs-proc">📋 ${escHtml(r.name||'—')}</span>
             <span class="rs-meta">⚙️ ${escHtml(machStr)} &nbsp;·&nbsp; ${fmtDate(r.date||r.created_at?.slice(0,10))}</span>
