@@ -1206,10 +1206,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const totByProc = {};
     for (const row of _dataRows) {
       const k = groupNameFor(row.procName); // processos do mesmo grupo somam numa linha só
-      if (!totByProc[k]) totByProc[k] = { ex:0, ca:0, kg:0 };
+      if (!totByProc[k]) totByProc[k] = { ex:0, ca:0, kg:0, members: new Set() };
       totByProc[k].ex += parseFloat(row.executed||0);
       totByProc[k].ca += parseFloat(row.canceled||0);
       totByProc[k].kg += parseFloat(row.total   ||0);
+      totByProc[k].members.add(row.procName);
     }
     const totProcs  = Object.entries(totByProc);
     const totExec   = _dataRows.reduce((s,r) => s + parseFloat(r.executed||0), 0);
@@ -1218,8 +1219,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const geralRows = totProcs.map(([proc, d], i) => {
       const pct = g.totalKg > 0 ? (d.kg/g.totalKg*100).toFixed(1) : '0.0';
+      // Se essa linha é um GRUPO somando mais de um processo (Admin → Cores
+      // dos Processos), mostra quais processos entraram na soma — pra não
+      // parecer que "Pesado" sumiu com o Centro Cirúrgico, por exemplo.
+      const otherMembers = [...d.members].filter(m => m.toUpperCase().trim() !== proc.toUpperCase().trim());
+      const obs = otherMembers.length
+        ? `<div class="grp-note">🔗 agrupa: ${otherMembers.map(esc).join(', ')}</div>` : '';
       return `<tr>
-        <td class="tc">${i+1}</td><td class="tl">${esc(proc)}</td>
+        <td class="tc">${i+1}</td><td class="tl">${esc(proc)}${obs}</td>
         <td class="tc">${d.ex}</td>
         <td class="tc${d.ca>0?' t-red':''}">${d.ca}</td>
         <td class="tc">${d.ex+d.ca}</td>
@@ -1287,6 +1294,7 @@ tbody tr{height:14px}
 tbody tr:nth-child(even) td{background:#f9f9f9}
 tbody td{padding:1.5px 4px;border:1px solid #ddd;vertical-align:middle}
 .tc{text-align:center}.tl{text-align:left}.tr{text-align:right}.tb{font-weight:bold}.t-red{color:#e53935;font-weight:bold}
+.grp-note{font-weight:normal;font-size:7px;color:#64748b;font-style:italic;margin-top:1px}
 .w30{width:30px}.w80{width:80px}.w90{width:90px}.w70{width:70px}
 tfoot td{background:#e3e8f0;font-weight:bold;padding:1.5px 4px;border:1px solid #ddd;font-size:8px}
 .leg{width:100%;font-size:6.5px;line-height:1.25}
