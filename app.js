@@ -12140,14 +12140,14 @@ ${alertasSec}
     <tfoot><tr><td colspan="2" style="text-align:right">Total:</td><td class="tc">${fmt(d.totalKg)} kg</td><td class="tc">${d.totalRecords}</td><td></td></tr></tfoot>
   </table>
 </div>
-<div class="sec">
+${d.clientLabel ? `<div class="sec">
   <div class="sec-hd">TOTAIS POR PROCESSO</div>
   <table>
     <thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Processo</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead>
     <tbody>${procRows || '<tr><td colspan="4" class="tc" style="color:#9e9e9e;padding:12px">Sem dados</td></tr>'}</tbody>
   </table>
-</div>
-${(d.byMachine||[]).length > 0 ? `<div class="sec"><div class="sec-hd">TOTAIS POR MÁQUINA</div><table><thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Máquina</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead><tbody>${machRows}</tbody></table></div>` : ''}
+</div>` : ''}
+${(d.clientLabel && (d.byMachine||[]).length > 0) ? `<div class="sec"><div class="sec-hd">TOTAIS POR MÁQUINA</div><table><thead><tr><th class="tc" style="width:28px">#</th><th class="tl">Máquina</th><th class="tc">Total kg</th><th class="tc">% Total</th></tr></thead><tbody>${machRows}</tbody></table></div>` : ''}
 <div class="sec">
   <div class="sec-hd">EVOLUÇÃO MENSAL</div>
   <table>
