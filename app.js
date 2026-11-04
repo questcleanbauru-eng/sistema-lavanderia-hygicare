@@ -1138,6 +1138,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const machineEntries = Object.entries(byMachine)
       .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { numeric: true, sensitivity: 'base' }));
 
+    // Tamanho dinâmico do relatório: poucas máquinas = layout maior,
+    // aproveitando a folha A4 inteira; muitas máquinas = compacto, pra
+    // continuar cabendo tudo em 1 página só.
+    const sectionCount = machineEntries.length + 1; // +1 = Total Geral
+    const TIERS = {
+      large:   { bodyFont:12, hdrH:60,  hdrTitleFont:20, hdrInfoFont:11,  hdrSubFont:9.5, secMb:10, secHdPad:6,   secHdFont:13, chartPad:'8px 10px', chartGap:6, canvasSize:135, tableFont:11, theadPad:'5px 8px', theadFont:11, trH:26, tdPad:'4px 8px',   tfootFont:11, legFont:9,   legLH:1.4,  liGap:6, liMb:2,   ldSize:9, maintPad:'28px 10px', maintFont:13,   priceRowPad:'8px 18px', priceRowFont:13,   footerMt:12, footerPad:'8px 0 0', footerFont:9, pageMargin:11 },
+      medium:  { bodyFont:10, hdrH:50,  hdrTitleFont:16, hdrInfoFont:9.5, hdrSubFont:8.5, secMb:6,  secHdPad:4,   secHdFont:11, chartPad:'5px 6px',  chartGap:4, canvasSize:105, tableFont:9,  theadPad:'3px 5px', theadFont:9,  trH:18, tdPad:'2.5px 5px', tfootFont:9,  legFont:7.5, legLH:1.3,  liGap:4, liMb:1,   ldSize:7, maintPad:'16px 6px',  maintFont:10.5, priceRowPad:'5px 14px', priceRowFont:10.5, footerMt:8,  footerPad:'6px 0 0', footerFont:8, pageMargin:9  },
+      compact: { bodyFont:9,  hdrH:42,  hdrTitleFont:14, hdrInfoFont:8.5, hdrSubFont:7.5, secMb:4,  secHdPad:2.5, secHdFont:9.5,chartPad:'3px 5px',  chartGap:2, canvasSize:85,  tableFont:8,  theadPad:'2px 4px', theadFont:8,  trH:14, tdPad:'1.5px 4px', tfootFont:8,  legFont:6.5, legLH:1.25, liGap:3, liMb:0.5, ldSize:6, maintPad:'10px 4px',  maintFont:9,    priceRowPad:'3px 12px', priceRowFont:9,    footerMt:5,  footerPad:'4px 0 0', footerFont:7, pageMargin:7  },
+    };
+    const T = sectionCount <= 2 ? TIERS.large : sectionCount === 3 ? TIERS.medium : TIERS.compact;
+
     // Dias do período
     const [startStr, endStr] = (g.period || '').split(' → ');
     const parsePt = s => { const [d,m,y] = (s||'').split('/'); return new Date(+y,+m-1,+d); };
@@ -1181,10 +1192,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const chartBlock = isEmpty
         ? `<p class="maint-txt">EM MANUTENÇÃO</p>`
-        : `<canvas id="${cid}" width="85" height="85"></canvas><div class="leg">${legend}</div>`;
+        : `<canvas id="${cid}" width="${T.canvasSize}" height="${T.canvasSize}"></canvas><div class="leg">${legend}</div>`;
 
       const hasMaint = _maintMachNames.has(machineName);
-      const maintBanner = hasMaint ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;padding:4px 10px;font-size:9.5px;font-weight:700;color:#dc2626;margin-bottom:6px;display:inline-block">🔧 MÁQUINA EM MANUTENÇÃO NO PERÍODO</div>` : '';
+      const maintBanner = hasMaint ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;padding:${T.secHdPad+1.5}px 10px;font-size:${T.tableFont+1.5}px;font-weight:700;color:#dc2626;margin-bottom:6px;display:inline-block">🔧 MÁQUINA EM MANUTENÇÃO NO PERÍODO</div>` : '';
       sectionsHtml += `
 <div class="sec">
   <div class="sec-hd blue">${esc(machineName.toUpperCase())}</div>
@@ -1256,7 +1267,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   <div style="padding:0">
     <div class="price-row">Preço por Kg<span>R$ ${fmt(precoKg)}</span></div>
     <div class="price-row">Total Kg Lavado<span>${fmt(g.totalKg)} kg</span></div>
-    <div class="price-row" style="background:#e8f5e9;color:#1b5e20;font-weight:bold;font-size:11px">
+    <div class="price-row" style="background:#e8f5e9;color:#1b5e20;font-weight:bold;font-size:${T.priceRowFont+2}px">
       PREÇO DO KG × TOTAL DE KG LAVADO<span>R$ ${fmt(fatTotal)}</span>
     </div>
   </div>
@@ -1274,38 +1285,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:9px;color:#212121;background:#fff}
-.hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:42px;max-height:42px;padding:0 8px;gap:8px;margin-bottom:5px}
+body{font-family:Arial,sans-serif;font-size:${T.bodyFont}px;color:#212121;background:#fff}
+.hdr{display:flex;align-items:center;background:#1a3f5c;color:#fff;min-height:${T.hdrH}px;max-height:${T.hdrH}px;padding:0 8px;gap:8px;margin-bottom:${T.secMb+1}px}
 .hdr-logo{width:30px;height:30px;background:rgba(255,255,255,.18);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800;text-align:center;line-height:1.2;flex-shrink:0;letter-spacing:.5px}
 .hdr-c{flex:1;text-align:center;line-height:1.2}
-.hdr-c h1{font-size:14px;font-weight:bold;color:#fff;letter-spacing:.2px}
-.hdr-info{font-size:8.5px;color:#c5cae9;margin-top:2px}
-.hdr-sub{font-size:7.5px;color:#9fa8da;margin-top:1px}
-.sec{margin-bottom:4px;border:1px solid #ddd;page-break-inside:avoid}
-.sec-hd{background:#1a3f5c;color:#fff;text-align:center;padding:2.5px;font-size:9.5px;font-weight:bold;letter-spacing:.3px}
+.hdr-c h1{font-size:${T.hdrTitleFont}px;font-weight:bold;color:#fff;letter-spacing:.2px}
+.hdr-info{font-size:${T.hdrInfoFont}px;color:#c5cae9;margin-top:2px}
+.hdr-sub{font-size:${T.hdrSubFont}px;color:#9fa8da;margin-top:1px}
+.sec{margin-bottom:${T.secMb}px;border:1px solid #ddd;page-break-inside:avoid}
+.sec-hd{background:#1a3f5c;color:#fff;text-align:center;padding:${T.secHdPad}px;font-size:${T.secHdFont}px;font-weight:bold;letter-spacing:.3px}
 .blue{background:#1a3f5c}.gray{background:#37474f}
 .sec-body{display:flex;align-items:stretch}
 .tbl-area{flex:0 0 75%;width:75%}
-.chart-area{flex:0 0 25%;width:25%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3px 5px;border-left:1px solid #ddd;gap:2px}
-table{width:100%;border-collapse:collapse;font-size:8px}
-thead th{background:#e3e8f0;font-size:8px;font-weight:bold;padding:2px 4px;border:1px solid #ddd;white-space:nowrap;text-align:center}
+.chart-area{flex:0 0 25%;width:25%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:${T.chartPad};border-left:1px solid #ddd;gap:${T.chartGap}px}
+table{width:100%;border-collapse:collapse;font-size:${T.tableFont}px}
+thead th{background:#e3e8f0;font-size:${T.theadFont}px;font-weight:bold;padding:${T.theadPad};border:1px solid #ddd;white-space:nowrap;text-align:center}
 th.tl{text-align:left}
-tbody tr{height:14px}
+tbody tr{height:${T.trH}px}
 tbody tr:nth-child(even) td{background:#f9f9f9}
-tbody td{padding:1.5px 4px;border:1px solid #ddd;vertical-align:middle}
+tbody td{padding:${T.tdPad};border:1px solid #ddd;vertical-align:middle}
 .tc{text-align:center}.tl{text-align:left}.tr{text-align:right}.tb{font-weight:bold}.t-red{color:#e53935;font-weight:bold}
-.grp-note{font-weight:normal;font-size:7px;color:#64748b;font-style:italic;margin-top:1px}
+.grp-note{font-weight:normal;font-size:${Math.max(6,T.tableFont-1)}px;color:#64748b;font-style:italic;margin-top:1px}
 .w30{width:30px}.w80{width:80px}.w90{width:90px}.w70{width:70px}
-tfoot td{background:#e3e8f0;font-weight:bold;padding:1.5px 4px;border:1px solid #ddd;font-size:8px}
-.leg{width:100%;font-size:6.5px;line-height:1.25}
-.li{display:flex;align-items:center;gap:3px;margin-bottom:0.5px;white-space:nowrap;overflow:hidden}
-.ld{width:6px;height:6px;border-radius:2px;flex-shrink:0}
-.maint-txt{color:#9e9e9e;font-style:italic;font-size:9px;text-align:center;padding:10px 4px}
-.price-row{display:flex;justify-content:space-between;align-items:center;padding:3px 12px;border-bottom:1px solid #eee;font-size:9px}
+tfoot td{background:#e3e8f0;font-weight:bold;padding:${T.tdPad};font-size:${T.tfootFont}px;border:1px solid #ddd}
+.leg{width:100%;font-size:${T.legFont}px;line-height:${T.legLH}}
+.li{display:flex;align-items:center;gap:${T.liGap}px;margin-bottom:${T.liMb}px;white-space:nowrap;overflow:hidden}
+.ld{width:${T.ldSize}px;height:${T.ldSize}px;border-radius:2px;flex-shrink:0}
+.maint-txt{color:#9e9e9e;font-style:italic;font-size:${T.maintFont}px;text-align:center;padding:${T.maintPad}}
+.price-row{display:flex;justify-content:space-between;align-items:center;padding:${T.priceRowPad};border-bottom:1px solid #eee;font-size:${T.priceRowFont}px}
 .price-row:last-child{border-bottom:none}
-.rpt-footer{margin-top:5px;border-top:2px solid #1a3f5c;padding:4px 0 0;text-align:center;font-size:7px;color:#555;line-height:1.5;page-break-inside:avoid}
-.rpt-footer strong{color:#1a3f5c;font-size:7.5px}
-@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:7mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
+.rpt-footer{margin-top:${T.footerMt}px;border-top:2px solid #1a3f5c;padding:${T.footerPad};text-align:center;font-size:${T.footerFont}px;color:#555;line-height:1.5;page-break-inside:avoid}
+.rpt-footer strong{color:#1a3f5c;font-size:${T.footerFont+0.5}px}
+@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4 portrait;margin:${T.pageMargin}mm}.sec{page-break-inside:avoid}.action-bar{display:none}}
 @media screen{
   .action-bar{position:sticky;top:0;z-index:999;background:#1a3f5c;padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
   .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
@@ -1360,7 +1371,7 @@ ${sectionsHtml}
       </table>
     </div>
     <div class="chart-area">
-      ${geralActive.length ? `<canvas id="chtotal" width="85" height="85"></canvas><div class="leg">${geralLegend}</div>` : '<p class="maint-txt">Sem dados</p>'}
+      ${geralActive.length ? `<canvas id="chtotal" width="${T.canvasSize}" height="${T.canvasSize}"></canvas><div class="leg">${geralLegend}</div>` : '<p class="maint-txt">Sem dados</p>'}
     </div>
   </div>
 </div>
