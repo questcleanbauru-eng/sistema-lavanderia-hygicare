@@ -5931,6 +5931,9 @@ ${printScript}
             </div>
             <span class="visit-pill ${concl ? 'visit-pill--done' : 'visit-pill--draft'}">${concl ? 'Concluído' : 'Rascunho'}</span>
             ${concl ? '' : `<button class="btn-primary btn-sm" style="flex-shrink:0;white-space:nowrap" onclick="event.stopPropagation();window._concludeVisit('${v.id}')" title="Concluir sem precisar abrir o card">✅ Concluir</button>`}
+            ${currentUser?.role === 'admin'
+              ? `<button class="btn-danger btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();window._deleteVisit('${v.id}')" title="Excluir visita">🗑️</button>`
+              : `<button class="btn-danger btn-sm" style="flex-shrink:0;opacity:.4;cursor:not-allowed" onclick="event.stopPropagation();toast('🔒 Apenas o admin pode excluir relatórios. Solicite a exclusão ao administrador.', 'warning')" title="Apenas o admin pode excluir">🗑️</button>`}
             <span class="v-arr" style="font-size:0.7rem;color:#94a3b8;flex-shrink:0">▶</span>
           </div>
           <div id="${bid}" hidden class="visit-body">
@@ -6268,7 +6271,7 @@ ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
 .footer{margin-top:24px;padding-top:9px;border-top:1px solid #e5e7eb;font-size:8.5px;color:#9ca3af;text-align:center}
 @media print{.abar{display:none}body{padding:9mm}@page{size:A4 portrait;margin:11mm}}`;
 
-      return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Visita — ${escHtml(c.name||'')}</title><style>${CSS}</style></head><body>
+      return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Visita — ${escHtml(c.name||'')} - ${fmtDate(v.date).replace(/\//g,'-')}</title><style>${CSS}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
 <button onclick="window.close()" style="padding:7px 14px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
 <div class="hdr">
