@@ -1,10 +1,19 @@
-// Vercel Cron — lembrete mensal pra todo mundo (cada usuário + o admin)
-// abrir o app e manter tudo atualizado. Dispara 1x por mês (agendado em
-// vercel.json) e usa o mesmo mecanismo Web Push de /api/send-push.js, só
-// que em massa: busca os usuários ativos e as inscrições na planilha e
-// manda a notificação pra todo mundo que já ativou push em algum
-// dispositivo — não precisa de lista separada pra admin, o admin já é um
-// usuário normal na aba Usuarios e cai no mesmo laço.
+// Vercel Cron — lembrete periódico pra todo mundo (cada usuário + o admin)
+// abrir o app. Dispara TODO DIA às 09h (Brasília) — ver vercel.json — mas só
+// manda notificação de verdade quando a config salva pelo Admin (tela
+// Admin → "Lembrete Automático de Acesso", aba Config no Sheets, chave
+// hygicare_push_reminder_cfg) diz que HOJE é o dia certo (semanal: dia da
+// semana configurado; mensal: dia do mês configurado). Fora isso, só
+// confere e sai sem mandar nada.
+//
+// Idempotência: depois de mandar, grava a data de hoje na chave
+// hygicare_push_reminder_last_sent — se essa função rodar de novo no mesmo
+// dia (reentrega do Vercel, etc.) ela não manda duplicado.
+//
+// Reaproveita o mesmo mecanismo Web Push de /api/send-push.js, só que em
+// massa: busca os usuários ativos e as inscrições na planilha e manda pra
+// todo mundo que já ativou push em algum dispositivo — o admin já é um
+// usuário normal na aba Usuarios, cai no mesmo laço, sem lista separada.
 //
 // Protegido por CRON_SECRET: o Vercel manda esse valor automaticamente no
 // header Authorization quando é ELE quem chama a rota (ver vercel.json).
@@ -54,6 +63,17 @@ async function _deleteSubscription(id) {
   } catch (e) { /* inscrição morta que sobrevive não quebra nada */ }
 }
 
+async function _upsertConfig(chave, valor) {
+  if (!GAS_URL) return;
+  try {
+    const body = new URLSearchParams({
+      payload: JSON.stringify({ action: 'upsert', sheet: 'Config', data: { chave, valor } }),
+    });
+    if (GAS_SECRET) body.set('_secret', GAS_SECRET);
+    await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  } catch (e) { /* melhor esforço — se falhar, a próxima rodada tenta de novo amanhã */ }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
@@ -66,11 +86,38 @@ module.exports = async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${CRON_SECRET}`) {
     return res.status(401).json({ status: 'error', error: 'Não autorizado' });
   }
-  if (!_ensureVapid()) {
-    return res.status(503).json({ status: 'error', error: 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas no servidor' });
-  }
 
   try {
+    const configRows = await _readSheet('Config');
+    let cfg = { enabled: false, frequency: 'monthly', weekday: 1, dayOfMonth: 1 };
+    const cfgRow = configRows.find(r => r.chave === 'hygicare_push_reminder_cfg');
+    if (cfgRow && cfgRow.valor) { try { cfg = { ...cfg, ...JSON.parse(cfgRow.valor) }; } catch (e) {} }
+    const lastSent = configRows.find(r => r.chave === 'hygicare_push_reminder_last_sent')?.valor || '';
+
+    if (!cfg.enabled) {
+      return res.status(200).json({ status: 'ok', sent: false, reason: 'lembrete desativado pelo admin' });
+    }
+
+    // Brasília não observa horário de verão desde 2019 — offset fixo -03:00
+    const br = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const weekday    = br.getUTCDay();   // 0=domingo ... 6=sábado
+    const dayOfMonth = br.getUTCDate();
+    const todayKey   = br.toISOString().slice(0, 10); // YYYY-MM-DD (data em Brasília)
+
+    const isDue = cfg.frequency === 'weekly'
+      ? weekday === Number(cfg.weekday ?? 1)
+      : dayOfMonth === Number(cfg.dayOfMonth ?? 1);
+
+    if (!isDue) {
+      return res.status(200).json({ status: 'ok', sent: false, reason: 'hoje não é o dia configurado', todayKey });
+    }
+    if (lastSent === todayKey) {
+      return res.status(200).json({ status: 'ok', sent: false, reason: 'já enviado hoje', todayKey });
+    }
+    if (!_ensureVapid()) {
+      return res.status(503).json({ status: 'error', error: 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas no servidor' });
+    }
+
     const [users, subs] = await Promise.all([_readSheet('Usuarios'), _readSheet('PushSubscriptions')]);
     const activeUsernames = new Set(
       users
@@ -79,7 +126,7 @@ module.exports = async function handler(req, res) {
     );
 
     const payload = JSON.stringify({
-      title: '🔔 Lembrete mensal — Hygicare Lavanderia',
+      title: '🔔 Lembrete — Hygicare Lavanderia',
       body: 'Abra o app pra manter tudo atualizado. É só isso! 😉',
       data: { screen: 'screen-home' },
     });
@@ -108,7 +155,9 @@ module.exports = async function handler(req, res) {
       if (sentForUser > 0) usersNotified++;
     }));
 
-    return res.status(200).json({ status: 'ok', activeUsers: activeUsernames.size, usersNotified, totalSent, totalRemoved });
+    await _upsertConfig('hygicare_push_reminder_last_sent', todayKey);
+
+    return res.status(200).json({ status: 'ok', sent: true, todayKey, activeUsers: activeUsernames.size, usersNotified, totalSent, totalRemoved });
   } catch (err) {
     return res.status(500).json({ status: 'error', error: err.message });
   }

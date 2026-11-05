@@ -1,6 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron-monthly-reminder", "schedule": "0 12 1 * *" }
+    { "path": "/api/cron-push-reminder", "schedule": "0 12 * * *" }
   ],
   "headers": [
     {

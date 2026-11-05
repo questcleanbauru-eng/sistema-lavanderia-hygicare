@@ -1281,6 +1281,64 @@
               </div>
             </div>
           </div>
+
+          <!-- Card Lembrete Automático de Acesso -->
+          <div class="card" style="margin-top:1.2rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+                 onclick="(function(b,a){const o=b.style.display!=='none';b.style.display=o?'none':'block';a.textContent=o?'▶':'▼'})(document.getElementById('rmd-body'),this.querySelector('.rmd-arr'))">
+              <h3 style="margin:0;font-size:1.05rem;color:#1e40af">📅 Lembrete Automático de Acesso</h3>
+              <span class="rmd-arr" style="font-size:0.75rem;color:var(--muted);min-width:14px;text-align:right">▼</span>
+            </div>
+            <div id="rmd-body">
+              <p style="font-size:0.82rem;color:var(--muted);margin:0.75rem 0 1rem">
+                Manda uma notificação push pra cada usuário (admin incluso) lembrando de abrir o app,
+                na frequência configurada aqui. Só chega em quem já ativou notificações no card acima.
+              </p>
+              <label class="check-label" style="margin-bottom:0.9rem">
+                <input type="checkbox" id="rmd-enabled"> Ativar lembrete automático
+              </label>
+              <div class="form-row form-row-2col">
+                <div class="form-field">
+                  <label>Frequência</label>
+                  <select id="rmd-frequency" class="form-input">
+                    <option value="monthly">Mensal</option>
+                    <option value="weekly">Semanal</option>
+                  </select>
+                </div>
+                <div class="form-field" id="rmd-weekday-field" style="display:none">
+                  <label>Dia da semana</label>
+                  <select id="rmd-weekday" class="form-input">
+                    <option value="0">Domingo</option>
+                    <option value="1">Segunda-feira</option>
+                    <option value="2">Terça-feira</option>
+                    <option value="3">Quarta-feira</option>
+                    <option value="4">Quinta-feira</option>
+                    <option value="5">Sexta-feira</option>
+                    <option value="6">Sábado</option>
+                  </select>
+                </div>
+                <div class="form-field" id="rmd-dayofmonth-field">
+                  <label>Dia do mês</label>
+                  <select id="rmd-dayofmonth" class="form-input">
+                    <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                    <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                    <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+                    <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                    <option value="13">13</option><option value="14">14</option><option value="15">15</option>
+                    <option value="16">16</option><option value="17">17</option><option value="18">18</option>
+                    <option value="19">19</option><option value="20">20</option><option value="21">21</option>
+                    <option value="22">22</option><option value="23">23</option><option value="24">24</option>
+                    <option value="25">25</option><option value="26">26</option><option value="27">27</option>
+                    <option value="28">28</option>
+                  </select>
+                </div>
+              </div>
+              <p style="font-size:0.76rem;color:var(--muted);margin:-0.3rem 0 0.9rem">Horário fixo: 09h (Brasília). Dia do mês limitado a 28 pra funcionar em todo mês.</p>
+              <p id="rmd-last-sent" style="font-size:0.78rem;color:var(--muted);margin-bottom:0.75rem"></p>
+              <button id="btn-rmd-save" class="btn-primary" style="font-size:0.82rem">💾 Salvar</button>
+              <p id="rmd-save-msg" style="font-size:0.82rem;margin-top:0.5rem"></p>
+            </div>
+          </div>
         </section>
 
         <!-- ===== TELA VAZÃO ===== -->

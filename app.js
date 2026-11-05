@@ -1528,7 +1528,7 @@ ${printScript}
         if (screenId === 'screen-form') await _initFormScreen();
         if (screenId === 'screen-reports') { await refreshReportClientFilter(); await refreshMonthYearFilter(); await renderRecordsList(); }
         if (screenId === 'screen-users')   await renderUsersList();
-        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); testApis(); }
+        if (screenId === 'screen-admin')   { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); renderPushReminderCard(); testApis(); }
         if (screenId === 'screen-alerts')  await renderAlertsScreen();
       });
     });
@@ -1546,7 +1546,7 @@ ${printScript}
         if (screenId === 'screen-recipes')      await initRecipesScreen();
         if (screenId === 'screen-client-notes') await initClientNotesScreen();
         if (screenId === 'screen-users')        await renderUsersList();
-        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); testApis(); }
+        if (screenId === 'screen-admin')        { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); renderPushReminderCard(); testApis(); }
         if (screenId === 'screen-alerts')       await renderAlertsScreen();
       });
     });
@@ -1706,7 +1706,7 @@ ${printScript}
         if (screenId === 'screen-users')        await renderUsersList();
         if (screenId === 'screen-financeiro')   await initFinanceiroScreen();
         if (screenId === 'screen-equipment')    await initEquipmentScreen();
-        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); testApis(); }
+        if (screenId === 'screen-admin')     { refreshAdminPanel(); renderProcColorsAdmin(); renderNoteTypesAdmin(); renderVisitChecklistAdmin(); renderPushAdminCard(); renderPushReminderCard(); testApis(); }
       });
     });
 
@@ -2511,6 +2511,70 @@ ${printScript}
         toast('❌ Falha ao enviar — confira se o servidor (Vercel) já tem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY configuradas.', 'error', 7000);
       }
       await renderPushAdminCard();
+    });
+
+    // ── Card Lembrete Automático de Acesso (Admin) ──────────────
+    // Config salva na aba Config (chave/valor), igual cor de processos etc.
+    // O cron em /api/cron-push-reminder.js roda 1x por dia (servidor) e
+    // decide sozinho se HOJE bate com a frequência configurada aqui.
+    function _rmdDefaults() { return { enabled: false, frequency: 'monthly', weekday: 1, dayOfMonth: 1 }; }
+    function _rmdToggleFreqFields() {
+      const isWeekly = document.getElementById('rmd-frequency')?.value === 'weekly';
+      const wf = document.getElementById('rmd-weekday-field');
+      const mf = document.getElementById('rmd-dayofmonth-field');
+      if (wf) wf.style.display = isWeekly ? '' : 'none';
+      if (mf) mf.style.display = isWeekly ? 'none' : '';
+    }
+    document.getElementById('rmd-frequency')?.addEventListener('change', _rmdToggleFreqFields);
+
+    async function renderPushReminderCard() {
+      const enEl = document.getElementById('rmd-enabled');
+      if (!enEl) return;
+      let cfg = _rmdDefaults();
+      let lastSent = '';
+      try {
+        const r = await fetch(`${gasApiUrl()}?sheet=Config`);
+        if (r.ok) {
+          const rows = (await r.json()).data || [];
+          const cfgRow = rows.find(x => x.chave === 'hygicare_push_reminder_cfg');
+          if (cfgRow && cfgRow.valor) { try { cfg = { ..._rmdDefaults(), ...JSON.parse(cfgRow.valor) }; } catch (e) {} }
+          lastSent = rows.find(x => x.chave === 'hygicare_push_reminder_last_sent')?.valor || '';
+        }
+      } catch (e) { /* offline — mantém os campos com os valores padrão */ }
+
+      enEl.checked = !!cfg.enabled;
+      const freqEl = document.getElementById('rmd-frequency');
+      if (freqEl) freqEl.value = cfg.frequency === 'weekly' ? 'weekly' : 'monthly';
+      const wdEl = document.getElementById('rmd-weekday');
+      if (wdEl) wdEl.value = String(cfg.weekday ?? 1);
+      const domEl = document.getElementById('rmd-dayofmonth');
+      if (domEl) domEl.value = String(cfg.dayOfMonth ?? 1);
+      _rmdToggleFreqFields();
+
+      const lastSentEl = document.getElementById('rmd-last-sent');
+      if (lastSentEl) {
+        lastSentEl.textContent = lastSent
+          ? `Último envio automático: ${fmtDate(lastSent)}`
+          : 'Ainda não foi enviado nenhum lembrete automático.';
+      }
+    }
+    document.getElementById('btn-rmd-save')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-rmd-save');
+      const msgEl = document.getElementById('rmd-save-msg');
+      const cfg = {
+        enabled: !!document.getElementById('rmd-enabled')?.checked,
+        frequency: document.getElementById('rmd-frequency')?.value === 'weekly' ? 'weekly' : 'monthly',
+        weekday: Number(document.getElementById('rmd-weekday')?.value || 1),
+        dayOfMonth: Number(document.getElementById('rmd-dayofmonth')?.value || 1),
+      };
+      btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Salvando…';
+      const ok = await callGAS('upsert', 'Config', { chave: 'hygicare_push_reminder_cfg', valor: JSON.stringify(cfg) });
+      btn.disabled = false; btn.textContent = orig;
+      if (msgEl) {
+        msgEl.textContent = ok ? '✅ Configuração salva!' : '❌ Falha ao salvar — confira a conexão.';
+        msgEl.style.color = ok ? 'var(--success-dark,#16a34a)' : 'var(--danger,#dc2626)';
+      }
+      if (ok) toast('🔔 Lembrete automático configurado!', 'success');
     });
 
     document.getElementById('btn-reset-proc-colors')?.addEventListener('click', () => {
