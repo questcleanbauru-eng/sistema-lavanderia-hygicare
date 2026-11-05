@@ -13458,7 +13458,7 @@ ${inactiveSec}
 
       const monthSel = document.getElementById('fin-rank-month');
       const filterMonth = monthSel.value;
-      const months = [...new Set(finAll.map(r => r.month).filter(Boolean))].sort().reverse();
+      const months = [...new Set(finAll.map(r => _normFinMonth(r.month)).filter(Boolean))].sort().reverse();
       const cur = monthSel.value;
       monthSel.innerHTML = '<option value="">Todos os meses</option>' + months.map(m => {
         const [y, mo] = m.split('-');
