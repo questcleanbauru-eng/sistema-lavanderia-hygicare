@@ -3974,9 +3974,9 @@ ${printScript}
             <div class="list-item-name">
               ${!isActive ? '🔴' : noReports ? '🚫' : vazaoOnly ? '💧' : '👤'} ${c.name}
               <span class="badge">${c.city || 'Sem cidade'}</span>
-              ${!isActive ? '<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.7em">Inativo</span>' : ''}
-              ${isActive && noReports ? '<span class="badge" style="background:#f1f5f9;color:#475569;font-size:0.7em">🚫 Sem relatório/vazão</span>' : ''}
-              ${isActive && vazaoOnly ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.7em">Apenas Vazão</span>' : ''}
+              ${(!isActive && currentUser?.role !== 'admin') ? '<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.7em">Inativo</span>' : ''}
+              ${(isActive && noReports && currentUser?.role !== 'admin') ? '<span class="badge" style="background:#f1f5f9;color:#475569;font-size:0.7em">🚫 Sem relatório/vazão</span>' : ''}
+              ${(isActive && vazaoOnly && currentUser?.role !== 'admin') ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.7em">Apenas Vazão</span>' : ''}
             </div>
             <div class="list-item-details">
               ${c.seller ? `<span class="detail-chip">👨‍💼 ${c.seller}</span>` : ''}
@@ -3988,9 +3988,9 @@ ${printScript}
             </div>
           </div>
           <div class="list-item-actions">
-            ${currentUser?.role === 'admin' ? `<button class="btn-sm" onclick="window._toggleClientActive(${c.id},this)" style="background:${isActive?'#dcfce7':'#fee2e2'};color:${isActive?'#166534':'#991b1b'};border:1px solid ${isActive?'#86efac':'#fca5a5'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">${isActive?'🟢 Ativo':'🔴 Inativo'}</button>` : ''}
-            ${currentUser?.role === 'admin' && isActive ? `<button class="btn-sm" title="Apenas Vazão — sem alertas de relatório" onclick="window._toggleClientFlag(${c.id},'vazao_only',this)" style="background:${vazaoOnly?'#e0f2fe':'#f1f5f9'};color:${vazaoOnly?'#0369a1':'#94a3b8'};border:1px solid ${vazaoOnly?'#7dd3fc':'#e2e8f0'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">💧 Vazão</button>` : ''}
-            ${currentUser?.role === 'admin' && isActive ? `<button class="btn-sm" title="Não emite relatório nem vazão" onclick="window._toggleClientFlag(${c.id},'no_reports',this)" style="background:${noReports?'#e2e8f0':'#f1f5f9'};color:${noReports?'#334155':'#94a3b8'};border:1px solid ${noReports?'#cbd5e1':'#e2e8f0'};border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">🚫 S/ relatório</button>` : ''}
+            ${currentUser?.role === 'admin' ? `<button class="btn-sm" onclick="window._toggleClientActive(${c.id},this)" style="background:${isActive?'#dcfce7':'#fee2e2'};color:${isActive?'#166534':'#991b1b'};border:1px solid ${isActive?'#86efac':'#fca5a5'};border-radius:8px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">${isActive?'🟢 Ativo':'🔴 Inativo'}</button>` : ''}
+            ${currentUser?.role === 'admin' && isActive ? `<button class="btn-sm" title="Apenas Vazão — sem alertas de relatório" onclick="window._toggleClientFlag(${c.id},'vazao_only',this)" style="background:${vazaoOnly?'#e0f2fe':'#f1f5f9'};color:${vazaoOnly?'#0369a1':'#94a3b8'};border:1px solid ${vazaoOnly?'#7dd3fc':'#e2e8f0'};border-radius:8px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">💧 Vazão</button>` : ''}
+            ${currentUser?.role === 'admin' && isActive ? `<button class="btn-sm" title="Não emite relatório nem vazão" onclick="window._toggleClientFlag(${c.id},'no_reports',this)" style="background:${noReports?'#e2e8f0':'#f1f5f9'};color:${noReports?'#334155':'#94a3b8'};border:1px solid ${noReports?'#cbd5e1':'#e2e8f0'};border-radius:8px;padding:3px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">🚫 S/ relatório</button>` : ''}
             ${canDo('edit_client') ? `<button class="btn-edit" onclick="window._editClient(${c.id})">✏️ Editar</button>` : ''}
             ${canDo('delete_client') ? `<button class="btn-danger" onclick="window._deleteClient(${c.id}, this)">🗑️</button>` : ''}
           </div>
@@ -4304,7 +4304,6 @@ ${printScript}
                     </div>
                     <div class="list-item-details">
                       <span class="detail-chip">⚙️ ${machine?.name || 'Máquina não encontrada'}</span>
-                      ${p.capacity ? '' : '<span class="badge badge-gray">Cap. herdada</span>'}
                     </div>
                   </div>
                   <div class="list-item-actions">
@@ -9031,7 +9030,7 @@ ${opSections}
             ? `<span style="font-size:0.74rem;color:#b45309;font-weight:700;white-space:nowrap">🔧 só manutenção · ⚙️ ${r.machs.size}</span>`
             : `<span style="font-size:0.74rem;color:var(--muted);white-space:nowrap">💧 ${r.count} · ⚙️ ${r.machs.size}</span>`;
           return `
-            <div style="display:flex;gap:0.4rem;align-items:stretch">
+            <div style="display:flex;gap:0.3rem;align-items:center">
               <button type="button" onclick="window._vazaoPickClient(${r.cid})"
                 style="flex:1;text-align:left;background:var(--card,#fff);border:1px solid var(--border);border-left:4px solid ${barClr};border-radius:9px;padding:0.55rem 0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.35rem 0.9rem;min-width:0">
                 <span style="min-width:0;flex:1">
@@ -9043,7 +9042,7 @@ ${opSections}
               </button>
               ${canDel ? `<button type="button" title="${r.maintOnly ? 'Excluir as marcações de manutenção deste cliente' : 'Excluir todas as vazões deste cliente'}"
                 onclick="window._deleteClientVazoes(${r.cid}, ${r.count})"
-                style="flex-shrink:0;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:9px;padding:0 0.7rem;font-size:0.95rem;cursor:pointer">🗑️</button>` : ''}
+                style="flex-shrink:0;border:none;background:transparent;color:#dc2626;border-radius:9px;padding:0.5rem 0.5rem;font-size:0.95rem;cursor:pointer;opacity:0.7">🗑️</button>` : ''}
             </div>`;
         }).join('');
       }

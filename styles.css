@@ -1072,9 +1072,9 @@ main { max-width: 1100px; margin: 0 auto; }
   flex-wrap: wrap;
 }
 .rgh-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
   gap: 0.35rem;
-  flex-wrap: wrap;
 }
 .records-group-meta {
   display: flex;
