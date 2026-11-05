@@ -1301,7 +1301,8 @@ body{font-family:Arial,sans-serif;font-size:${T.bodyFont}px;color:#212121;backgr
 table{width:100%;border-collapse:collapse;font-size:${T.tableFont}px}
 thead th{background:#e3e8f0;font-size:${T.theadFont}px;font-weight:bold;padding:${T.theadPad};border:1px solid #ddd;white-space:nowrap;text-align:center}
 th.tl{text-align:left}
-tbody tr{height:${T.trH}px}
+tbody tr{height:${T.trH}px;page-break-inside:avoid;break-inside:avoid}
+thead{display:table-header-group}
 tbody tr:nth-child(even) td{background:#f9f9f9}
 tbody td{padding:${T.tdPad};border:1px solid #ddd;vertical-align:middle}
 .tc{text-align:center}.tl{text-align:left}.tr{text-align:right}.tb{font-weight:bold}.t-red{color:#e53935;font-weight:bold}
@@ -6317,6 +6318,7 @@ p{font-size:10.5px;margin:3px 0}
 table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px}
 th{background:${C};color:#fff;padding:5px 8px;text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:.4px}
 td{padding:5px 8px;border-bottom:1px solid #eef2f7}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 .muted{color:#94a3b8;font-size:10.5px;padding:5px 2px}
 .obs{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:11px 13px;font-size:11px;line-height:1.6}
 ul{margin:4px 0 0;padding-left:20px}li{margin:2px 0;font-size:11px}
@@ -6862,6 +6864,7 @@ table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#1a3f5c
 td{padding:4px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
 .abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:7px 14px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
 .footer{margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}</style></head><body>
 <div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
 <button onclick="window.close()" style="padding:7px 14px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
@@ -6928,11 +6931,12 @@ h3{font-size:10px;color:#374151;margin:10px 0 4px;font-weight:700}
 .period{font-size:10px;color:#6b7280;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
-.pump-block{margin:6px 0 12px 0}
+.pump-block{margin:6px 0 12px 0;page-break-inside:avoid;break-inside:avoid}
 .pump-title{font-size:10px;font-weight:700;color:#1a3f5c;padding:5px 7px;background:#eff6ff;border-left:3px solid #1a3f5c;display:flex;justify-content:space-between;align-items:center}
 .pump-count{font-weight:400;color:#6b7280;font-size:9px}
 .no-recs{color:#94a3b8;font-style:italic;padding:4px 7px;font-size:9px}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
 
       const fmtVal = val => val != null ? Number(val).toLocaleString('pt-BR',{maximumFractionDigits:2}) : '-';
@@ -7055,6 +7059,7 @@ ${bodyHtml}
 .hdr h1{font-size:16px;margin-bottom:4px}.hdr p{font-size:9px;opacity:.75}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório por ${groupLabel}</title>
 <style>${CSS}</style></head><body>
@@ -7117,6 +7122,7 @@ td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;paddi
 .hdr{background:#1a3f5c;color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:14px}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}
 td{padding:4px 8px;border-bottom:1px solid #f1f5f9}.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
       const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Clientes por Vendedor</title>
 <style>${CSS}</style></head><body>
@@ -7155,12 +7161,13 @@ ${sections}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
 .logo{font-weight:900;font-size:15px;color:#111827}.logo-sub{font-size:9px;color:#6b7280;text-transform:uppercase}
 h1{font-size:15px;color:#111827;margin:6px 0 2px}
-.mach-block{margin-bottom:14px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden}
+.mach-block{margin-bottom:14px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;page-break-inside:avoid;break-inside:avoid}
 .mach-hdr{background:#1a3f5c;color:#fff;padding:6px 10px;font-weight:700;font-size:11px}
 .mach-sub{font-size:9px;opacity:.75;font-weight:400}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f3f4f6;color:#1a3f5c;padding:4px 8px;text-align:left;font-size:9px;text-transform:uppercase;border-bottom:1px solid #d1d5db}
 td{padding:4px 8px;border-bottom:1px solid #f1f5f9}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
       const machSections = cMachines.map(m => {
         const mProcs = processes.filter(p => Number(p.machine_id) === Number(m.id));
@@ -7244,12 +7251,13 @@ ${machSections}
 .hdr-title{font-size:14px;font-weight:700;color:#fff}.hdr-sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:2px}
 .kpis{display:flex;gap:8px;margin:0 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;flex:1;text-align:center}
 .kv{font-size:18px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;text-transform:uppercase;margin-top:1px}.kv-red{color:#dc2626}.kv-green{color:#16a34a}
-.client-block{margin-bottom:14px}.client-hdr{background:#f1f5f9;border-left:3px solid #1a3f5c;padding:5px 10px;font-weight:700;font-size:11px;color:#1a3f5c;margin-bottom:2px;display:flex;justify-content:space-between}
+.client-block{margin-bottom:14px;page-break-inside:avoid;break-inside:avoid}.client-hdr{background:#f1f5f9;border-left:3px solid #1a3f5c;padding:5px 10px;font-weight:700;font-size:11px;color:#1a3f5c;margin-bottom:2px;display:flex;justify-content:space-between}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;font-size:9px;text-transform:uppercase;text-align:left}
 td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
 .badge-canc{display:inline-block;background:#fee2e2;color:#dc2626;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700}
 .badge-exec{display:inline-block;background:#dcfce7;color:#16a34a;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
 
       const clientSections = Object.values(byClient).sort((a,b)=>a.name.localeCompare(b.name)).map(cl => {
@@ -7344,13 +7352,14 @@ ${clientSections}
 .hdr-title{font-size:14px;font-weight:700;color:#fff}.hdr-sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:2px}
 .kpis{display:flex;gap:8px;margin:0 0 12px}.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;flex:1;text-align:center}
 .kv{font-size:18px;font-weight:800;color:#111827}.kl{font-size:9px;color:#6b7280;text-transform:uppercase;margin-top:1px}
-.op-block{margin-bottom:16px}.op-hdr{background:#1a3f5c;color:#fff;padding:7px 10px;font-weight:700;font-size:11px;border-radius:5px 5px 0 0;display:flex;justify-content:space-between;align-items:center}
+.op-block{margin-bottom:16px;page-break-inside:avoid;break-inside:avoid}.op-hdr{background:#1a3f5c;color:#fff;padding:7px 10px;font-weight:700;font-size:11px;border-radius:5px 5px 0 0;display:flex;justify-content:space-between;align-items:center}
 .op-stats{display:flex;gap:6px;margin:4px 0 4px}
 .op-stat{background:#f1f5f9;border-radius:4px;padding:4px 8px;font-size:9px;color:#374151}
 .op-stat strong{display:block;font-size:11px;color:#111827;font-weight:800}
 table{width:100%;border-collapse:collapse;font-size:10px}th{background:#374151;color:#fff;padding:4px 7px;font-size:9px;text-transform:uppercase;text-align:left}
 td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
 .footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
 
       const totalKg = Object.values(byOp).reduce((s,v)=>s+v.kg,0);
@@ -10141,6 +10150,7 @@ thead th{background:#1d4ed8;color:#fff;padding:7px 9px;text-align:left;font-size
 tbody tr:nth-child(even){background:#f8fafc}
 tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical-align:top}
 .footer{margin-top:20px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media screen{
   .action-bar{position:sticky;top:0;z-index:999;background:#1d4ed8;padding:6px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
   .action-bar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
@@ -10148,7 +10158,7 @@ tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;font-size:12px;vertical
   .btn-print-rcp{background:#4caf50;color:#fff}
   .action-bar-label{color:#bfdbfe;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
-@media print{.action-bar{display:none}body{padding:10px}}
+@media print{.action-bar{display:none}body{padding:10px}@page{size:A4 portrait;margin:10mm}}
 </style></head><body>
 <div class="action-bar">
   <button class="btn-close-rcp" onclick="window.close()">✕ Fechar</button>
@@ -10255,6 +10265,7 @@ tbody tr:nth-child(even){background:#f8fafc}
 tbody td{padding:6px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 .muted{color:#94a3b8;font-size:0.82rem;padding:8px 14px}
 .footer{margin-top:18px;font-size:0.7rem;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 @media screen{
   .abar{position:sticky;top:0;z-index:999;background:${C};padding:6px 10px;display:flex;align-items:center;gap:8px;margin-bottom:10px}
   .abar button{padding:5px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
@@ -10262,7 +10273,7 @@ tbody td{padding:6px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
   .btn-p{background:#16a34a;color:#fff}
   .abar-lbl{color:#fff;opacity:.85;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
-@media print{.abar{display:none}body{padding:10px}@page{margin:10mm}}
+@media print{.abar{display:none}body{padding:10px}@page{size:A4 portrait;margin:10mm}}
 </style></head><body>
 <div class="abar">
   <button class="btn-x" onclick="window.close()">✕ Fechar</button>
@@ -12174,6 +12185,7 @@ th.tc,td.tc{text-align:center}
 tbody tr:nth-child(even) td{background:#f9fafb}
 tbody td{padding:3px 6px;border:1px solid #e5e7eb;vertical-align:middle}
 tfoot td{background:#f3f4f6;font-weight:bold;padding:3px 6px;border:1px solid #e5e7eb;font-size:9px}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 .inactive-chip{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:9px;color:#1a3f5c}
 .filter-info{background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:6px 12px;font-size:9px;color:#6b7280;margin-bottom:8px}
 .rpt-footer{margin-top:10px;border-top:2px solid #1a3f5c;padding:7px 0 0;text-align:center;font-size:8px;color:#6b7280;line-height:1.7}
@@ -13880,11 +13892,12 @@ ${inactiveSec}
         .info-box span { font-size:15px; font-weight:600 }
         .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; margin:0 0 10px }
         table { width:100%; border-collapse:collapse; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; margin-bottom:24px }
-        thead { background:#2563eb; color:#fff }
+        thead { background:#2563eb; color:#fff; display:table-header-group }
         thead th { padding:10px 12px; text-align:left; font-size:13px }
+        tbody tr { page-break-inside:avoid; break-inside:avoid }
         .obs-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px; font-size:14px; line-height:1.6; min-height:60px }
         .footer { margin-top:32px; padding-top:16px; border-top:1px solid #e5e7eb; display:flex; justify-content:space-between; font-size:12px; color:#9ca3af }
-        @media print { body { padding:16px } .no-print { display:none } }
+        @media print { body { padding:16px } .no-print { display:none } @page { size:A4 portrait; margin:10mm } }
       </style>
     </head><body>
       <div class="header">
