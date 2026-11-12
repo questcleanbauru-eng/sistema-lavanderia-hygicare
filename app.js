@@ -6957,16 +6957,30 @@ tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
               if (endDate)   vRecs = vRecs.filter(r => recDateStr(r) <= endDate);
               const sorted = vRecs.sort((a,b) => recDateStr(b).localeCompare(recDateStr(a)));
               const unit = escHtml(v.unit || '-');
+              // Variação % de cada leitura vs a anterior (mesma lógica/cores do
+              // histórico no app: aumento em vermelho, queda em verde)
+              const pctVsPrev = (idx) => {
+                const prev = sorted[idx + 1];
+                if (!prev || Number(prev.value) === 0) return null;
+                return ((Number(sorted[idx].value) - Number(prev.value)) / Math.abs(Number(prev.value))) * 100;
+              };
               const detailRows = sorted.length
-                ? sorted.map(r => `<tr>
+                ? sorted.map((r, idx) => {
+                    const pct = pctVsPrev(idx);
+                    const varCell = pct === null
+                      ? `<span style="color:#9ca3af">—</span>`
+                      : `<span style="color:${pct >= 0 ? '#dc2626' : '#16a34a'};font-weight:700">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</span>`;
+                    return `<tr>
                     <td>${fmtD(r.date || r.created_at)}</td>
                     <td style="text-align:right;font-weight:600">${fmtVal(r.value)}</td>
                     <td style="color:#6b7280">${unit}</td>
-                  </tr>`).join('')
-                : `<tr><td colspan="3" class="no-recs">Sem leituras no período</td></tr>`;
+                    <td style="text-align:right">${varCell}</td>
+                  </tr>`;
+                  }).join('')
+                : `<tr><td colspan="4" class="no-recs">Sem leituras no período</td></tr>`;
               return `<div class="pump-block">
   <div class="pump-title">${escHtml(v.name||'-')} <span class="pump-count">${sorted.length} leitura${sorted.length!==1?'s':''}</span></div>
-  <table><thead><tr><th>Data</th><th style="text-align:right">Leitura</th><th>Unidade</th></tr></thead>
+  <table><thead><tr><th>Data</th><th style="text-align:right">Leitura</th><th>Unidade</th><th style="text-align:right">Variação</th></tr></thead>
   <tbody>${detailRows}</tbody></table>
 </div>`;
             }).join('');
