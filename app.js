@@ -214,11 +214,12 @@ function _handlePushLaunchParams() {
 }
 window._handlePushLaunchParams = _handlePushLaunchParams;
 
-// ---------- Gate obrigatório: instalar o app + ativar notificações ----------
-// Substituiu o banner dispensável — agora bloqueia o uso do app (tela cheia,
-// sem "agora não") até o dispositivo estar instalado (modo standalone) E
-// com push ativado. Só é ignorado se o navegador não suportar push de jeito
-// nenhum (aí não tem como exigir).
+// ---------- Gate de instalar o app + ativar notificações (opcional) ----------
+// Chegou a ser obrigatório (tela cheia, sem "agora não"), mas isso travava
+// usuários que não conseguiam/queriam autorizar notificação no login — a
+// obrigatoriedade foi desativada em _checkInstallPushGate. _gateStatus()
+// continua sendo usado só pra exibir status (menu ☰ → Notificações, card
+// de admin), nunca mais pra bloquear.
 async function _gateStatus() {
   const installed = _isStandaloneApp();
   // Admin fica isento de instalar — só precisa de notificação ativada.
@@ -346,16 +347,11 @@ function _renderInstallPushGate(installed, pushOn, installExempt) {
 // Reavalia e mostra/some o gate. Se o navegador não suporta push de jeito
 // nenhum, não tem como exigir — deixa passar (com aviso no console).
 async function _checkInstallPushGate() {
-  try {
-    if (!currentUser) return;
-    // não empilha em cima do cadastro de PIN no primeiro login
-    const pinModal = document.getElementById('modal-pin-setup');
-    if (pinModal && !pinModal.classList.contains('hidden')) { setTimeout(_checkInstallPushGate, 4000); return; }
-    if (!_pushApiSupported()) { console.warn('[push] navegador sem suporte a notificações — obrigatoriedade ignorada.'); _removeInstallPushGate(); return; }
-    const { installed, pushOn, installExempt } = await _gateStatus();
-    if ((installed || installExempt) && pushOn) { _removeInstallPushGate(); return; }
-    _renderInstallPushGate(installed, pushOn, installExempt);
-  } catch (e) { /* nunca trava o app por um erro aqui */ }
+  // Obrigatoriedade desativada — instalar o app e ativar notificação viram
+  // opcionais pra todo mundo (alguns usuários travavam no login por não
+  // conseguir/querer autorizar notificação). Seguem disponíveis, só não
+  // bloqueiam mais: menu ☰ → Notificações (_openPushSettings).
+  _removeInstallPushGate();
 }
 window._checkInstallPushGate = _checkInstallPushGate;
 
@@ -1036,8 +1032,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initApp();
     // Verifica manutenção após login (lê estado salvo localmente)
     setTimeout(() => window._applyMaintenanceMode?.(), 200);
-    // Instalar o app + ativar notificações agora é obrigatório pra usar o sistema
-    // (não empilha com o modal de PIN — _checkInstallPushGate se adia sozinho)
+    // _checkInstallPushGate não bloqueia mais (virou opcional) — só garante
+    // que o gate antigo some caso tenha ficado preso de uma sessão anterior
     setTimeout(() => _checkInstallPushGate(), 2200);
     // Veio de um toque numa notificação push que abriu uma aba nova? navega direto pra tela
     setTimeout(() => _handlePushLaunchParams(), 400);
