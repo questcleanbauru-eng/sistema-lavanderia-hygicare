@@ -5868,7 +5868,7 @@ ${printScript}
         return (b || c) === ymd;
       };
       const vz = vzRecs.filter(r => Number(r.client_id) === Number(clientId) && _ymd(r.date) === ymd)
-        .map(r => ({ machine: mName(r.machine_id), bomba: r.vazao_name || '', value: r.value, unit: r.vazao_unit || '', maint: r.vazao_name === '__manutencao__' }));
+        .map(r => ({ machine: mName(r.machine_id), bomba: r.vazao_name || '', value: r.value, unit: r.vazao_unit || '', maint: r.vazao_name === '__manutencao__', selastic: Number(r.selastic_changed) === 1 }));
       const dayRecs = records.filter(r => Number(r.client_id) === Number(clientId) && _covers(r));
       const recs = dayRecs.filter(r => !r.maintenance);
       const prod = recs.map(r => ({ machine: mName(r.machine_id), proc: pName(r.process_id), exec: r.executed||0, canc: r.canceled||0, total: parseFloat(r.total)||0 }));
@@ -5952,8 +5952,10 @@ ${printScript}
         const concl = _visitIsConcluded(v);
         let d = await _visitDayData(v.client_id, String(v.date).slice(0,10), pre);
         if (concl && v.snapshot) { try { d = { prodTotal: 0, vz: [], prod: [], notes: [], ...JSON.parse(v.snapshot) }; } catch (e) {} }
+        const _selasticCount = d.vz.filter(x => x.selastic).length;
         const chips = [
           d.vz.length ? `💧 ${d.vz.filter(x=>!x.maint).length} leitura(s)` : '',
+          _selasticCount ? `🔧 ${_selasticCount} selastic` : '',
           d.prod.length ? `📋 ${(d.prodTotal).toLocaleString('pt-BR',{maximumFractionDigits:0})} kg` : (d.prodHasReport ? '📋 fechamento' : ''),
           d.notes.length ? `📝 ${d.notes.length} nota(s)` : '',
         ].filter(Boolean).join(' · ') || 'sem registros ainda';
@@ -6041,10 +6043,12 @@ ${printScript}
       if (maint.length) h += `<div class="visit-maint">🔧 Máquina(s) em manutenção: ${maint.map(x => escHtml(x.machine)).join(', ')}</div>`;
       if (pumps.length) {
         const pm = [...new Set(pumps.map(x => x.machine))];
+        const selasticPumps = pumps.filter(x => x.selastic);
         h += `<div style="font-size:0.82rem">✔️ Aferição de vazão realizada — ${pumps.length} leitura(s) em ${pm.length} máquina(s)${pm.length ? ': ' + pm.map(escHtml).join(', ') : ''}.</div>
+          ${selasticPumps.length ? `<div style="font-size:0.8rem;color:#92400e;font-weight:700;margin-top:0.25rem">🔧 Selastic trocado: ${selasticPumps.map(x => escHtml(x.bomba)).join(', ')}</div>` : ''}
           <details style="margin-top:0.3rem"><summary style="font-size:0.75rem;color:var(--primary,#2563eb);cursor:pointer">ver leituras</summary>
           <table><thead><tr><th>Máquina</th><th>Bomba</th><th style="text-align:right">Leitura</th></tr></thead>
-          <tbody>${pumps.map(x => `<tr><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}</td><td style="text-align:right;font-weight:600">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table></details>`;
+          <tbody>${pumps.map(x => `<tr><td>${escHtml(x.machine)}</td><td>${escHtml(x.bomba)}${x.selastic ? ' <span style="font-size:0.65rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 4px;font-weight:700">🔧</span>' : ''}</td><td style="text-align:right;font-weight:600">${fmtN(x.value)} ${escHtml(x.unit)}</td></tr>`).join('')}</tbody></table></details>`;
       } else if (!maint.length) {
         h += '<div class="visit-empty">Sem leituras de vazão neste dia.</div>';
       }
@@ -6251,6 +6255,8 @@ ${printScript}
         vzHtml = `<p>✔️ Foi realizada a <strong>aferição de vazão das bombas</strong> nesta visita — ${pumps.length} leitura(s) em ${pumpMachines.length} máquina(s)${pumpMachines.length ? ': ' + pumpMachines.map(escHtml).join(', ') : ''}.</p>
         <p class="muted" style="font-size:9px">Os valores medidos ficam registrados no histórico de vazão do cliente.</p>`;
       }
+      const selasticPumps = pumps.filter(x => x.selastic);
+      if (selasticPumps.length) vzHtml += `<p style="color:#92400e;font-size:11px;font-weight:700;margin-top:6px">🔧 Selastic trocado nesta visita: ${selasticPumps.map(x=>escHtml(x.bomba)).join(', ')}</p>`;
       if (maint.length) vzHtml += `<p style="color:#b45309;font-size:11px;margin-top:6px">🔧 Máquina(s) em manutenção no dia: ${maint.map(x=>escHtml(x.machine)).join(', ')}</p>`;
       if (!vzHtml) vzHtml = '<p class="muted">Sem leituras de vazão neste dia.</p>';
 
@@ -6411,6 +6417,7 @@ ${photosPage2 ? photosSection : ''}
         v.tech ? `👷 Técnico: ${v.tech}` : '',
         ``,
         d.vz.filter(x=>!x.maint).length ? `💧 ${d.vz.filter(x=>!x.maint).length} leitura(s) de vazão` : '',
+        d.vz.filter(x=>x.selastic).length ? `🔧 Selastic trocado: ${d.vz.filter(x=>x.selastic).map(x=>x.bomba).join(', ')}` : '',
         d.prod.length ? `📋 Fechamento: ${Number(d.prodTotal).toLocaleString('pt-BR',{maximumFractionDigits:0})} kg` : '',
         ck.length ? `✅ Checklist: ${ck.join(', ')}` : '',
         v.obs ? `📝 ${v.obs}` : '',
