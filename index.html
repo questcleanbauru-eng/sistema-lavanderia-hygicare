@@ -1593,6 +1593,8 @@
             <input type="date" id="pdf-client-start"><input type="date" id="pdf-client-end">
             <select id="pdf-vazao-client"><option value=""></option></select>
             <input type="date" id="pdf-vazao-start"><input type="date" id="pdf-vazao-end">
+            <select id="pdf-selastic-client"><option value=""></option></select>
+            <input type="date" id="pdf-selastic-start"><input type="date" id="pdf-selastic-end">
             <input type="date" id="pdf-group-start"><input type="date" id="pdf-group-end">
             <select id="pdf-mach-client"><option value=""></option></select>
             <select id="pdf-cancel-client"><option value=""></option></select>
@@ -1634,6 +1636,16 @@
               <div class="rpt-btns">
                 <button id="btn-pdf-vazao" class="btn-primary">📄 PDF</button>
                 <button id="btn-csv-vazao" class="btn-secondary rpt-xls">📗 Excel</button>
+              </div>
+            </div>
+
+            <div class="rpt-card" data-needs-client>
+              <div class="rpt-head"><span class="rpt-ic" style="background:#fef3c7">🔧</span><h3>Trocas de Selastic <span class="rpt-tag">requer cliente</span></h3></div>
+              <p>Última troca de cada bomba e histórico de trocas marcadas no período.</p>
+              <div class="rpt-hint">⚠️ Selecione um cliente no filtro acima</div>
+              <div class="rpt-btns">
+                <button id="btn-pdf-selastic" class="btn-primary">📄 PDF</button>
+                <button id="btn-csv-selastic" class="btn-secondary rpt-xls">📗 Excel</button>
               </div>
             </div>
           </div>

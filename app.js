@@ -6587,7 +6587,7 @@ ${photosPage2 ? photosSection : ''}
         sorted.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
 
       // Campos internos (ocultos) lidos pelos geradores — recebem as mesmas opções
-      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
+      ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client','pdf-selastic-client'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         const cur = el.value;
@@ -6628,10 +6628,10 @@ ${photosPage2 ? photosSection : ''}
         const c = gClient?.value || '';
         const s = gStart?.value || '';
         const e = gEnd?.value || '';
-        ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client'].forEach(id => {
+        ['pdf-client-select','pdf-vazao-client','pdf-mach-client','pdf-summary-client','pdf-cancel-client','pdf-selastic-client'].forEach(id => {
           const el = document.getElementById(id); if (el) el.value = c;
         });
-        ['summary','client','vazao','group','cancel','operator'].forEach(k => {
+        ['summary','client','vazao','group','cancel','operator','selastic'].forEach(k => {
           const st = document.getElementById(`pdf-${k}-start`); if (st) st.value = s;
           const en = document.getElementById(`pdf-${k}-end`);   if (en) en.value = e;
         });
@@ -7010,6 +7010,112 @@ tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
 <h2>💧 Relatório de Vazão</h2>
 ${bodyHtml}
 <div class="footer">${getPdfFooterHtml('Relatório de Vazão')}</div>
+</body></html>`;
+      w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
+    });
+
+    // =====================================================
+    // PDF TROCAS DE SELASTIC (mangueira que succiona o produto)
+    // =====================================================
+    document.getElementById('btn-pdf-selastic')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão para gerar PDF.', 'error');
+      const clientId  = document.getElementById('pdf-selastic-client')?.value;
+      const startDate = document.getElementById('pdf-selastic-start')?.value || '';
+      const endDate   = document.getElementById('pdf-selastic-end')?.value   || '';
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const w = window.open('', '_blank');
+      if (!w) return toast('Pop-up bloqueado! Permita pop-ups para este site.', 'error');
+      w.document.write('<!DOCTYPE html><html><body style="font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p>⏳ Gerando...</p></body></html>');
+
+      const [clients, vazoes, vazaoRecs, machines] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('vazoes'),
+        dbGetAll_raw('vazao_records'), dbGetAll_raw('machines'),
+      ]);
+      const client = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) { w.close(); return toast('Cliente não encontrado.', 'error'); }
+      const cMachines   = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const cMachineIds = new Set(cMachines.map(m => Number(m.id)));
+      const cVazoes     = vazoes.filter(v => cMachineIds.has(Number(v.machine_id)));
+      // Todas as trocas já registradas (sem filtro de período — usado pra
+      // calcular "última troca" de verdade, independente do período escolhido)
+      const allSwaps = vazaoRecs.filter(r =>
+        Number(r.client_id) === Number(clientId) && Number(r.selastic_changed));
+      const recDateStr = r => ((r.date || r.created_at || '').substring(0, 10));
+      const fmtD = d => { if (!d) return '-'; const p = new Date(d.length<=10?d+'T00:00:00':d); return isNaN(p)?'-':p.toLocaleDateString('pt-BR'); };
+      const periodLabel = startDate && endDate
+        ? `${fmtD(startDate)} a ${fmtD(endDate)}`
+        : startDate ? `A partir de ${fmtD(startDate)}`
+        : endDate   ? `Até ${fmtD(endDate)}`
+        : 'Todo o período';
+      const today = new Date().toISOString().slice(0, 10);
+      const daysBetween = (a, b) => Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000);
+
+      const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;padding:14mm 16mm}
+.abar{display:flex;gap:8px;margin-bottom:12px}.btn-p{padding:6px 12px;background:#1a3f5c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+h1{font-size:15px;color:#111827;margin:6px 0 2px}
+h2{font-size:11px;color:#1a3f5c;margin:14px 0 5px;border-bottom:1px solid #d1d5db;padding-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+h3{font-size:10px;color:#374151;margin:10px 0 4px;font-weight:700}
+.period{font-size:10px;color:#6b7280;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1a3f5c;color:#fff;padding:4px 7px;text-align:left;font-size:9px;text-transform:uppercase}
+td{padding:3px 7px;border-bottom:1px solid #f1f5f9}tr:nth-child(even) td{background:#f8fafc}
+.pump-block{margin:6px 0 12px 0;page-break-inside:avoid;break-inside:avoid}
+.pump-title{font-size:10px;font-weight:700;color:#1a3f5c;padding:5px 7px;background:#eff6ff;border-left:3px solid #1a3f5c;display:flex;justify-content:space-between;align-items:center}
+.pump-count{font-weight:400;color:#6b7280;font-size:9px}
+.last-swap{font-size:10px;font-weight:700;padding:4px 7px}
+.no-recs{color:#94a3b8;font-style:italic;padding:4px 7px;font-size:9px}
+.footer{margin-top:14px;padding-top:7px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center}
+tr{page-break-inside:avoid;break-inside:avoid}thead{display:table-header-group}
+@media print{.abar{display:none}body{padding:8mm}@page{size:A4 portrait;margin:10mm}}`;
+
+      // Agrupar por máquina → bomba, com a última troca (sempre, sem filtro
+      // de período) e o histórico de trocas dentro do período escolhido
+      const bodyHtml = cMachines.length === 0
+        ? '<p style="color:#94a3b8;text-align:center;padding:16px">Nenhuma máquina cadastrada para este cliente.</p>'
+        : cMachines.map(m => {
+            const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
+            if (!mv.length) return '';
+            const pumpSections = mv.map(v => {
+              const vNameNorm = (v.name || '').trim().toLowerCase();
+              const pumpSwaps = allSwaps.filter(r =>
+                Number(r.machine_id) === Number(m.id) &&
+                (r.vazao_name || '').trim().toLowerCase() === vNameNorm
+              ).sort((a,b) => recDateStr(b).localeCompare(recDateStr(a)));
+              const last = pumpSwaps[0];
+              let lastHtml;
+              if (!last) {
+                lastHtml = `<div class="last-swap" style="color:#dc2626">⚠️ Nenhuma troca registrada ainda</div>`;
+              } else {
+                const d = daysBetween(recDateStr(last), today);
+                const color = d > 180 ? '#dc2626' : d > 90 ? '#b45309' : '#16a34a';
+                lastHtml = `<div class="last-swap" style="color:${color}">Última troca: ${fmtD(last.date || last.created_at)} (${d} dia${d!==1?'s':''} atrás)</div>`;
+              }
+              let periodSwaps = pumpSwaps;
+              if (startDate) periodSwaps = periodSwaps.filter(r => recDateStr(r) >= startDate);
+              if (endDate)   periodSwaps = periodSwaps.filter(r => recDateStr(r) <= endDate);
+              const detailRows = periodSwaps.length
+                ? periodSwaps.map(r => `<tr><td>${fmtD(r.date || r.created_at)}</td><td>${escHtml(r.user || '-')}</td></tr>`).join('')
+                : `<tr><td colspan="2" class="no-recs">Nenhuma troca no período selecionado</td></tr>`;
+              return `<div class="pump-block">
+  <div class="pump-title">${escHtml(v.name||'-')} <span class="pump-count">${periodSwaps.length} troca${periodSwaps.length!==1?'s':''} no período</span></div>
+  ${lastHtml}
+  <table><thead><tr><th>Data da troca</th><th>Registrado por</th></tr></thead>
+  <tbody>${detailRows}</tbody></table>
+</div>`;
+            }).join('');
+            return pumpSections ? `<h3>⚙️ ${escHtml(m.name)}</h3>${pumpSections}` : '';
+          }).join('') || '<p style="color:#94a3b8;text-align:center;padding:16px">Nenhuma vazão cadastrada para este cliente.</p>';
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Trocas de Selastic — ${escHtml(client.name)}</title>
+<style>${CSS}</style></head><body>
+<div class="abar"><button class="btn-p" onclick="window.print()">🖨️ Salvar PDF</button>
+<button onclick="window.close()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:11px">✕ Fechar</button></div>
+<div class="hdr"><div>${getPdfLogoHtml(false)}<h1 style="margin-top:5px">${escHtml(client.name)}</h1></div>
+<div style="text-align:right;font-size:10px;color:#6b7280">Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div></div>
+<p class="period">📅 Período do histórico: <strong>${periodLabel}</strong> &nbsp;·&nbsp; "Última troca" considera todo o histórico, não só o período acima.</p>
+<h2>🔧 Trocas de Selastic</h2>
+${bodyHtml}
+<div class="footer">${getPdfFooterHtml('Trocas de Selastic')}</div>
 </body></html>`;
       w.document.open(); w.document.write(html.replaceAll('#1a3f5c', getPdfColor())); w.document.close();
     });
@@ -7539,6 +7645,40 @@ ${opSections}
       });
       if (rows.length <= 1) return toast('Nenhuma leitura no período.', 'warning');
       _downloadCsv(rows, `vazao-${(client.name||'cliente').replace(/\s+/g,'-')}_${startDate||'inicio'}_${endDate||'hoje'}.csv`);
+    });
+
+    // --- Excel: Trocas de Selastic ---
+    document.getElementById('btn-csv-selastic')?.addEventListener('click', async () => {
+      if (!canDo('pdf_report')) return toast('Sem permissão.', 'error');
+      const clientId  = document.getElementById('pdf-selastic-client')?.value;
+      if (!clientId) return toast('Selecione um cliente.', 'warning');
+      const startDate = document.getElementById('pdf-selastic-start')?.value || '';
+      const endDate   = document.getElementById('pdf-selastic-end')?.value   || '';
+      const [clients, vazoes, vazaoRecs, machines] = await Promise.all([
+        dbGetAll_raw('clients'), dbGetAll_raw('vazoes'), dbGetAll_raw('vazao_records'), dbGetAll_raw('machines'),
+      ]);
+      const client   = clients.find(c => Number(c.id) === Number(clientId));
+      if (!client) return toast('Cliente não encontrado.', 'error');
+      const cMachs   = machines.filter(m => Number(m.client_id) === Number(clientId));
+      const cMachIds = new Set(cMachs.map(m => Number(m.id)));
+      const mMap     = Object.fromEntries(cMachs.map(m => [m.id, m.name]));
+      const cVazoes  = vazoes.filter(v => cMachIds.has(Number(v.machine_id)));
+      let swaps = vazaoRecs.filter(r => Number(r.client_id) === Number(clientId) && Number(r.selastic_changed));
+      if (startDate) swaps = swaps.filter(r => (r.date||'') >= startDate);
+      if (endDate)   swaps = swaps.filter(r => (r.date||'') <= endDate);
+      const rows = [['Máquina','Bomba','Data da troca','Registrado por']];
+      cMachs.forEach(m => {
+        const mv = cVazoes.filter(v => Number(v.machine_id) === Number(m.id));
+        mv.forEach(v => {
+          const vNameNorm = (v.name||'').trim().toLowerCase();
+          let vSwaps = swaps.filter(r => Number(r.machine_id) === Number(m.id) && (r.vazao_name||'').trim().toLowerCase() === vNameNorm);
+          vSwaps.sort((a,b) => (a.date||'').localeCompare(b.date||'')).forEach(r => {
+            rows.push([mMap[m.id]||'', v.name||'', r.date||'', r.user||'']);
+          });
+        });
+      });
+      if (rows.length <= 1) return toast('Nenhuma troca de selastic no período.', 'warning');
+      _downloadCsv(rows, `trocas-selastic-${(client.name||'cliente').replace(/\s+/g,'-')}_${startDate||'inicio'}_${endDate||'hoje'}.csv`);
     });
 
     // --- Excel: Agrupado ---
@@ -8219,6 +8359,12 @@ ${opSections}
                 placeholder="0"
                 style="width:100%;max-width:160px;padding:0.4rem 0.7rem" />
             </td>
+            <td style="padding:0.3rem 0.5rem;text-align:center">
+              <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;white-space:nowrap">
+                <input type="checkbox" class="vazao-selastic-cb" data-machine-id="${m.id}" data-vazao-id="${v.id}" style="width:17px;height:17px;accent-color:#d97706;cursor:pointer">
+                <span style="font-size:0.72rem;color:#92400e;font-weight:600">🔧 selastic</span>
+              </label>
+            </td>
           </tr>`).join('') : '';
 
         return `
@@ -8242,6 +8388,7 @@ ${opSections}
                     <th style="text-align:left">Vazão</th>
                     <th style="text-align:left">Unidade</th>
                     <th style="text-align:left;min-width:130px">Resultado</th>
+                    <th style="text-align:center">Selastic</th>
                   </tr></thead>
                   <tbody>${rows}</tbody>
                 </table>`
@@ -8294,7 +8441,7 @@ ${opSections}
         else { byMach[mName].recs.push(r); }
       }
       const sections = Object.entries(byMach).map(([mName, data]) => {
-        const pumps = data.recs.map(r => `  • ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}`).join('\n');
+        const pumps = data.recs.map(r => `  • ${r.vazao_name}: ${r.value}${r.vazao_unit ? ' ' + r.vazao_unit : ''}${r.selastic_changed ? ' 🔧 selastic trocado' : ''}`).join('\n');
         const maintLine = data.maint ? '\n  🔧 Em manutenção' : '';
         return `⚙️ *${mName}*\n${pumps || ''}${maintLine}`;
       }).join('\n\n');
@@ -8332,17 +8479,22 @@ ${opSections}
       const rows = [];
       inputs.forEach(inp => {
         const val = inp.value.trim();
-        if (val !== '') rows.push({
+        const selasticCb = inp.closest('tr')?.querySelector('.vazao-selastic-cb');
+        const selasticChanged = !!selasticCb?.checked;
+        // Linha entra se tem leitura OU se só marcou a troca de selastic (sem
+        // leitura nesse dia) — a troca precisa ficar registrada de qualquer jeito
+        if (val !== '' || selasticChanged) rows.push({
           machine_id: Number(inp.dataset.machineId),
           vazao_id:   Number(inp.dataset.vazaoId),
           vazao_name: inp.dataset.vazaoName,
           vazao_unit: inp.dataset.vazaoUnit,
-          value:      parseFloat(val)
+          value:      val !== '' ? parseFloat(val) : null,
+          selastic_changed: selasticChanged ? 1 : 0,
         });
       });
 
       const maintBtns = [...document.querySelectorAll('[id^="toggle-maint-"][data-maint-on="1"]')];
-      if (!rows.length && !maintBtns.length) return toast('Informe pelo menos um resultado ou marque uma manutenção', 'warning');
+      if (!rows.length && !maintBtns.length) return toast('Informe pelo menos um resultado, marque uma troca de selastic ou uma manutenção', 'warning');
       if (_saving) return;
 
       const btn = document.getElementById('btn-save-vazao');
@@ -8359,6 +8511,7 @@ ${opSections}
             date, client_id: clientId, machine_id: r.machine_id,
             vazao_id: r.vazao_id, vazao_name: r.vazao_name,
             vazao_unit: r.vazao_unit, value: r.value,
+            selastic_changed: r.selastic_changed || 0,
             user: userName, created_at: createdAt
           };
           const id = await dbAdd('vazao_records', record);
@@ -8383,8 +8536,10 @@ ${opSections}
 
         const saved = rows.length;
         const maintSaved = maintBtnsArr.length;
+        const selasticSaved = rows.filter(r => r.selastic_changed).length;
         const maintMsg = maintSaved ? ` + ${maintSaved} manutenção(ões)` : '';
-        toast(`✅ ${saved} leitura(s)${maintMsg} salva(s)!`, 'success');
+        const selasticMsg = selasticSaved ? ` + ${selasticSaved} troca(s) de selastic` : '';
+        toast(`✅ ${saved} leitura(s)${selasticMsg}${maintMsg} salva(s)!`, 'success');
 
         // Abre (se necessário) o relatório de visita deste cliente/dia —
         // vale para leitura de vazão E/OU marcação de manutenção
@@ -8405,6 +8560,7 @@ ${opSections}
 
         // Fechar campos após salvar
         inputs.forEach(inp => inp.value = '');
+        document.querySelectorAll('.vazao-selastic-cb').forEach(cb => cb.checked = false);
         document.querySelectorAll('[id^="toggle-maint-"]').forEach(t => {
           t.dataset.maintOn = '0'; t.style.background = '#d1d5db';
           const k = document.getElementById(t.id.replace('toggle-maint-','toggle-knob-'));
@@ -8652,6 +8808,7 @@ ${opSections}
               ${window._vazaoSelectMode ? `<input type="checkbox" class="vazao-sel-cb" data-id="${r.id}" onchange="window._updateVazaoSelBar()" style="accent-color:var(--danger);flex-shrink:0;width:16px;height:16px">` : ''}
               <span style="font-size:0.75rem;color:var(--muted);min-width:60px">${fmtDate(r.date)}</span>
               <span style="font-size:0.82rem;font-weight:${idx===0?'700':'500'};flex:1">${r.value} <span style="font-weight:400;color:var(--muted)">${item.unit}</span></span>
+              ${Number(r.selastic_changed) ? '<span style="font-size:0.68rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:5px;padding:1px 6px;font-weight:700;white-space:nowrap">🔧 selastic</span>' : ''}
               ${canEdit && !window._vazaoSelectMode ? `
                 <button onclick="window._editVazaoRecord(${r.id})" style="background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--primary)" title="Editar">✏️</button>
                 <button onclick="window._deleteVazaoRecord(${r.id},this)" style="background:none;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;padding:2px 7px;font-size:0.75rem;color:var(--danger)" title="Excluir">🗑️</button>
@@ -8889,7 +9046,11 @@ ${opSections}
           <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Data</label>
           <input id="_ev-date" type="date" value="${rec.date||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:0.9rem;margin-bottom:0.75rem">
           <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Valor ${rec.vazao_unit ? `(${rec.vazao_unit})` : ''}</label>
-          <input id="_ev-value" type="number" step="0.01" value="${rec.value||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:0.9rem;margin-bottom:1rem">
+          <input id="_ev-value" type="number" step="0.01" value="${rec.value ?? ''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:0.9rem;margin-bottom:0.9rem">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;margin-bottom:1rem">
+            <input id="_ev-selastic" type="checkbox" ${Number(rec.selastic_changed) ? 'checked' : ''} style="width:17px;height:17px;accent-color:#d97706;cursor:pointer">
+            <span style="font-size:0.85rem;color:#92400e;font-weight:600">🔧 Selastic trocado nesta leitura</span>
+          </label>
           <div style="display:flex;gap:0.5rem">
             <button id="_ev-save" style="flex:1;padding:8px;background:var(--primary,#2563eb);color:#fff;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer;font-weight:600">Salvar</button>
             <button id="_ev-cancel" style="padding:8px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;cursor:pointer">Cancelar</button>
@@ -8900,12 +9061,14 @@ ${opSections}
       overlay.querySelector('#_ev-cancel').addEventListener('click', () => overlay.remove());
       overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
       overlay.querySelector('#_ev-save').addEventListener('click', async () => {
-        const newDate  = overlay.querySelector('#_ev-date').value;
-        const newValue = parseFloat(overlay.querySelector('#_ev-value').value);
-        if (!newDate || isNaN(newValue)) return toast('Preencha data e valor', 'warning');
+        const newDate   = overlay.querySelector('#_ev-date').value;
+        const rawValue  = overlay.querySelector('#_ev-value').value.trim();
+        const selastic  = overlay.querySelector('#_ev-selastic').checked;
+        const newValue  = rawValue !== '' ? parseFloat(rawValue) : null;
+        if (!newDate || (rawValue !== '' && isNaN(newValue))) return toast('Preencha a data e um valor válido (ou deixe em branco se for só marcar a troca de selastic)', 'warning');
         const btn = overlay.querySelector('#_ev-save');
         btn.disabled = true; btn.textContent = '⏳';
-        const updated = { ...rec, date: newDate, value: newValue };
+        const updated = { ...rec, date: newDate, value: newValue, selastic_changed: selastic ? 1 : 0 };
         await dbPut('vazao_records', updated);
         await patchSheetDB(SHEETS.VAZAO_RECORDS, id, updated);
         overlay.remove();
