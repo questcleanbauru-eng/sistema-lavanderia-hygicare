@@ -5990,7 +5990,7 @@ ${printScript}
               <div class="vh-meta"><span>📅 ${fmtDate(v.date)}</span>${v.tech ? `<span>👷 ${escHtml(v.tech)}</span>` : ''}<span>${chips}</span></div>
             </div>
             <span class="visit-pill ${concl ? 'visit-pill--done' : 'visit-pill--draft'}">${concl ? 'Concluído' : 'Rascunho'}</span>
-            ${concl ? '' : `<button class="btn-primary btn-sm" style="flex-shrink:0;white-space:nowrap" onclick="event.stopPropagation();window._concludeVisit('${v.id}')" title="Concluir sem precisar abrir o card">✅ Concluir</button>`}
+            ${concl ? '' : `<button class="btn-primary btn-sm" style="flex-shrink:0;white-space:nowrap" onclick="event.stopPropagation();window._concludeVisit('${v.id}', true)" title="Concluir sem precisar abrir o card — não pede assinatura">✅ Concluir</button>`}
             ${currentUser?.role === 'admin'
               ? `<button class="btn-danger btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();window._deleteVisit('${v.id}')" title="Excluir visita">🗑️</button>`
               : `<button class="btn-danger btn-sm" style="flex-shrink:0;opacity:.4;cursor:not-allowed" onclick="event.stopPropagation();toast('🔒 Apenas o admin pode excluir relatórios. Solicite a exclusão ao administrador.', 'warning')" title="Apenas o admin pode excluir">🗑️</button>`}
@@ -6159,7 +6159,10 @@ ${printScript}
       await renderVisitsList();
     };
 
-    window._concludeVisit = async function(id) {
+    // skipSignPrompt: true quando vem do botão rápido no card da lista (sem
+    // abrir o card) — aí não faz sentido empurrar a tela de assinatura logo
+    // em seguida, só encerra o relatório mesmo.
+    window._concludeVisit = async function(id, skipSignPrompt) {
       const v = await _getVisit(id); if (!v) return;
       v.obs = document.getElementById('vobs-' + id)?.value || v.obs || '';
       v.next_visit = document.getElementById('vnext-' + id)?.value || v.next_visit || '';
@@ -6178,8 +6181,8 @@ ${printScript}
         toast('✅ Visita concluída! PDF liberado.', 'success', 5000);
         await renderVisitsList();
       } finally { hideOverlay(); }
-      // Oferece a coleta de assinatura logo após concluir
-      setTimeout(() => window._visitSign(id), 300);
+      // Oferece a coleta de assinatura logo após concluir (só no fluxo completo)
+      if (!skipSignPrompt) setTimeout(() => window._visitSign(id), 300);
     };
 
     // Encerrar (admin): mesma coisa que concluir, mas sem exigir dados
@@ -10487,6 +10490,7 @@ ${recipeSections}
         dateStart,
         dateEnd,
         onlyDuplicates: activeQf === 'duplicates',
+        onlyNew:        activeQf === 'new',
       };
     }
 
@@ -10590,7 +10594,7 @@ ${recipeSections}
     // =====================================================
     async function renderRecordsList(filters) {
       if (filters === undefined) filters = getReportFilters();
-      const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '', onlyDuplicates = false } =
+      const { text = '', clientId = 0, seller = '', dateStart = '', dateEnd = '', onlyDuplicates = false, onlyNew = false } =
         typeof filters === 'string' ? { text: filters } : filters;
 
       const [recordsRaw, clients, machines, processes] = await Promise.all([
@@ -10747,6 +10751,9 @@ ${recipeSections}
           return Object.values(kc).some(c => c > 1);
         });
       }
+      if (onlyNew) {
+        entries = entries.filter(([key, g]) => !_viewedReports.has(_reportViewedKey(g)));
+      }
 
       if (!entries.length) {
         list.innerHTML = `<div class="empty-state">🔍 Nenhum registro encontrado para este filtro.</div>`;
@@ -10800,7 +10807,7 @@ ${recipeSections}
             <td style="text-align:center">${row.executed}</td>
             <td style="text-align:center">${row.canceled}</td>
             <td style="text-align:center">${row.capacity} kg</td>
-            <td style="text-align:right">${parseFloat(row.total).toFixed(2)} kg</td>
+            <td style="text-align:right">${parseFloat(row.total).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})} kg</td>
             ${delBtn}
           </tr>`;
         }).join('');
@@ -10819,7 +10826,7 @@ ${recipeSections}
               </div>
               <div class="rgh-bottom">
                 <div class="rgh-badges">
-                  <span class="badge badge-green">Total: ${g.totalKg.toFixed(2)} kg</span>
+                  <span class="badge badge-green">Total: ${g.totalKg.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})} kg</span>
                   <span class="badge badge-gray">${g.rows.length} linha(s)</span>
                   ${_hasDups ? `<span class="badge" style="background:#dc2626;color:#fff">⚠️ Duplicatas</span>` : ''}
                 </div>
@@ -10943,7 +10950,7 @@ ${recipeSections}
         const client  = clients.find(c => Number(c.id) === Number(g.clientId)) ||
                         clients.find(c => c.name === g.clientName);
         document.getElementById('share-meta').textContent =
-          `${g.clientName} · ${g.period} · ${g.totalKg.toFixed(2)} kg`;
+          `${g.clientName} · ${g.period} · ${g.totalKg.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})} kg`;
         document.getElementById('share-email-seller').value = client?.email_seller || '';
         document.getElementById('share-status').textContent = '';
         document.getElementById('modal-share').classList.remove('hidden');
@@ -10987,7 +10994,7 @@ ${recipeSections}
             <td class="center">${esc(r.executed)}</td>
             <td class="center">${esc(r.canceled)}</td>
             <td class="center">${esc(r.capacity)} kg</td>
-            <td class="right"><strong>${parseFloat(r.total).toFixed(2)} kg</strong></td>
+            <td class="right"><strong>${parseFloat(r.total).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})} kg</strong></td>
           </tr>
         `).join('');
         return `
@@ -11005,7 +11012,7 @@ ${recipeSections}
             <tfoot>
               <tr class="total-row">
                 <td colspan="5"><strong>TOTAL GERAL</strong></td>
-                <td class="right"><strong>${g.totalKg.toFixed(2)} kg</strong></td>
+                <td class="right"><strong>${g.totalKg.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})} kg</strong></td>
               </tr>
             </tfoot>
           </table>
