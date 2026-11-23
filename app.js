@@ -5134,6 +5134,11 @@ ${printScript}
         if (Number(latest.selastic_changed)) continue; // já resolvido nesta leitura
         const pct = ((Number(latest.value) - Number(prev.value)) / Math.abs(Number(prev.value))) * 100;
         if (Math.abs(pct) < threshold) continue;
+        // Salto implausível (ex.: 1 -> 700 = 69900%) é quase sempre leitura
+        // de teste/placeholder na planilha, não desgaste real de mangueira —
+        // nenhuma bomba muda de vazão várias centenas de vezes. Acima disso
+        // é provavelmente erro de digitação, não sinal de troca.
+        if (Math.abs(pct) > 300) continue;
         if (direction === 'drop' && pct >= 0) continue;
         if (direction === 'rise' && pct <= 0) continue;
         const client = clients.find(c => Number(c.id) === Number(latest.client_id));
