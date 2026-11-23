@@ -1109,6 +1109,22 @@
             </div>
             <div class="form-row" style="margin-top:0.5rem">
               <div class="form-field">
+                <label>🔧 Aviso: variação de vazão p/ sugerir troca de selastic</label>
+                <input type="number" id="cfg-selastic-threshold" min="1" max="200" placeholder="30" style="max-width:120px" />
+                <small>Bomba com variação igual ou maior que N% vs a leitura anterior aparece em 🔔 Avisos</small>
+              </div>
+              <div class="form-field">
+                <label>Direção que conta</label>
+                <select id="cfg-selastic-direction" class="form-input" style="max-width:220px">
+                  <option value="any">Qualquer direção (sobe ou desce)</option>
+                  <option value="drop">Só quando a vazão cai</option>
+                  <option value="rise">Só quando a vazão sobe</option>
+                </select>
+                <small>Confirme com os técnicos qual direção indica mangueira gasta</small>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:0.5rem">
+              <div class="form-field">
                 <button id="btn-save-config" class="btn-primary" style="width:100%">💾 Salvar Configuracoes</button>
               </div>
             </div>

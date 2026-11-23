@@ -1742,6 +1742,8 @@ ${printScript}
       set('cfg-sheets-url',   cfgSheets);
       set('cfg-notify-email', cfgEmail);
       set('cfg-alert-days',   localStorage.getItem('hygicare_cfg_alert_days') || '60');
+      set('cfg-selastic-threshold', localStorage.getItem('hygicare_cfg_selastic_threshold') || '30');
+      set('cfg-selastic-direction', localStorage.getItem('hygicare_cfg_selastic_direction') || 'any');
       const periodoCb = document.getElementById('cfg-periodo-habilitado');
       if (periodoCb) periodoCb.checked = localStorage.getItem('hygicare_periodo_habilitado') === 'true';
 
@@ -2010,11 +2012,16 @@ ${printScript}
       const sheets      = document.getElementById('cfg-sheets-url')?.value.trim()    || '';
       const notifyEmail = document.getElementById('cfg-notify-email')?.value.trim()  || '';
       const alertDays   = document.getElementById('cfg-alert-days')?.value.trim()    || '';
+      const selasticThreshold = document.getElementById('cfg-selastic-threshold')?.value.trim() || '';
+      const selasticDirection = document.getElementById('cfg-selastic-direction')?.value || 'any';
 
       if (gasUrl) { localStorage.setItem('hygicare_cfg_gas_url', gasUrl); CONFIG.GAS_URL = gasUrl; }
       if (sync)   { localStorage.setItem('hygicare_cfg_sync_interval', sync); CONFIG.SYNC_INTERVAL_HOURS = parseInt(sync); callGAS('upsert', 'Config', { chave: 'hygicare_cfg_sync_interval', valor: sync }); }
       if (sheets) localStorage.setItem('hygicare_cfg_sheets_url', sheets);
       if (alertDays && parseInt(alertDays) > 0) { localStorage.setItem('hygicare_cfg_alert_days', alertDays); callGAS('upsert', 'Config', { chave: 'hygicare_cfg_alert_days', valor: alertDays }); }
+      if (selasticThreshold && parseInt(selasticThreshold) > 0) { localStorage.setItem('hygicare_cfg_selastic_threshold', selasticThreshold); callGAS('upsert', 'Config', { chave: 'hygicare_cfg_selastic_threshold', valor: selasticThreshold }); }
+      localStorage.setItem('hygicare_cfg_selastic_direction', selasticDirection);
+      callGAS('upsert', 'Config', { chave: 'hygicare_cfg_selastic_direction', valor: selasticDirection });
       localStorage.setItem('hygicare_cfg_notify_email', notifyEmail);
 
       // Persiste e-mail de notificação na aba Config do GAS para que "Testar E-mail" funcione
@@ -3484,6 +3491,7 @@ ${printScript}
         addApiCount(1, 'read');
         const rows = res.data || [];
         const managed = ['hygicare_proc_groups', 'hygicare_note_types', 'hygicare_visit_checklist', 'hygicare_periodo_habilitado', 'hygicare_cfg_sync_interval', 'notification_email', 'hygicare_cfg_alert_days',
+          'hygicare_cfg_selastic_threshold', 'hygicare_cfg_selastic_direction',
           'hygicare_logo_b64', 'pdf_color', 'pdf_company_name', 'pdf_company_subtitle', 'pdf_footer_text',
           'hygicare_machine_order', 'hygicare_process_order',
           'email_monthly_operational', 'email_monthly_missing', 'email_monthly_vazao', 'email_tecnico',
@@ -5089,9 +5097,60 @@ ${printScript}
       return { alerts, todayStr };
     }
 
+    // Sugestão de troca de selastic: compara a última leitura de cada bomba
+    // com a anterior (mesmo cálculo do histórico/relatório de Vazão) e
+    // sinaliza quando a variação passa do limiar configurado em Admin. Não
+    // sinaliza de novo se a troca já foi marcada na própria leitura mais
+    // recente (já resolvido).
+    async function _computeSelasticAlerts() {
+      const threshold = parseInt(localStorage.getItem('hygicare_cfg_selastic_threshold') || '30');
+      const direction = localStorage.getItem('hygicare_cfg_selastic_direction') || 'any';
+      let clients = await getAll('clients');
+      if (currentUser && (currentUser.role === 'gerente' || currentUser.role === 'consultor')) {
+        const managed = getManagedSellerNames();
+        clients = clients.filter(c => managed.has((c.seller || '').toLowerCase()));
+      } else if (currentUser && currentUser.role === 'vendedor') {
+        const sellerName = (currentUser.sellerName || '').toLowerCase();
+        clients = clients.filter(c => (c.seller || '').toLowerCase() === sellerName);
+      }
+      const clientIds  = new Set(clients.map(c => Number(c.id)));
+      const [vazaoRecs, machines] = await Promise.all([dbGetAll_raw('vazao_records'), dbGetAll_raw('machines')]);
+      const machMap = Object.fromEntries(machines.map(m => [Number(m.id), m.name]));
+      const recDateStr = r => ((r.date || r.created_at || '').substring(0, 10));
+
+      // Agrupa por cliente+máquina+bomba
+      const groups = {};
+      for (const r of vazaoRecs) {
+        if (!clientIds.has(Number(r.client_id)) || r.vazao_name === '__manutencao__') continue;
+        const key = `${r.client_id}|||${r.machine_id}|||${(r.vazao_name||'').trim().toLowerCase()}`;
+        (groups[key] ||= []).push(r);
+      }
+
+      const alerts = [];
+      for (const recs of Object.values(groups)) {
+        const sorted = recs.sort((a,b) => recDateStr(b).localeCompare(recDateStr(a)));
+        const latest = sorted[0], prev = sorted[1];
+        if (!latest || !prev || Number(prev.value) === 0) continue;
+        if (Number(latest.selastic_changed)) continue; // já resolvido nesta leitura
+        const pct = ((Number(latest.value) - Number(prev.value)) / Math.abs(Number(prev.value))) * 100;
+        if (Math.abs(pct) < threshold) continue;
+        if (direction === 'drop' && pct >= 0) continue;
+        if (direction === 'rise' && pct <= 0) continue;
+        const client = clients.find(c => Number(c.id) === Number(latest.client_id));
+        if (!client) continue;
+        alerts.push({
+          client, machineName: machMap[Number(latest.machine_id)] || `Máq. ${latest.machine_id}`,
+          bombaName: latest.vazao_name, pct, date: latest.date || latest.created_at,
+        });
+      }
+      alerts.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+      return { alerts, threshold, direction };
+    }
+
     async function refreshAlertsBadge() {
-      const [{ overdue, alertDays }, { alerts }] = await Promise.all([_computeOverdue(), _computeScheduledAlerts()]);
-      updateAlertsBadge(overdue.length + alerts.length, alertDays);
+      const [{ overdue, alertDays }, { alerts }, { alerts: selasticAlerts }] =
+        await Promise.all([_computeOverdue(), _computeScheduledAlerts(), _computeSelasticAlerts()]);
+      updateAlertsBadge(overdue.length + alerts.length + selasticAlerts.length, alertDays);
     }
 
     // Mostra logo abaixo do select se o usuário escolhido já tem alguma
@@ -5165,18 +5224,52 @@ ${printScript}
 
     async function renderAlertsScreen() {
       await renderPushNotifyCard();
-      const [{ overdue, alertDays }, { alerts: scheduled, todayStr }] = await Promise.all([
-        _computeOverdue(), _computeScheduledAlerts()
+      const [{ overdue, alertDays }, { alerts: scheduled, todayStr }, { alerts: selastic, threshold: selasticThreshold }] = await Promise.all([
+        _computeOverdue(), _computeScheduledAlerts(), _computeSelasticAlerts()
       ]);
-      updateAlertsBadge(overdue.length + scheduled.length, alertDays);
+      updateAlertsBadge(overdue.length + scheduled.length + selastic.length, alertDays);
 
       const countEl = document.getElementById('alerts-count-badge');
-      if (countEl) countEl.textContent = overdue.length + scheduled.length;
+      if (countEl) countEl.textContent = overdue.length + scheduled.length + selastic.length;
       const daysEl = document.getElementById('alerts-days-display');
       if (daysEl) daysEl.textContent = alertDays;
 
       const list = document.getElementById('alerts-list');
       if (!list) return;
+
+      // ── Seção de sugestão de troca de selastic ─────────────
+      let selasticHtml = '';
+      if (selastic.length) {
+        const cards = selastic.map(({ client, machineName, bombaName, pct, date }) => {
+          const severe = Math.abs(pct) >= selasticThreshold * 1.5;
+          const bg     = severe ? '#fef2f2' : '#fffbeb';
+          const border = severe ? '#ef4444' : '#f59e0b';
+          const clr    = severe ? '#dc2626' : '#b45309';
+          const arrow  = pct >= 0 ? '▲' : '▼';
+          return `<div style="background:${bg};border:1px solid ${border};border-left:4px solid ${border};border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.35rem">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
+              <div style="min-width:0">
+                <div style="font-weight:700;font-size:0.92rem;color:var(--text)">👤 ${escHtml(client.name)}</div>
+                <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">⚙️ ${escHtml(machineName)} · 💧 ${escHtml(bombaName)}</div>
+                <div style="font-size:0.8rem;margin-top:0.3rem">
+                  <span style="color:${clr};font-weight:700">${arrow} ${Math.abs(pct).toFixed(1)}% vs leitura anterior</span>
+                  <span style="color:var(--muted);margin-left:0.5rem;font-size:0.75rem">Leitura de ${fmtDate(date)}</span>
+                </div>
+              </div>
+              <button style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;flex-shrink:0;white-space:nowrap"
+                onclick="(async()=>{const s=document.getElementById('vazao-client');if(s){s.value='${client.id}';s.dispatchEvent(new Event('change'));}show('screen-vazao')})()">
+                💧 Ver vazão
+              </button>
+            </div>
+          </div>`;
+        }).join('');
+        selasticHtml = `<div style="margin-bottom:1.2rem">
+          <div style="font-weight:700;font-size:0.88rem;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
+            🔧 Possível troca de selastic <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(${selastic.length} bomba${selastic.length!==1?'s':''} com variação ≥ ${selasticThreshold}%)</span>
+          </div>
+          ${cards}
+        </div>`;
+      }
 
       // ── Seção de agendamentos ─────────────────────────────
       let scheduledHtml = '';
@@ -5224,8 +5317,8 @@ ${printScript}
         </div>`;
       }
 
-      if (!overdue.length && !scheduled.length) {
-        list.innerHTML = `<div class="empty-state">✅ Tudo em dia!<p>Nenhum cliente está há mais de ${alertDays} dias sem relatório e não há agendamentos pendentes.</p></div>`;
+      if (!overdue.length && !scheduled.length && !selastic.length) {
+        list.innerHTML = `<div class="empty-state">✅ Tudo em dia!<p>Nenhum cliente está há mais de ${alertDays} dias sem relatório, não há agendamentos pendentes e nenhuma bomba com variação de vazão suspeita.</p></div>`;
         return;
       }
 
@@ -5296,7 +5389,7 @@ ${printScript}
         </div>`;
       }).join('') : '';
 
-      list.innerHTML = scheduledHtml + (overdue.length
+      list.innerHTML = scheduledHtml + selasticHtml + (overdue.length
         ? `<div style="font-weight:700;font-size:0.88rem;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.9rem;margin-bottom:0.4rem">
             ⏱ Clientes sem relatório <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">(há mais de ${alertDays} dias)</span>
            </div>${overdueHtml}`
