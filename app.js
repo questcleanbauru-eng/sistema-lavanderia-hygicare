@@ -8369,7 +8369,7 @@ ${opSections}
             <td style="padding:0.3rem 0.5rem;text-align:center">
               <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;white-space:nowrap">
                 <input type="checkbox" class="vazao-selastic-cb" data-machine-id="${m.id}" data-vazao-id="${v.id}" style="width:17px;height:17px;accent-color:#d97706;cursor:pointer">
-                <span style="font-size:0.72rem;color:#92400e;font-weight:600">🔧 selastic</span>
+                <span style="font-size:0.72rem;color:#92400e;font-weight:600">🔧 Selastic trocado?</span>
               </label>
             </td>
           </tr>`).join('') : '';
